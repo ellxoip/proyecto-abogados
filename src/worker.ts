@@ -64,7 +64,7 @@ async function pingRedis() {
 }
 
 async function main() {
-  console.log("[engine] Iniciando motor de procesamiento AT INFORMA.");
+  console.log("[engine] Iniciando motor de procesamiento HIVE CONTROL.");
   for (const processInfo of ENGINE_PROCESSES) {
     console.log(`[engine] ${processInfo.label}: ${processInfo.purpose} (${processInfo.schedule})`);
   }
@@ -118,7 +118,7 @@ async function main() {
       serverAdapter,
       options: {
         uiConfig: {
-          boardTitle: "Motor de Procesamiento AT INFORMA",
+          boardTitle: "Motor de Procesamiento HIVE CONTROL",
           locale: { lng: "es" },
           miscLinks: [{ text: "Volver al Sistema", url: `${allowedOrigin}/admin/monitoreo` }],
         },
@@ -129,7 +129,7 @@ async function main() {
     app.get("/health", (_req, res) => {
       res.json({
         ok: true,
-        name: "AT INFORMA Processing Engine",
+        name: "HIVE CONTROL Processing Engine",
         ts: new Date().toISOString(),
         processes: ENGINE_PROCESSES,
       });

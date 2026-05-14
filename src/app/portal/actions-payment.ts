@@ -4,7 +4,8 @@ import { auth } from "@/lib/auth";
 import { withRls } from "@/lib/rls";
 import { supabase } from "@/lib/supabase-client";
 import { revalidatePath } from "next/cache";
-import { PaymentStatus, Prisma, AuditAction } from "@prisma/client";
+import { Prisma } from "@prisma/client";
+import { PaymentStatus, AuditAction } from "@/lib/db-enums";
 import { logAudit } from "@/lib/audit";
 
 const ALLOWED_MIME = new Set(["image/jpeg", "image/png", "image/webp", "image/heic", "application/pdf"]);

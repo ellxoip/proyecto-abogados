@@ -1,7 +1,7 @@
 import { auth } from "@/lib/auth";
 import { withRls } from "@/lib/rls";
 import { notFound } from "next/navigation";
-import { Role } from "@prisma/client";
+import { Role } from "@/lib/db-enums";
 import { Brain, AlertTriangle, CheckCircle, Info } from "lucide-react";
 import { format } from "date-fns";
 import Link from "next/link";

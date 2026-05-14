@@ -7,7 +7,7 @@ import { onboardClientFromCRM, CrmLeadPayload } from "@/lib/services/crm-onboard
  * POST /api/webhooks/crm
  * 
  * Dante validates the lead in the CRM, then sends it here.
- * AT Informa performs the "Double Check" (SuperAdmin reviews in Bandeja),
+ * Hive Control performs the "Double Check" (SuperAdmin reviews in Bandeja),
  * then assigns the case to a lawyer → IN_PROGRESS.
  * 
  * Expected payload:

@@ -1,4 +1,4 @@
-import { CaseStage } from "@prisma/client";
+import { CaseStage } from "@/lib/db-enums";
 import { getStageMessage } from "@/lib/case-health";
 import { Inbox, Briefcase, CheckCircle2, Shield, Clock } from "lucide-react";
 

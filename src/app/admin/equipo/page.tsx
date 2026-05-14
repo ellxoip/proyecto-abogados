@@ -2,7 +2,7 @@ import { auth } from "@/lib/auth";
 import { EquipoConfig } from "./EquipoConfig";
 import { Shield, Users } from "lucide-react";
 import { notFound } from "next/navigation";
-import { Role } from "@prisma/client";
+import { Role } from "@/lib/db-enums";
 import { withRls } from "@/lib/rls";
 
 export const dynamic = "force-dynamic";
@@ -45,7 +45,7 @@ export default async function EquipoPage() {
       <footer className="mt-16 pt-8 border-t border-[var(--border-glass)] flex items-center justify-between opacity-50">
         <div className="flex items-center gap-2">
            <Users className="w-4 h-4" />
-           <span className="text-[10px] font-bold uppercase tracking-widest">AT INFORMA Legal OS v3.0</span>
+           <span className="text-[10px] font-bold uppercase tracking-widest">HIVE CONTROL Legal OS v3.0</span>
         </div>
         <div className="text-[10px] font-medium italic">Acceso restringido — Nivel de Autorización: {role}</div>
       </footer>

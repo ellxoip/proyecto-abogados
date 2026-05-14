@@ -1,0 +1,84 @@
+<svg width="1600" height="1200" viewBox="0 0 1600 1200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#07070A"/>
+      <stop offset="0.55" stop-color="#111114"/>
+      <stop offset="1" stop-color="#1A1310"/>
+    </linearGradient>
+    <linearGradient id="wood" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3B1E1A"/>
+      <stop offset="0.55" stop-color="#5A2B22"/>
+      <stop offset="1" stop-color="#1D0F0D"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F6D58A"/>
+      <stop offset="0.45" stop-color="#C9A84C"/>
+      <stop offset="1" stop-color="#8C6A23"/>
+    </linearGradient>
+    <filter id="blurSoft" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="14"/>
+    </filter>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="10" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect width="1600" height="1200" fill="url(#bg)"/>
+  <ellipse cx="820" cy="1000" rx="620" ry="120" fill="#C48D4A" opacity="0.08" filter="url(#blurSoft)"/>
+  <ellipse cx="520" cy="1030" rx="500" ry="90" fill="#FFFFFF" opacity="0.05" filter="url(#blurSoft)"/>
+
+  <g opacity="0.95">
+    <rect x="890" y="468" width="430" height="170" rx="18" fill="#F4F4F4"/>
+    <rect x="878" y="490" width="446" height="18" rx="9" fill="#DDD8CF"/>
+    <rect x="900" y="510" width="392" height="10" rx="5" fill="#C5B9A8"/>
+    <rect x="900" y="536" width="330" height="10" rx="5" fill="#C5B9A8"/>
+    <rect x="900" y="562" width="350" height="10" rx="5" fill="#C5B9A8"/>
+    <path d="M1320 476C1338 490 1350 508 1358 530L1380 616C1388 648 1368 680 1334 688C1300 696 1266 676 1258 644L1238 560C1231 528 1242 496 1268 478L1320 476Z" fill="url(#wood)"/>
+  </g>
+
+  <g transform="translate(300 300)" filter="url(#glow)">
+    <ellipse cx="470" cy="270" rx="150" ry="52" fill="#2B1D18"/>
+    <ellipse cx="470" cy="258" rx="140" ry="46" fill="url(#wood)"/>
+    <rect x="405" y="0" width="130" height="308" rx="36" fill="url(#wood)"/>
+    <rect x="395" y="88" width="150" height="104" rx="16" fill="url(#gold)"/>
+    <rect x="398" y="82" width="144" height="118" rx="26" fill="none" stroke="#F2DDA0" stroke-width="2" opacity="0.7"/>
+    <ellipse cx="470" cy="18" rx="92" ry="54" fill="#3A211C"/>
+    <ellipse cx="470" cy="10" rx="84" ry="44" fill="url(#wood)"/>
+    <ellipse cx="470" cy="294" rx="96" ry="54" fill="#2A1714"/>
+    <ellipse cx="470" cy="286" rx="88" ry="44" fill="url(#wood)"/>
+    <path d="M512 142L785 232" stroke="#2A1714" stroke-width="38" stroke-linecap="round"/>
+    <path d="M512 142L785 232" stroke="url(#wood)" stroke-width="24" stroke-linecap="round"/>
+  </g>
+
+  <g transform="translate(940 120)" filter="url(#glow)">
+    <path d="M250 0C258 0 264 6 264 14V35C309 52 342 82 357 124H380C388 124 394 130 394 138C394 146 388 152 380 152H367C368 168 364 182 356 196L333 239C326 252 312 260 297 260H110C95 260 81 252 74 239L51 196C43 182 39 168 40 152H28C20 152 14 146 14 138C14 130 20 124 28 124H51C66 82 99 52 144 35V14C144 6 150 0 158 0H250Z" fill="url(#gold)"/>
+    <path d="M144 35V88" stroke="#2A1A10" stroke-width="12" stroke-linecap="round"/>
+    <path d="M250 35V88" stroke="#2A1A10" stroke-width="12" stroke-linecap="round"/>
+    <path d="M99 124L144 88L188 124" stroke="#2A1A10" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M206 124L250 88L295 124" stroke="#2A1A10" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M110 148H287" stroke="#2A1A10" stroke-width="12" stroke-linecap="round"/>
+    <path d="M64 140C64 140 62 176 77 202C95 235 123 246 123 246" stroke="#F2D58A" stroke-width="5" stroke-linecap="round" opacity="0.45"/>
+    <path d="M331 140C331 140 333 176 318 202C300 235 272 246 272 246" stroke="#F2D58A" stroke-width="5" stroke-linecap="round" opacity="0.45"/>
+    <ellipse cx="164" cy="166" rx="48" ry="10" fill="#2A1A10" opacity="0.7"/>
+    <ellipse cx="242" cy="166" rx="48" ry="10" fill="#2A1A10" opacity="0.7"/>
+  </g>
+
+  <g transform="translate(95 725)" opacity="0.9">
+    <rect x="0" y="180" width="470" height="110" rx="22" fill="url(#wood)"/>
+    <rect x="54" y="120" width="392" height="94" rx="20" fill="#221110"/>
+    <rect x="24" y="58" width="420" height="92" rx="18" fill="#F4F0EA"/>
+    <rect x="34" y="68" width="400" height="10" rx="5" fill="#B7A99A"/>
+    <rect x="34" y="90" width="340" height="10" rx="5" fill="#B7A99A"/>
+    <rect x="34" y="112" width="360" height="10" rx="5" fill="#B7A99A"/>
+    <rect x="34" y="134" width="310" height="10" rx="5" fill="#B7A99A"/>
+  </g>
+
+  <g transform="translate(150 120)">
+    <circle cx="84" cy="0" r="62" fill="#C9A84C" opacity="0.07" filter="url(#blurSoft)"/>
+    <circle cx="1520" cy="940" r="110" fill="#C9A84C" opacity="0.06" filter="url(#blurSoft)"/>
+  </g>
+</svg>

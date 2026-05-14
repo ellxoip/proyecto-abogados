@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth";
 import { notFound } from "next/navigation";
-import { Role } from "@prisma/client";
+import { Role } from "@/lib/db-enums";
 import { withRls } from "@/lib/rls";
 import { generateClientPassword } from "@/lib/services/crm-onboarding";
 import { KeyRound, User, Mail, Phone, Clock } from "lucide-react";

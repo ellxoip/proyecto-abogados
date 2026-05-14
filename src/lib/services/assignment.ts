@@ -10,7 +10,7 @@
  * Part of "The Destination Experience" - ensuring fair and efficient case distribution.
  */
 
-import { Role } from "@prisma/client";
+import { Role } from "@/lib/db-enums";
 import { withRls } from "../rls";
 import { logAudit } from "../audit";
 
@@ -80,7 +80,7 @@ async function getLeastLoadedAbogado(
 }
 
 /**
- * Get the jefe de mesa with the fewest active cases.
+ * Get the jefe de grupo with the fewest active cases.
  */
 async function getLeastLoadedJefeMesa(
   prisma: any
@@ -120,7 +120,7 @@ async function getLeastLoadedJefeMesa(
 }
 
 /**
- * Auto-assign a case to the least loaded attorney and jefe de mesa.
+ * Auto-assign a case to the least loaded attorney and jefe de grupo.
  * This is the main entry point for automatic case assignment.
  */
 export async function autoAssignCase(
@@ -133,7 +133,7 @@ export async function autoAssignCase(
       // Get least loaded attorney
       const abogado = await getLeastLoadedAbogado(tx, category);
       
-      // Get least loaded jefe de mesa
+      // Get least loaded jefe de grupo
       const jefeMesa = await getLeastLoadedJefeMesa(tx);
 
       if (!abogado) {
@@ -152,7 +152,7 @@ export async function autoAssignCase(
         }
       };
 
-      // Only assign jefe de mesa if available
+      // Only assign jefe de grupo if available
       if (jefeMesa) {
         updateData.jefe_mesa_id = jefeMesa.id;
       }
@@ -251,7 +251,7 @@ export async function powerAssignCase(
         }
       };
 
-      // Optionally assign jefe de mesa
+      // Optionally assign jefe de grupo
       if (forceJefeMesaId) {
         const jefeMesa = await tx.user.findUnique({
           where: { id: forceJefeMesaId },

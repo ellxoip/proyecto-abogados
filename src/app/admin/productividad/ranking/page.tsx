@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth";
 import { notFound } from "next/navigation";
-import { Role } from "@prisma/client";
+import { Role } from "@/lib/db-enums";
 import { Medal, Star } from "lucide-react";
 import { subDays } from "date-fns";
 import { getTeamMetrics } from "@/lib/productividad/metrics";

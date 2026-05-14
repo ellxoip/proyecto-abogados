@@ -1,79 +1,119 @@
 "use server";
 
 import { withSystemRls } from "@/lib/rls";
-import { Role, CaseStage } from "@prisma/client";
-import { revalidatePath } from "next/cache";
-import { enqueueWhatsApp, enqueueEmail } from "@/lib/notifications";
-import { generateClientPassword } from "@/lib/services/crm-onboarding";
+import { Role, AuditAction } from "@/lib/db-enums";
 import { auth } from "@/lib/auth";
-import bcrypt from "bcryptjs";
 
-export async function quickIntake(data: {
+/**
+ * Forwards a manually captured intake to the CRM (FastAPI on :8000) so the
+ * "agendadoras" pool can take ownership of the commercial flow.
+ *
+ * AT.Informa stores NO local case after this call — once the CRM accepts
+ * the payload, AT.Informa's responsibility ends. Only an audit log entry
+ * is kept locally for traceability.
+ */
+export async function sendCaseToCrmAgendadoras(data: {
   fullName: string;
   email: string;
   phone: string;
+  rut: string;
   caseCode: string;
-  categoryId: string;
+  categoryName: string;
+  honorarios?: number;
+  cuotaInicial?: number;
+  numCuotas?: number;
   isPaid: boolean;
   receiptUrl?: string;
+  notes?: string;
 }) {
   const session = await auth();
   if (!session) return { ok: false, error: "No autorizado" };
-  if (session.user.role !== Role.SUPER_ADMIN && session.user.role !== Role.JEFE_DE_MESA) {
-    return { ok: false, error: "Solo SuperAdmin o Jefe de Mesa pueden ingresar casos." };
+  if (session.user.role !== Role.SUPER_ADMIN) {
+    return { ok: false, error: "Solo el SuperAdmin puede derivar casos manuales al CRM." };
   }
 
-  return await withSystemRls(async (tx) => {
-    // 1. Find or Create Client with REAL credentials
-    let client = await tx.user.findUnique({
-      where: { email: data.email }
+  const url = process.env.CRM_URL;
+  const secret = process.env.CRM_CALLBACK_SECRET;
+  if (!url || !secret) {
+    return { ok: false, error: "CRM_URL/CRM_CALLBACK_SECRET no configurados en el servidor." };
+  }
+  if (!data.rut?.trim()) {
+    return { ok: false, error: "El RUT del cliente es obligatorio para derivar al CRM." };
+  }
+  if (!data.fullName?.trim() || !data.phone?.trim()) {
+    return { ok: false, error: "Nombre y teléfono del cliente son obligatorios." };
+  }
+
+  const payload = {
+    fullName: data.fullName.trim(),
+    rut: data.rut.trim(),
+    email: data.email?.trim() || null,
+    phone: data.phone.trim(),
+    caseCode: data.caseCode,
+    categoryName: data.categoryName,
+    honorarios: Number(data.honorarios ?? 0),
+    cuotaInicial: Number(data.cuotaInicial ?? 0),
+    numCuotas: Number(data.numCuotas ?? 0),
+    isPaid: data.isPaid,
+    receiptUrl: data.receiptUrl ?? null,
+    notes: data.notes ?? null,
+    source: "at_informa_manual_intake",
+  };
+
+  let responseStatus = 0;
+  let responseBody: any = null;
+  try {
+    const res = await fetch(`${url.replace(/\/$/, "")}/api/at_informa/manual_intake`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-crm-callback-secret": secret,
+      },
+      body: JSON.stringify(payload),
+      cache: "no-store",
     });
-
-    const plainPassword = generateClientPassword(data.fullName, data.phone);
-    const passwordHash = await bcrypt.hash(plainPassword, 10);
-
-    if (!client) {
-      client = await tx.user.create({
-        data: {
-          fullName: data.fullName,
-          email: data.email,
-          phone: data.phone,
-          role: Role.CLIENTE,
-          passwordHash,
-          active: true
-        }
-      });
-    } else {
-      if (client.role !== Role.CLIENTE) {
-        return { ok: false, error: "El email pertenece a un usuario interno. Usa el cliente correcto." };
-      }
-      // Update credentials for existing client
-      await tx.user.update({
-        where: { id: client.id },
-        data: { passwordHash, active: true }
-      });
+    responseStatus = res.status;
+    try {
+      responseBody = await res.json();
+    } catch {
+      responseBody = { ok: res.ok };
     }
+    if (!res.ok) {
+      return {
+        ok: false,
+        error: responseBody?.detail ?? responseBody?.error ?? `CRM rechazó la solicitud (HTTP ${res.status}).`,
+      };
+    }
+  } catch (err) {
+    return {
+      ok: false,
+      error: `No se pudo conectar al CRM: ${(err as Error).message}`,
+    };
+  }
 
-    // 2. Create Case
-    const kase = await tx.case.create({
+  await withSystemRls(async (tx) => {
+    await tx.auditLog.create({
       data: {
-        code: data.caseCode,
-        client_id: client.id,
-        categoryId: data.categoryId,
-        is_paid: data.isPaid,
-        initial_invoice: data.receiptUrl,
-        stage: data.isPaid ? CaseStage.OPEN : CaseStage.WAITING_CUOTAS,
-        jefe_mesa_id: session.user.role === Role.JEFE_DE_MESA ? session.user.id : null,
-      }
+        action: AuditAction.CASE_DERIVED,
+        actorId: session.user.id,
+        channel: "system",
+        template: "crm_manual_intake",
+        status: "ok",
+        message: `Caso ${data.caseCode} (cliente ${data.fullName}) derivado al CRM — área de agendadoras.`,
+        metadata: JSON.stringify({
+          target: "CRM_AT",
+          payload,
+          responseStatus,
+          responseBody,
+        }),
+      },
     });
-
-    // 3. Send private credentials to client
-    await Promise.allSettled([
-      enqueueWhatsApp({ kind: "client_credentials", caseId: kase.id }),
-      enqueueEmail({ kind: "client_credentials", caseId: kase.id }),
-    ]);
-
-    revalidatePath("/admin/bandeja");
-    return { ok: true, caseId: kase.id };
   });
+
+  return {
+    ok: true,
+    crmLeadId: responseBody?.leadId,
+    crmAreaName: responseBody?.areaName,
+    crmAgendadoraName: responseBody?.agendadoraName,
+  };
 }

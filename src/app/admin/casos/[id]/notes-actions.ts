@@ -2,7 +2,7 @@
 
 import { auth } from "@/lib/auth";
 import { withRls } from "@/lib/rls";
-import { Role } from "@prisma/client";
+import { Role } from "@/lib/db-enums";
 import { revalidatePath } from "next/cache";
 
 export async function saveInternalNotes(caseId: string, notes: string) {
@@ -11,7 +11,7 @@ export async function saveInternalNotes(caseId: string, notes: string) {
 
   const role = session.user.role;
   if (role !== Role.SUPER_ADMIN && role !== Role.JEFE_DE_MESA) {
-    throw new Error("Solo SuperAdmin y Jefe de Mesa pueden escribir notas internas.");
+    throw new Error("Solo SuperAdmin y Jefe de Grupo pueden escribir notas internas.");
   }
 
   await withRls(async (tx) => {

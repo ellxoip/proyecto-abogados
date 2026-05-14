@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth";
 import { withRls } from "@/lib/rls";
-import { CaseStage, PaymentStatus, Role } from "@prisma/client";
+import { CaseStage, PaymentStatus, Role } from "@/lib/db-enums";
 import Link from "next/link";
 import { BandejaFilters } from "./BandejaFilters";
 import { AlertCircle, TrendingDown, Clock, Plus } from "lucide-react";
@@ -63,7 +63,8 @@ export default async function BandejaPage({
             include: {
               client: { select: { fullName: true } },
               categoria: { select: { name: true } },
-              abogados: { select: { id: true } }
+              abogados: { select: { id: true, fullName: true } },
+              jefeMesa: { select: { id: true, fullName: true } },
             },
             orderBy: searchParams.sort === "client_asc" 
               ? { client: { fullName: "asc" } } 
@@ -120,13 +121,14 @@ export default async function BandejaPage({
         </div>
         
         <div className="flex items-center gap-3">
-          {(role === Role.SUPER_ADMIN || role === Role.JEFE_DE_MESA) && (
-            <Link 
+          {role === Role.SUPER_ADMIN && (
+            <Link
               href="/admin/casos/nuevo"
-              className="flex items-center gap-2 bg-[var(--bg)] text-[var(--gold)] px-5 py-2.5 rounded-sm text-[11px] font-bold uppercase tracking-widest hover:bg-black transition-all shadow-lg shadow-black/10"
+              title="Capturar un caso manualmente y derivarlo al CRM (solo SuperAdmin)"
+              className="flex items-center gap-2 bg-[var(--bg)] text-white px-5 py-2.5 rounded-sm text-[11px] font-bold uppercase tracking-widest hover:bg-[var(--bg-deep)] transition-all shadow-lg shadow-black/10"
             >
               <Plus className="w-4 h-4" />
-              Ingreso Rápido
+              Ingreso Manual
             </Link>
           )}
 
@@ -178,22 +180,35 @@ export default async function BandejaPage({
             </p>
           </div>
 
-          <div className="bg-[var(--bg)] border border-[var(--border-subtle)] rounded-sm p-6 shadow-sm hover:shadow-md transition-shadow">
+          <div
+            className="rounded-sm p-6 shadow-md hover:shadow-lg transition-shadow relative overflow-hidden"
+            style={{
+              background: "linear-gradient(135deg, var(--sidebar-bg) 0%, var(--sidebar-deep) 100%)",
+              border: "1px solid var(--sidebar-border)",
+              color: "#FFFFFF",
+            }}
+          >
             <div className="flex items-center justify-between mb-4">
-              <div className="p-2 rounded-sm bg-[var(--gold)10]">
-                <AlertCircle className="w-5 h-5 text-[var(--gold)]" />
+              <div className="p-2 rounded-sm" style={{ background: "rgba(201, 168, 76, 0.18)" }}>
+                <AlertCircle className="w-5 h-5" style={{ color: "var(--gold-soft, #E7D08B)" }} />
               </div>
-              <span className="text-[10px] font-bold text-[var(--gold)] uppercase tracking-widest bg-[var(--gold)10] px-2 py-0.5 rounded-sm">
+              <span
+                className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-sm"
+                style={{ color: "var(--gold-soft, #E7D08B)", background: "rgba(201, 168, 76, 0.18)" }}
+              >
                 Prioridad
               </span>
             </div>
-            <div className="text-[11px] font-bold text-[var(--text-muted)] uppercase tracking-widest mb-1">
+            <div
+              className="text-[11px] font-bold uppercase tracking-widest mb-1"
+              style={{ color: "rgba(255, 255, 255, 0.75)" }}
+            >
               Sin Asignar
             </div>
-            <div className="text-3xl font-bold text-[var(--text)]">
+            <div className="text-3xl font-bold" style={{ color: "#FFFFFF" }}>
               {cases.filter(c => c.stage === CaseStage.OPEN).length}
             </div>
-            <p className="text-[10px] text-[var(--text-muted)] mt-3 leading-relaxed">
+            <p className="text-[10px] mt-3 leading-relaxed" style={{ color: "rgba(255, 255, 255, 0.7)" }}>
               Casos con pago validado que requieren asignación inmediata a un equipo.
             </p>
           </div>

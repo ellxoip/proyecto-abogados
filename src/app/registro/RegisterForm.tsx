@@ -181,7 +181,7 @@ export function RegisterForm({ categories }: Props) {
       <button
         type="submit"
         disabled={pending || categories.length === 0}
-        className="w-full bg-[var(--gold)] text-[var(--text)] font-semibold text-xs uppercase tracking-widest rounded py-3.5 disabled:opacity-50 hover:bg-[#D4B85C] transition-colors flex items-center justify-center gap-2"
+        className="w-full bg-[var(--sidebar-bg)] text-white font-semibold text-xs uppercase tracking-widest rounded py-3.5 disabled:opacity-50 hover:bg-[var(--sidebar-deep)] transition-colors flex items-center justify-center gap-2"
       >
         {pending ? (
           <>

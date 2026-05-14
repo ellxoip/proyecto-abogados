@@ -4,7 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
-import { Activity, AlertCircle, BarChart3, Folder, Inbox, KeyRound, MessageSquare, Scale, Shield, TrendingUp, Menu, X } from "lucide-react";
+import { Activity, AlertCircle, BarChart3, Clock, Folder, Inbox, KeyRound, MessageSquare, Shield, Timer, TrendingUp, Menu, X } from "lucide-react";
+import { BrandMark } from "@/components/BrandMark";
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -39,6 +40,7 @@ export function Sidebar() {
   const items: { href: string; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
     { href: "/admin/bandeja", label: "Bandeja de Entrada", icon: Inbox },
     { href: "/admin/casos", label: "Mis Casos", icon: Folder },
+    { href: "/admin/productividad/horas", label: "Mis Horas", icon: Clock },
     { href: "/admin/mensajeria", label: "Mensajeria", icon: MessageSquare },
   ];
 
@@ -53,28 +55,19 @@ export function Sidebar() {
   }
 
   if (role === "SUPER_ADMIN") {
+    items.push({ href: "/admin/productividad/sesiones", label: "Sesiones de Cronómetro", icon: Timer });
     items.push({ href: "/admin/monitoreo", label: "Monitor del Sistema", icon: Activity });
-    items.push({ href: "/admin/credenciales", label: "Credenciales Test", icon: KeyRound });
+    items.push({ href: "/admin/credenciales", label: "Credenciales", icon: KeyRound });
   }
 
   const sidebarBody = (
     <>
       <div className="px-6 py-6 border-b flex items-center justify-between" style={{ borderColor: "var(--sidebar-border)" }}>
-        <div className="flex items-center gap-3">
-          <div
-            className="w-9 h-9 rounded-md flex items-center justify-center shadow-lg"
-            style={{ background: "var(--gold)", boxShadow: "0 4px 16px rgba(201, 168, 76, 0.25)" }}
-          >
-            <Scale className="w-4 h-4" style={{ color: "#FFFFFF" }} />
-          </div>
-          <div>
-            <div className="text-sm font-bold tracking-wider" style={{ fontFamily: "'Space Grotesk', sans-serif", color: "var(--sidebar-text)" }}>
-              AT <span style={{ color: "var(--gold)" }}>INFORMA</span>
-            </div>
-            <div className="text-[10px] uppercase tracking-widest" style={{ color: "var(--sidebar-text-muted)" }}>
-              Legal Operating System
-            </div>
-          </div>
+        <div
+          className="rounded-lg p-2 flex items-center justify-center"
+          style={{ background: "#FFFFFF", boxShadow: "0 2px 8px rgba(0,0,0,0.18)" }}
+        >
+          <BrandMark size="sm" />
         </div>
         <button
           type="button"
@@ -142,15 +135,16 @@ export function Sidebar() {
       )}
 
       {/* Sidebar — drawer on mobile, fixed on desktop */}
-      <aside
-        className={`fixed lg:fixed top-0 left-0 z-50 h-screen w-64 flex flex-col transform transition-transform duration-200 ease-out ${
-          isOpen ? "translate-x-0" : "-translate-x-full"
-        } lg:translate-x-0`}
-        style={{ background: "var(--sidebar-bg)", borderRight: "1px solid var(--sidebar-border)" }}
-        aria-hidden={!isOpen && !isLargeScreen}
-      >
-        {sidebarBody}
-      </aside>
+      {(() => {
+        const asideProps: React.HTMLAttributes<HTMLElement> = {
+          className: `fixed lg:fixed top-0 left-0 z-50 h-screen w-64 flex flex-col transform transition-transform duration-200 ease-out ${
+            isOpen ? "translate-x-0" : "-translate-x-full"
+          } lg:translate-x-0`,
+          style: { background: "var(--sidebar-bg)", borderRight: "1px solid var(--sidebar-border)" },
+          "aria-hidden": !isOpen && !isLargeScreen,
+        };
+        return <aside {...asideProps}>{sidebarBody}</aside>;
+      })()}
     </>
   );
 }

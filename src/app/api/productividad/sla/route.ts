@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { withRls } from "@/lib/rls";
-import { Role } from "@prisma/client";
+import { Role } from "@/lib/db-enums";
 import { z } from "zod";
 import { computeSlaStatus } from "@/lib/productividad/sla";
 

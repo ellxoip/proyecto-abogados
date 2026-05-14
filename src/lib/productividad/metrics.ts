@@ -1,4 +1,4 @@
-import { CaseStage, ActivityCategory } from "@prisma/client";
+import { CaseStage, ActivityCategory } from "@/lib/db-enums";
 import { differenceInCalendarDays } from "date-fns";
 import { withRls } from "@/lib/rls";
 

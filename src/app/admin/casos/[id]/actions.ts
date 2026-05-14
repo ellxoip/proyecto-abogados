@@ -7,7 +7,7 @@ import { assertCaseActive, CaseHaltedError } from "@/lib/case-health";
 import { enqueueWhatsApp, enqueueEmail } from "@/lib/notifications";
 import { encodeAudioMessage, encodeFileMessage } from "@/lib/chat-message";
 import { supabase } from "@/lib/supabase-client";
-import { CommentType, Role } from "@prisma/client";
+import { CommentType, Role } from "@/lib/db-enums";
 
 export type ActionResult =
   | { ok: true; comment?: CommentResult }
@@ -29,7 +29,7 @@ export async function postUpdate(input: {
   const session = await auth();
   if (!session) return { ok: false, code: "forbidden", reason: "unauthenticated" };
   const role = session.user.role;
-  // Only staff members can post updates (Abogado, Jefe de Mesa, SuperAdmin)
+  // Only staff members can post updates (Abogado, Jefe de Grupo, SuperAdmin)
   if (role !== Role.ABOGADO && role !== Role.SUPER_ADMIN && role !== Role.JEFE_DE_MESA) {
     return { ok: false, code: "forbidden", reason: "only staff may upload case updates" };
   }

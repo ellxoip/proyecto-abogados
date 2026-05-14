@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { withRls } from "@/lib/rls";
-import { Role, CaseStage } from "@prisma/client";
+import { Role, CaseStage } from "@/lib/db-enums";
 import { analyzeCaseWithAI } from "@/lib/productividad/openai";
 import { computeSlaStatus } from "@/lib/productividad/sla";
 import { differenceInCalendarDays } from "date-fns";

@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath, revalidateTag } from "next/cache";
-import { CaseStage, Role } from "@prisma/client";
+import { CaseStage, Role } from "@/lib/db-enums";
 import { auth } from "@/lib/auth";
 import { withRls } from "@/lib/rls";
 import { logAudit } from "@/lib/audit";

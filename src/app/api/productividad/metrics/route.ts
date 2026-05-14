@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { Role } from "@prisma/client";
+import { Role } from "@/lib/db-enums";
 import { getTeamMetrics, getActivityDistribution } from "@/lib/productividad/metrics";
 import { subDays } from "date-fns";
 

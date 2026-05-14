@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { withRls, withSystemRls } from "@/lib/rls";
-import { AuditAction, CaseStage, Role } from "@prisma/client";
+import { AuditAction, CaseStage, Role } from "@/lib/db-enums";
 
 function staffCaseScope(actorRole: Role, actorId: string) {
   if (actorRole === Role.SUPER_ADMIN) return {};
@@ -25,7 +25,7 @@ export async function deriveCasesToJefeMesa(caseIds: string[], jefeMesaId: strin
   const actorRole = session.user.role;
 
   if (actorRole !== Role.SUPER_ADMIN) {
-    throw new Error("forbidden: only SuperAdmin may derive cases to a Jefe de Mesa");
+    throw new Error("forbidden: only SuperAdmin may derive cases to a Jefe de Grupo");
   }
 
   await withRls(async (tx) => {
@@ -63,19 +63,25 @@ export async function assignCasesToAbogados(caseIds: string[], abogadoIds: strin
   const actorRole = session.user.role;
   const actorId = session.user.id;
 
-  // Tanto el Jefe de Mesa como el SuperAdmin pueden asignar abogados.
+  // Tanto el Jefe de Grupo como el SuperAdmin pueden asignar abogados.
   if (actorRole !== Role.JEFE_DE_MESA && actorRole !== Role.SUPER_ADMIN) {
-    throw new Error("forbidden: only Jefe de Mesa or SuperAdmin may assign lawyers");
+    throw new Error("forbidden: only Jefe de Grupo or SuperAdmin may assign lawyers");
   }
 
   await withRls(async (tx) => {
     const cases = await tx.case.findMany({
       where: { id: { in: caseIds }, ...staffCaseScope(actorRole, actorId) },
-      select: { id: true, stage: true, is_paid: true },
+      select: { id: true, stage: true, is_paid: true, unpaid_months: true, code: true },
     });
 
     if (cases.length !== caseIds.length) throw new Error("some cases not found");
     if (cases.some(c => !c.is_paid)) throw new Error("Cannot assign: some cases have initial payment not validated.");
+    const blocked = cases.filter(c => (c.unpaid_months ?? 0) >= 3);
+    if (blocked.length > 0) {
+      throw new Error(
+        `No se puede asignar: ${blocked.length} caso(s) con 3 o más cuotas vencidas (${blocked.map(c => c.code).join(", ")}). Regulariza el pago en Gestión de Mora primero.`,
+      );
+    }
 
     const validLawyers = await tx.user.findMany({
       where:

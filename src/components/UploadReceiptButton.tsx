@@ -42,7 +42,7 @@ export function UploadReceiptButton({ caseId }: { caseId: string }) {
       <button 
         onClick={() => fileInputRef.current?.click()}
         disabled={isPending}
-        className="flex items-center justify-center gap-2 bg-[var(--gold)] hover:bg-[#D4B85C] text-[var(--text)] px-6 py-3 rounded font-bold text-xs uppercase tracking-widest transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        className="flex items-center justify-center gap-2 bg-[var(--gold)] hover:bg-[var(--sidebar-deep)] text-[var(--text)] px-6 py-3 rounded font-bold text-xs uppercase tracking-widest transition-all disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {isPending ? (
           <>

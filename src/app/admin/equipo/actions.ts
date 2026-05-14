@@ -2,7 +2,7 @@
 
 import { auth } from "@/lib/auth";
 import { withRls } from "@/lib/rls";
-import { Role } from "@prisma/client";
+import { Role } from "@/lib/db-enums";
 import { revalidatePath } from "next/cache";
 import bcrypt from "bcryptjs";
 
@@ -33,28 +33,28 @@ export async function createStaffMember(data: {
   phone: string;
   password: string;
   role: "JEFE_DE_MESA" | "ABOGADO";
-  managedById?: string; // Jefe de Mesa al que reporta (solo para abogados)
+  managedById?: string; // Jefe de Grupo al que reporta (solo para abogados)
 }) {
   const session = await auth();
   if (!session || session.user.role !== Role.SUPER_ADMIN) {
     return { ok: false, reason: "Solo el Super Admin puede crear personal" };
   }
 
-  // Validar que si es abogado, tenga un jefe de mesa asignado
+  // Validar que si es abogado, tenga un jefe de grupo asignado
   if (data.role === "ABOGADO" && !data.managedById) {
-    return { ok: false, reason: "Debe asignar un Jefe de Mesa responsable para el abogado." };
+    return { ok: false, reason: "Debe asignar un Jefe de Grupo responsable para el abogado." };
   }
 
   try {
     await withRls(async (tx) => {
-      // Si se especifica managedById, verificar que existe y es Jefe de Mesa
+      // Si se especifica managedById, verificar que existe y es Jefe de Grupo
       if (data.managedById) {
         const jefe = await tx.user.findUnique({
           where: { id: data.managedById },
           select: { role: true },
         });
         if (!jefe || jefe.role !== Role.JEFE_DE_MESA) {
-          throw new Error("El responsable seleccionado no es un Jefe de Mesa válido.");
+          throw new Error("El responsable seleccionado no es un Jefe de Grupo válido.");
         }
       }
 

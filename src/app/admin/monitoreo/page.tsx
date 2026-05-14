@@ -1,7 +1,7 @@
 import { auth } from "@/lib/auth";
 import { withRls } from "@/lib/rls";
 import { PROCESSING_PROCESSES } from "@/lib/processing/definitions";
-import { AuditAction, CaseStage, Role } from "@prisma/client";
+import { AuditAction, CaseStage, Role } from "@/lib/db-enums";
 import { notFound } from "next/navigation";
 import { Activity, CheckCircle2, Clock, Database, Mail, MessageCircle, ShieldCheck, TimerReset, Zap, type LucideIcon } from "lucide-react";
 

@@ -15,7 +15,7 @@ const PRESETS: Record<string, { bg: string; fg: string; border: string }> = {
 export function CategoryBadge({ category }: CategoryProps) {
   if (!category) {
     return (
-      <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-sm bg-[rgba(255,255,255,0.02)] text-[var(--text-muted)] border border-[var(--border-glass)]">
+      <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-sm bg-[var(--surface-3)] text-[var(--text-muted)] border border-[var(--border-glass)]">
         Sin Categoría
       </span>
     );

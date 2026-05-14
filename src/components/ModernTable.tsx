@@ -99,7 +99,7 @@ export function ModernTable<T extends Record<string, any>>({
               {columns.map((column) => (
                 <th
                   key={String(column.key)}
-                  className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-[rgba(255,255,255,0.05)] transition-colors"
+                  className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-[var(--btn-ghost-hover)] transition-colors"
                   style={{ color: "var(--text-muted)" }}
                   onClick={() => column.sortable && handleSort(String(column.key))}
                 >
@@ -135,7 +135,7 @@ export function ModernTable<T extends Record<string, any>>({
                 <tr
                   key={index}
                   onClick={() => onRowClick?.(row)}
-                  className="border-b transition-colors hover:bg-[rgba(255,255,255,0.02)]"
+                  className="border-b transition-colors hover:bg-[var(--row-hover)]"
                   style={{
                     borderColor: "var(--border-glass)",
                     cursor: onRowClick ? "pointer" : "default"

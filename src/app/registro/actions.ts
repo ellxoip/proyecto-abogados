@@ -1,7 +1,7 @@
 "use server";
 
 import bcrypt from "bcryptjs";
-import { CaseStage, Role, AuditAction } from "@prisma/client";
+import { CaseStage, Role, AuditAction } from "@/lib/db-enums";
 import { withSystemRls } from "@/lib/rls";
 import { logAudit } from "@/lib/audit";
 import { ingestCase } from "@/lib/services/ingestion";
@@ -90,7 +90,7 @@ export async function registerAndOpenCase(input: RegisterInput): Promise<Registe
         categoryId: category.id,
         stage: CaseStage.OPEN,
         is_paid: false,
-        metadata: { initialDescription: description, source: "public_registration" },
+        metadata: JSON.stringify({ initialDescription: description, source: "public_registration" }),
       },
       select: { id: true, code: true },
     });

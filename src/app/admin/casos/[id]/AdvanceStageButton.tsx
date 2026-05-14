@@ -1,41 +1,101 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { advanceToInProgress } from "./stage-actions";
-import { Play, AlertTriangle, Loader2 } from "lucide-react";
+import { Play, Loader2 } from "lucide-react";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { StatusBanner } from "@/components/StatusBanner";
 
-export function AdvanceStageButton({ caseId }: { caseId: string }) {
+export function AdvanceStageButton({ caseId, caseCode }: { caseId: string; caseCode?: string }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<{ tone: "success" | "error"; text: string } | null>(
+    null,
+  );
+
+  async function doAdvance() {
+    return new Promise<void>((resolve) => {
+      startTransition(async () => {
+        try {
+          const res = await advanceToInProgress(caseId);
+          if (!res.success && "error" in res && res.error) {
+            setFeedback({ tone: "error", text: res.error });
+          } else {
+            const wasAlready = "alreadyAdvanced" in res && res.alreadyAdvanced;
+            setFeedback({
+              tone: "success",
+              text: wasAlready
+                ? "El caso ya estaba en desarrollo."
+                : "Caso avanzado a En Proceso. Puedes comenzar a registrar avances.",
+            });
+            setOpen(false);
+            router.refresh();
+          }
+        } catch (err: any) {
+          setFeedback({
+            tone: "error",
+            text: err?.message ?? "Error desconocido al avanzar el caso.",
+          });
+        } finally {
+          resolve();
+        }
+      });
+    });
+  }
 
   return (
     <div className="flex flex-col items-start gap-2">
       <button
-        onClick={() => {
-          setError(null);
-          startTransition(async () => {
-            const res = await advanceToInProgress(caseId);
-            if (!res.success && res.error) setError(res.error);
-          });
-        }}
+        type="button"
+        onClick={() => setOpen(true)}
         disabled={isPending}
-        className="flex items-center gap-2 px-5 py-2.5 rounded-md text-[11px] font-bold uppercase tracking-widest transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
-        style={{ background: "linear-gradient(135deg, var(--gold) 0%, #F5E9C8 100%)", color: "#0A0A0A" }}
+        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-md text-[11px] font-bold uppercase tracking-widest transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+        style={{
+          background: "linear-gradient(180deg, var(--sidebar-bg) 0%, var(--sidebar-deep) 100%)",
+          color: "#FFFFFF",
+          boxShadow: "0 8px 18px -6px rgba(201, 168, 76, 0.40)",
+        }}
       >
-        {isPending ? (
-          <Loader2 className="w-4 h-4 animate-spin" />
-        ) : (
-          <Play className="w-4 h-4" />
-        )}
-        {isPending ? "Avanzando..." : "Iniciar Desarrollo del Caso"}
+        {isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+        {isPending ? "Avanzando…" : "Iniciar Desarrollo del Caso"}
       </button>
 
-      {error && (
-        <div className="text-[10px] text-[var(--red)] font-bold flex items-center gap-1.5 max-w-xs animate-in fade-in">
-          <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
-          {error}
+      {feedback && (
+        <div className="w-[320px]">
+          <StatusBanner tone={feedback.tone} onDismiss={() => setFeedback(null)}>
+            {feedback.text}
+          </StatusBanner>
         </div>
       )}
+
+      <ConfirmDialog
+        open={open}
+        title="Iniciar desarrollo del caso"
+        tone="default"
+        description={
+          <>
+            Estás por avanzar el caso{caseCode ? (
+              <>
+                {" "}<span className="font-mono text-[var(--text)]">{caseCode}</span>
+              </>
+            ) : null}{" "}
+            al estado <strong className="text-[var(--text)]">En Proceso</strong>. Esto indica que el
+            equipo legal ya está trabajando activamente en el expediente.
+          </>
+        }
+        bullets={[
+          "El cliente verá el caso como 'En Proceso' en su portal.",
+          "Si no hay abogado asignado, quedas tú como responsable principal.",
+          "Queda registrado en la bitácora (CASE_ASSIGNED).",
+          "Podrás registrar avances, comentarios y horas de trabajo desde ahora.",
+        ]}
+        confirmLabel="Sí, iniciar desarrollo"
+        cancelLabel="Cancelar"
+        onConfirm={doAdvance}
+        onClose={() => setOpen(false)}
+      />
     </div>
   );
 }

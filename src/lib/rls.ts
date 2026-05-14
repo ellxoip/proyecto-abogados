@@ -1,4 +1,5 @@
-import { Prisma, Role } from "@prisma/client";
+import { Prisma } from "@prisma/client";
+import { Role } from "@/lib/db-enums";
 import { _prisma } from "@/lib/db/_client";
 
 /**
@@ -14,8 +15,10 @@ export async function withRls<T>(
   const userId = session?.user.id ?? "";
   const userRole = session?.user.role ?? "";
 
+  // SQLite migration: set_config() is Postgres-only. RLS is NOT enforced on
+  // SQLite; the transaction is kept so query semantics match Postgres usage.
+  void userId; void userRole;
   return _prisma.$transaction(async (tx) => {
-    await tx.$queryRaw`SELECT set_config('app.user_id', ${userId}, true), set_config('app.user_role', ${userRole}, true)`;
     return fn(tx);
   }, {
     maxWait: 5000, // default is 2000
@@ -30,8 +33,8 @@ export async function withRls<T>(
 export async function withSystemRls<T>(
   fn: (tx: Prisma.TransactionClient) => Promise<T>,
 ): Promise<T> {
+  void Role.SISTEMA_CUOTAS; // see SQLite note above
   return _prisma.$transaction(async (tx) => {
-    await tx.$queryRaw`SELECT set_config('app.user_id', '', true), set_config('app.user_role', ${Role.SISTEMA_CUOTAS}, true)`;
     return fn(tx);
   }, {
     maxWait: 5000,

@@ -2,7 +2,7 @@
 
 import { auth } from "@/lib/auth";
 import { withRls } from "@/lib/rls";
-import { Role, AuditAction } from "@prisma/client";
+import { Role, AuditAction } from "@/lib/db-enums";
 import { revalidatePath } from "next/cache";
 import { enqueueWhatsApp } from "@/lib/notifications";
 import { reactivateCaseIfPaid } from "@/lib/case-health";

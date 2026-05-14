@@ -1,4 +1,4 @@
-import { AuditAction } from "@prisma/client";
+import { AuditAction } from "@/lib/db-enums";
 import { withSystemRls } from "@/lib/rls";
 import type { EmailJob, WhatsAppJob } from "@/lib/notifications";
 import { sendEmailTemplate, type EmailTemplate } from "@/lib/email-resend";
@@ -114,7 +114,7 @@ export async function processEmailJob(payload: EmailJob) {
       const { generateClientPassword } = await import("@/lib/services/crm-onboarding");
       const password = generateClientPassword(c.client.fullName, c.client.phone ?? "");
       const APP_URL = process.env.APP_URL ?? "http://localhost:3001";
-      body = `Sus credenciales de acceso al portal AT Informa:\nEmail: ${c.client.email}\nContraseña: ${password}\n\nPortal de seguimiento: ${APP_URL}/login\n\nGuarde esta información de forma segura. Con estas credenciales podrá consultar su caso y descargar los documentos adjuntos.`;
+      body = `Sus credenciales de acceso al portal Hive Control:\nEmail: ${c.client.email}\nContraseña: ${password}\n\nPortal de seguimiento: ${APP_URL}/login\n\nGuarde esta información de forma segura. Con estas credenciales podrá consultar su caso y descargar los documentos adjuntos.`;
     } else if (payload.kind === "case_update" && "updateId" in payload) {
       const u = await tx.update.findUnique({
         where: { id: payload.updateId },

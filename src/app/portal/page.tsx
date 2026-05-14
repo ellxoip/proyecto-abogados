@@ -1,41 +1,46 @@
 import { withRls } from "@/lib/rls";
 import { auth } from "@/lib/auth";
 import Link from "next/link";
-import { CaseStage } from "@prisma/client";
+import { CaseStage } from "@/lib/db-enums";
 import { STAGE_MESSAGES } from "@/lib/case-health";
 import { redirect } from "next/navigation";
 import {
   Folder, MessageSquare, Lock, Scale, CheckCircle, Clock,
   AlertCircle, ChevronRight, FileText, Users, CalendarDays,
   Shield, Download,
+  CreditCard,
 } from "lucide-react";
 
 export default async function PortalHome() {
   const session = await auth();
   if (!session) redirect("/login");
 
-  const cases = await withRls((tx) =>
-    tx.case.findMany({
-      where: { client_id: session.user.id },
-      include: {
-        categoria: { select: { name: true } },
-        abogados: { select: { fullName: true } },
-        updates: {
-          orderBy: { createdAt: "desc" },
-          take: 1,
-          select: { id: true, document_url: true, description: true, createdAt: true },
+  const { cases, client } = await withRls(async (tx) => ({
+    client: await tx.user.findUnique({
+      where: { id: session.user.id },
+      select: { paymentLink: true },
+    }),
+    cases: await tx.case.findMany({
+        where: { client_id: session.user.id },
+        include: {
+          categoria: { select: { name: true } },
+          abogados: { select: { fullName: true } },
+          updates: {
+            orderBy: { createdAt: "desc" },
+            take: 1,
+            select: { id: true, document_url: true, description: true, createdAt: true },
+          },
+          comments: {
+            where: { type: "PUBLIC" },
+            include: { author: { select: { fullName: true } } },
+            orderBy: { createdAt: "desc" },
+            take: 5,
+          },
+          _count: { select: { updates: true } },
         },
-        comments: {
-          where: { type: "PUBLIC" },
-          include: { author: { select: { fullName: true } } },
-          orderBy: { createdAt: "desc" },
-          take: 5,
-        },
-        _count: { select: { updates: true } },
-      },
-      orderBy: { updatedAt: "desc" },
-    })
-  );
+        orderBy: { updatedAt: "desc" },
+      }),
+  }));
 
   const firstName = session.user.name?.split(" ")[0] ?? "Cliente";
   const totalCases = cases.length;
@@ -68,7 +73,7 @@ export default async function PortalHome() {
                 className="text-[10px] uppercase tracking-widest font-bold"
                 style={{ color: "var(--gold)" }}
               >
-                AT INFORMA · Portal de Seguimiento
+                HIVE CONTROL · Portal de Seguimiento
               </span>
             </div>
             <h1
@@ -146,6 +151,31 @@ export default async function PortalHome() {
           </div>
         )}
       </div>
+
+      {client?.paymentLink && (
+        <a
+          href={client.paymentLink}
+          target="_blank"
+          rel="noreferrer"
+          className="flex items-center justify-between gap-4 rounded-lg p-5 transition-all hover:shadow-lg"
+          style={{
+            background: "linear-gradient(180deg, var(--sidebar-bg) 0%, var(--sidebar-deep) 100%)",
+            border: "1px solid var(--gold-border)",
+            color: "#FFFFFF",
+          }}
+        >
+          <div className="flex items-center gap-3">
+            <div className="rounded-md p-2" style={{ background: "rgba(255,255,255,0.10)" }}>
+              <CreditCard className="h-5 w-5" style={{ color: "var(--gold-soft)" }} />
+            </div>
+            <div>
+              <p className="text-sm font-bold">Pagar cuotas pendientes</p>
+              <p className="text-xs opacity-75">Abre tu enlace seguro de PagaCuotas.</p>
+            </div>
+          </div>
+          <ChevronRight className="h-5 w-5" />
+        </a>
+      )}
 
       {/* ── Cases section ── */}
       <div>

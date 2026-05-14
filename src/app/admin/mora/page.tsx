@@ -1,18 +1,35 @@
 import { auth } from "@/lib/auth";
 import { withRls } from "@/lib/rls";
-import { CaseStage, Role, PaymentStatus } from "@prisma/client";
-import { Bell, CheckCircle2, TrendingDown, Clock, ShieldAlert, FileText } from "lucide-react";
+import { CaseStage, Role, PaymentStatus } from "@/lib/db-enums";
+import {
+  TrendingDown,
+  Clock,
+  ShieldAlert,
+  FileText,
+  CheckCircle2,
+  AlertTriangle,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import Link from "next/link";
-import { remindClient, regularizeCase } from "./actions";
+import { MoraActions } from "./MoraActions";
+import { EmptyState } from "@/components/EmptyState";
+import { HelpTip } from "@/components/HelpTip";
 
-export default async function MoraDashboardPage({ searchParams }: { searchParams: { sort?: string } }) {
+export default async function MoraDashboardPage({
+  searchParams,
+}: {
+  searchParams: { sort?: string };
+}) {
   const session = await auth();
   if (session?.user.role !== Role.SUPER_ADMIN) {
     return (
-      <div className="p-16 text-center">
-        <ShieldAlert className="w-12 h-12 text-red-600 mx-auto mb-4" />
-        <h1 className="text-xl font-bold font-serif">Acceso Restringido</h1>
-        <p className="text-sm text-slate-500 mt-2">Solo el SuperAdmin puede gestionar la morosidad global.</p>
+      <div className="max-w-3xl mx-auto py-12">
+        <EmptyState
+          icon={ShieldAlert}
+          title="Acceso restringido"
+          description="Solo el SuperAdmin puede gestionar la morosidad global de la firma. Si crees que necesitas acceso, contacta al administrador del sistema."
+          size="lg"
+        />
       </div>
     );
   }
@@ -23,190 +40,266 @@ export default async function MoraDashboardPage({ searchParams }: { searchParams
         OR: [
           { stage: CaseStage.HALTED_BY_PAYMENT },
           { stage: CaseStage.WAITING_CUOTAS },
-          { is_paid: false }
-        ]
+          { is_paid: false },
+        ],
       },
       include: {
         client: { select: { fullName: true, phone: true } },
-        payments: { orderBy: { createdAt: "desc" }, take: 1 }
+        payments: { orderBy: { createdAt: "desc" }, take: 1 },
       },
-      orderBy: searchParams.sort === "client_asc" ? { client: { fullName: "asc" } } : { updatedAt: "desc" }
+      orderBy:
+        searchParams.sort === "client_asc"
+          ? { client: { fullName: "asc" } }
+          : { updatedAt: "desc" },
     });
 
     const atRiskSum = await tx.paymentEvent.aggregate({
       _sum: { amount: true },
       where: {
         status: { in: [PaymentStatus.UNPAID, PaymentStatus.OVERDUE] },
-        case: { stage: CaseStage.HALTED_BY_PAYMENT }
-      }
+        case: { stage: CaseStage.HALTED_BY_PAYMENT },
+      },
     });
 
     return {
       cases,
       stats: {
         atRisk: atRiskSum._sum.amount?.toNumber() ?? 0,
-        haltedCount: cases.filter(c => c.stage === CaseStage.HALTED_BY_PAYMENT).length,
-        waitingCount: cases.filter(c => c.stage === CaseStage.WAITING_CUOTAS).length,
-      }
+        haltedCount: cases.filter((c) => c.stage === CaseStage.HALTED_BY_PAYMENT).length,
+        waitingCount: cases.filter((c) => c.stage === CaseStage.WAITING_CUOTAS).length,
+      },
     };
   });
 
   return (
     <div className="max-w-7xl mx-auto">
       <header className="mb-8">
-        <h1 className="text-3xl font-bold tracking-tight text-[var(--text)] font-serif">
-          Gestión de Morosidad
-        </h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-3xl font-bold tracking-tight text-[var(--text)] font-serif">
+            Gestión de Morosidad
+          </h1>
+          <HelpTip
+            content="Control centralizado de la cartera vencida. Aquí ves los casos detenidos por mora, los que aún no han validado pago inicial, y puedes regularizar pagos o enviar recordatorios."
+            side="bottom"
+            size="md"
+            asInfo
+          />
+        </div>
         <p className="text-sm text-[var(--text-muted)] mt-1 font-medium">
           Control centralizado de cuentas por cobrar y procesos legales suspendidos.
         </p>
       </header>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <StatCard 
-          icon={TrendingDown} 
-          label="Cartera Vencida (En Riesgo)" 
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-8">
+        <StatCard
+          icon={TrendingDown}
+          label="Cartera Vencida (En Riesgo)"
           value={`$${stats.atRisk.toLocaleString("es-CL")}`}
-          sub="Basado en casos con flujo detenido"
-          color="red"
+          sub="Suma total de cuotas vencidas en casos con flujo detenido"
+          tone="red"
         />
-        <StatCard 
-          icon={ShieldAlert} 
-          label="Casos Paralizados" 
+        <StatCard
+          icon={ShieldAlert}
+          label="Casos Paralizados"
           value={stats.haltedCount.toString()}
-          sub="Requieren regularización para continuar"
-          color="orange"
+          sub="Requieren regularización para continuar trabajando"
+          tone="amber"
         />
-        <StatCard 
-          icon={Clock} 
-          label="Nuevos sin Pago Inicial" 
+        <StatCard
+          icon={Clock}
+          label="Nuevos sin Pago Inicial"
           value={stats.waitingCount.toString()}
           sub="Pendientes de validación inicial"
-          color="amber"
+          tone="info"
         />
       </div>
 
-      <div className="bg-[var(--surface)] border border-[var(--border-glass)] rounded-sm shadow-sm overflow-x-auto">
-        <table className="w-full min-w-[820px] text-left border-collapse">
-          <thead>
-            <tr style={{ background: "var(--surface-2)" }}>
-              <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[var(--gold)] border-b border-[var(--border-glass)]">Expediente</th>
-              <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[var(--gold)] border-b border-[var(--border-glass)]">
-                <Link 
-                  href={`?sort=${searchParams.sort === "client_asc" ? "" : "client_asc"}`}
-                  className="flex items-center gap-1 hover:text-[var(--text)] transition-colors"
-                  title="Alternar orden alfabético"
-                >
-                  Cliente
-                  {searchParams.sort === "client_asc" ? (
-                    <span className="text-[var(--text)] font-extrabold">↑ A-Z</span>
-                  ) : (
-                    <span className="opacity-50 font-normal">⇵</span>
-                  )}
-                </Link>
-              </th>
-              <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[var(--gold)] border-b border-[var(--border-glass)]">Motivo Suspensión</th>
-              <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[var(--gold)] border-b border-[var(--border-glass)]">Acciones de Cobranza</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-[var(--border-glass)]">
-            {cases.length === 0 ? (
-              <tr>
-                <td colSpan={4} className="p-16 text-center text-sm text-[var(--text-muted)]">
-                  No hay casos en mora actualmente. ¡Excelente gestión financiera!
-                </td>
+      <div
+        className="bg-[var(--surface)] rounded-xl shadow-sm overflow-hidden"
+        style={{ border: "1px solid var(--card-border)" }}
+      >
+        <div
+          className="px-6 py-4 flex items-center justify-between"
+          style={{ background: "var(--surface-2)", borderBottom: "1px solid var(--card-border)" }}
+        >
+          <h2 className="text-sm font-semibold text-[var(--text)]">Casos con incidencia financiera</h2>
+          <span className="text-xs text-[var(--text-muted)]">
+            {cases.length} {cases.length === 1 ? "caso" : "casos"}
+          </span>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[820px] text-left border-collapse">
+            <thead>
+              <tr style={{ background: "var(--surface-3)" }}>
+                <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-[var(--gold-deep)] border-b border-[var(--card-border)]">
+                  Expediente
+                </th>
+                <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-[var(--gold-deep)] border-b border-[var(--card-border)]">
+                  <Link
+                    href={`?sort=${searchParams.sort === "client_asc" ? "" : "client_asc"}`}
+                    className="flex items-center gap-1 hover:text-[var(--text)] transition-colors"
+                    title="Alternar orden alfabético"
+                  >
+                    Cliente
+                    {searchParams.sort === "client_asc" ? (
+                      <span className="text-[var(--text)] font-extrabold">↑ A-Z</span>
+                    ) : (
+                      <span className="opacity-50 font-normal">⇵</span>
+                    )}
+                  </Link>
+                </th>
+                <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-[var(--gold-deep)] border-b border-[var(--card-border)]">
+                  Motivo Suspensión
+                </th>
+                <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-[var(--gold-deep)] border-b border-[var(--card-border)] text-right">
+                  Acciones de Cobranza
+                </th>
               </tr>
-            ) : (
-              cases.map((c) => (
-                <tr key={c.id} className="hover:bg-[var(--surface)] transition-colors group">
-                  <td className="px-6 py-5">
-                    <Link href={`/admin/casos/${c.id}`} className="font-bold text-[var(--text)] tracking-wider hover:text-[var(--gold)] transition-colors">
-                      {c.code}
-                    </Link>
-                    <div className="text-[10px] text-[var(--text-muted)] mt-0.5">Halt: {c.halted_at ? new Date(c.halted_at).toLocaleDateString("es-CL") : "N/A"}</div>
-                  </td>
-                  <td className="px-6 py-5">
-                    <div className="text-sm font-medium text-[var(--text)]">{c.client.fullName}</div>
-                    <div className="text-[11px] text-[var(--text-muted)]">{c.client.phone}</div>
-                  </td>
-                  <td className="px-6 py-5">
-                    <div className="flex items-center gap-2">
-                       <div className={`w-2 h-2 rounded-full ${c.stage === CaseStage.HALTED_BY_PAYMENT ? "bg-red-500" : "bg-orange-400"}`} />
-                       <span className="text-xs font-bold text-[var(--text)]">
-                         {c.halted_reason || (c.stage === CaseStage.WAITING_CUOTAS ? "Pendiente Cuota Inicial" : "Pendiente de Validación")}
-                       </span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-5">
-                    <div className="flex items-center justify-end gap-2">
-                       {c.payments[0]?.receipt_url && (
-                         <a 
-                           href={c.payments[0].receipt_url}
-                           target="_blank"
-                           rel="noopener noreferrer"
-                           className="flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-[10px] font-bold uppercase tracking-widest bg-[rgba(59,130,246,0.1)] text-blue-400 border border-blue-500/20 hover:bg-blue-100 transition-all mr-2"
-                           title="Ver comprobante de pago subido por el cliente"
-                         >
-                           <FileText className="w-3.5 h-3.5" />
-                           Ver Comprobante
-                         </a>
-                       )}
-                       <ActionButton 
-                         icon={Bell} 
-                         label="Recordar" 
-                         action={async () => { "use server"; await remindClient(c.id); }} 
-                         variant="outline"
-                       />
-                       <ActionButton 
-                         icon={CheckCircle2} 
-                         label="Regularizar" 
-                         action={async () => { "use server"; await regularizeCase(c.id); }} 
-                         variant="primary"
-                       />
-                    </div>
+            </thead>
+            <tbody>
+              {cases.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="p-0">
+                    <EmptyState
+                      icon={CheckCircle2}
+                      title="Sin morosidad activa"
+                      description="No hay casos en mora ni cuentas por cobrar pendientes. La gestión financiera está al día."
+                      size="lg"
+                    />
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-function StatCard({ icon: Icon, label, value, sub, color }: { icon: any, label: string, value: string, color: string, sub: string }) {
-  const bg = color === "red" ? "bg-[rgba(239,68,68,0.1)]" : color === "orange" ? "bg-[rgba(249,115,22,0.1)]" : "bg-amber-50";
-  const text = color === "red" ? "text-red-600" : color === "orange" ? "text-orange-600" : "text-amber-600";
-  
-  return (
-    <div className="bg-[var(--surface)] border border-[var(--border-glass)] rounded-sm p-6 shadow-sm">
-      <div className="flex items-center justify-between mb-4">
-        <div className={`p-2 rounded-sm ${bg}`}>
-          <Icon className={`w-5 h-5 ${text}`} />
+              ) : (
+                cases.map((c) => {
+                  const isHalted = c.stage === CaseStage.HALTED_BY_PAYMENT;
+                  return (
+                    <tr
+                      key={c.id}
+                      className="transition-colors group"
+                      style={{
+                        background: isHalted ? "rgba(220, 38, 38, 0.04)" : undefined,
+                        borderLeft: isHalted
+                          ? "3px solid var(--red)"
+                          : "3px solid rgba(217, 119, 6, 0.4)",
+                        borderBottom: "1px solid var(--border-subtle)",
+                      }}
+                    >
+                      <td className="px-6 py-4">
+                        <Link
+                          href={`/admin/casos/${c.id}`}
+                          className="font-bold text-[var(--text)] tracking-wider hover:text-[var(--gold-deep)] transition-colors"
+                        >
+                          {c.code}
+                        </Link>
+                        <div className="text-[10px] text-[var(--text-muted)] mt-0.5 flex items-center gap-1">
+                          <Clock className="w-2.5 h-2.5" />
+                          {c.halted_at
+                            ? `Detenido: ${new Date(c.halted_at).toLocaleDateString("es-CL")}`
+                            : `Actualizado: ${new Date(c.updatedAt).toLocaleDateString("es-CL")}`}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-sm font-medium text-[var(--text)]">
+                          {c.client.fullName}
+                        </div>
+                        <div className="text-[11px] text-[var(--text-muted)]">{c.client.phone}</div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-2">
+                          {isHalted ? (
+                            <AlertTriangle className="w-3.5 h-3.5 text-[var(--red)]" />
+                          ) : (
+                            <Clock className="w-3.5 h-3.5 text-[var(--amber)]" />
+                          )}
+                          <span className="text-xs font-medium text-[var(--text)]">
+                            {c.halted_reason ||
+                              (c.stage === CaseStage.WAITING_CUOTAS
+                                ? "Pendiente cuota inicial"
+                                : "Pendiente de validación")}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center justify-end gap-2 relative">
+                          {c.payments[0]?.receipt_url && (
+                            <a
+                              href={c.payments[0].receipt_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest transition-all"
+                              style={{
+                                background: "var(--blue-dim)",
+                                color: "var(--blue)",
+                                border: "1px solid var(--blue-border)",
+                              }}
+                              title="Ver comprobante subido por el cliente"
+                            >
+                              <FileText className="w-3.5 h-3.5" />
+                              Comprobante
+                            </a>
+                          )}
+                          <MoraActions
+                            caseId={c.id}
+                            caseCode={c.code}
+                            clientName={c.client.fullName}
+                          />
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
-      <div className="text-[11px] font-bold text-[var(--text-muted)] uppercase tracking-widest mb-1">{label}</div>
-      <div className="text-3xl font-bold text-[var(--text)]">{value}</div>
-      <p className="text-[10px] text-[var(--text-muted)] mt-3 leading-relaxed">{sub}</p>
     </div>
   );
 }
 
-async function ActionButton({ icon: Icon, label, action, variant }: { icon: any, label: string, action: () => Promise<any>, variant: "primary" | "outline" }) {
+function StatCard({
+  icon: Icon,
+  label,
+  value,
+  sub,
+  tone,
+}: {
+  icon: LucideIcon;
+  label: string;
+  value: string;
+  sub: string;
+  tone: "red" | "amber" | "info";
+}) {
+  const styles = {
+    red: { bg: "var(--red-dim)", color: "var(--red)", border: "var(--red-border)" },
+    amber: { bg: "var(--amber-dim)", color: "var(--amber)", border: "var(--amber-border)" },
+    info: { bg: "var(--blue-dim)", color: "var(--blue)", border: "var(--blue-border)" },
+  }[tone];
+
   return (
-    <form action={action}>
-      <button
-        type="submit"
-        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-[10px] font-bold uppercase tracking-widest transition-all ${
-          variant === "primary" 
-            ? "bg-[var(--bg)] text-[var(--gold)] hover:bg-[var(--border-subtle)]" 
-            : "bg-[var(--surface)] text-[var(--text-muted)] border border-[var(--border-glass)] hover:border-[var(--gold)] hover:text-[var(--gold)]"
-        }`}
-      >
-        <Icon className="w-3.5 h-3.5" />
+    <div
+      className="rounded-xl p-6 transition-shadow hover:shadow-md"
+      style={{
+        background: "var(--surface)",
+        border: "1px solid var(--card-border)",
+        boxShadow: "var(--shadow-sm)",
+      }}
+    >
+      <div className="flex items-center justify-between mb-4">
+        <div
+          className="p-2.5 rounded-lg"
+          style={{ background: styles.bg, border: `1px solid ${styles.border}` }}
+        >
+          <Icon className="w-5 h-5" style={{ color: styles.color }} />
+        </div>
+      </div>
+      <div className="text-[11px] font-bold text-[var(--text-muted)] uppercase tracking-widest mb-1">
         {label}
-      </button>
-    </form>
+      </div>
+      <div className="text-3xl font-bold text-[var(--text)]" style={{ letterSpacing: "-0.02em" }}>
+        {value}
+      </div>
+      <p className="text-[11px] text-[var(--text-muted)] mt-3 leading-relaxed">{sub}</p>
+    </div>
   );
 }

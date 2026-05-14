@@ -2,14 +2,14 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { withRls } from "@/lib/rls";
-import { CommentType, Role } from "@prisma/client";
+import { CommentType, Role } from "@/lib/db-enums";
 import { isOnline } from "@/lib/update-presence";
 import { ArrowLeft, ArrowRight, Crown, Mail, MessageSquare, Phone, Scale, ShieldAlert } from "lucide-react";
 
 function buildWhatsAppLink(phone: string, fullName: string) {
   const cleaned = phone.replace(/[^\d]/g, "");
   if (!cleaned) return null;
-  const greeting = encodeURIComponent(`Hola ${fullName.split(" ")[0]}, te escribo desde AT INFORMA.`);
+  const greeting = encodeURIComponent(`Hola ${fullName.split(" ")[0]}, te escribo desde HIVE CONTROL.`);
   return `https://wa.me/${cleaned}?text=${greeting}`;
 }
 
@@ -99,7 +99,7 @@ export default async function TeamMemberMessagingPage({ params }: { params: { us
               <h1 className="text-2xl font-bold text-[var(--text)] font-serif truncate">{target.fullName}</h1>
               <div className="flex items-center gap-2 mt-1 text-xs" style={{ color: "var(--text-muted)" }}>
                 {target.role === Role.JEFE_DE_MESA ? (
-                  <span className="flex items-center gap-1"><Crown className="w-3 h-3 text-[var(--gold)]" /> Jefe de Mesa</span>
+                  <span className="flex items-center gap-1"><Crown className="w-3 h-3 text-[var(--gold)]" /> Jefe de Grupo</span>
                 ) : (
                   <span className="flex items-center gap-1"><Scale className="w-3 h-3 text-blue-500" /> Abogado</span>
                 )}
@@ -126,7 +126,7 @@ export default async function TeamMemberMessagingPage({ params }: { params: { us
             )}
             {target.email && (
               <a
-                href={`mailto:${target.email}?subject=${encodeURIComponent("AT INFORMA - Coordinación")}`}
+                href={`mailto:${target.email}?subject=${encodeURIComponent("HIVE CONTROL - Coordinación")}`}
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-md text-xs font-bold uppercase tracking-widest transition-colors"
                 style={{ background: "rgba(96,165,250,0.12)", color: "#60A5FA", border: "1px solid rgba(96,165,250,0.30)" }}
               >

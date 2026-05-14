@@ -3,7 +3,8 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { deriveCasesToJefeMesa, assignCasesToAbogados } from "./actions";
-import { Check, X, Users, Loader2 } from "lucide-react";
+import { Check, X, Users, Loader2, UserCog, Scale } from "lucide-react";
+import { StatusBanner } from "@/components/StatusBanner";
 
 type Member = { id: string; fullName: string };
 
@@ -61,9 +62,9 @@ export function BulkAssignBar({ selectedCaseIds, jefes, abogados, onClearSelecti
   return (
     <>
       {/* Floating Action Bar */}
-      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-[var(--bg)] text-[var(--gold)] px-6 py-4 rounded-full shadow-2xl flex items-center gap-6 animate-in slide-in-from-bottom-10 fade-in duration-300">
+      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-[var(--bg)] text-white px-6 py-4 rounded-full shadow-2xl flex items-center gap-6 animate-in slide-in-from-bottom-10 fade-in duration-300">
         <div className="flex items-center gap-2">
-          <div className="bg-[var(--gold)] text-[var(--text)] font-bold w-6 h-6 rounded-full flex items-center justify-center text-xs">
+          <div className="bg-[var(--sidebar-bg)] text-white font-bold w-6 h-6 rounded-full flex items-center justify-center text-xs">
             {selectedCaseIds.length}
           </div>
           <span className="text-xs font-bold uppercase tracking-widest">
@@ -71,19 +72,19 @@ export function BulkAssignBar({ selectedCaseIds, jefes, abogados, onClearSelecti
           </span>
         </div>
         
-        <div className="w-px h-6 bg-slate-700"></div>
+        <div className="w-px h-6 bg-white/20"></div>
 
         <div className="flex items-center gap-3">
           <button
             onClick={() => setOpen(true)}
-            className="flex items-center gap-2 bg-[var(--surface)] text-[var(--text)] px-4 py-2 rounded-full text-[10px] font-bold uppercase tracking-widest hover:bg-slate-200 transition-colors"
+            className="flex items-center gap-2 bg-[var(--surface)] text-[var(--text)] px-4 py-2 rounded-full text-[10px] font-bold uppercase tracking-widest hover:bg-[var(--surface-2)] transition-colors"
           >
             <Users className="w-4 h-4" />
             Asignar
           </button>
           <button
             onClick={onClearSelection}
-            className="p-2 text-slate-400 hover:text-[var(--text)] transition-colors"
+            className="p-2 text-white/70 hover:text-white transition-colors"
             title="Cancelar selección"
           >
             <X className="w-5 h-5" />
@@ -93,95 +94,182 @@ export function BulkAssignBar({ selectedCaseIds, jefes, abogados, onClearSelecti
 
       {/* Assignment Modal */}
       {open && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-[var(--bg)]/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <div className="bg-[var(--surface)] rounded border border-[var(--border-glass)] shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="bg-[var(--surface-2)] px-6 py-4 border-b border-[var(--border-glass)]">
-              <h3 className="text-sm font-bold text-[var(--text)] uppercase tracking-wider">
-                Asignación Masiva ({selectedCaseIds.length} casos)
-              </h3>
-              <p className="text-[10px] text-[var(--text-muted)] font-medium uppercase tracking-widest mt-1">Estructura la defensa del cliente</p>
+        <div
+          role="presentation"
+          onMouseDown={(e) => {
+            if (pending) return;
+            if (e.target === e.currentTarget) setOpen(false);
+          }}
+          className="fixed inset-0 z-50 grid place-items-center p-4 animate-in fade-in duration-150"
+          style={{ background: "rgba(8, 9, 13, 0.55)", backdropFilter: "blur(2px)" }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="assign-title"
+            className="w-full max-w-md rounded-2xl bg-[var(--surface)] shadow-[var(--shadow-xl)] animate-in zoom-in-95 duration-150 overflow-hidden"
+            style={{ border: "1px solid var(--card-border)" }}
+          >
+            <div className="px-6 py-5 border-b" style={{ background: "var(--surface-2)", borderColor: "var(--card-border)" }}>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h3 id="assign-title" className="text-base font-semibold text-[var(--text)]">
+                    {mode === "jefe" ? "Derivar al Jefe de Grupo" : "Asignar al Equipo Legal"}
+                  </h3>
+                  <p className="mt-0.5 text-xs text-[var(--text-muted)]">
+                    {selectedCaseIds.length === 1
+                      ? "Vas a operar sobre 1 caso seleccionado."
+                      : `Vas a operar sobre ${selectedCaseIds.length} casos seleccionados.`}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setOpen(false)}
+                  disabled={pending}
+                  aria-label="Cerrar"
+                  className="rounded-md p-1.5 text-[var(--text-dim)] transition-colors hover:bg-[var(--btn-ghost-hover)] hover:text-[var(--text)] disabled:opacity-50"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
             </div>
 
-            <div className="p-6 space-y-4">
-              <div className="flex bg-slate-100 p-1 rounded-sm gap-1">
+            <div className="p-6 space-y-5">
+              {/* Mode tabs */}
+              <div
+                className="flex gap-1 p-1 rounded-lg"
+                style={{ background: "var(--surface-3)", border: "1px solid var(--card-border)" }}
+                role="tablist"
+              >
                 {role === "SUPER_ADMIN" && (
                   <button
+                    type="button"
+                    role="tab"
+                    aria-selected={mode === "jefe"}
                     onClick={() => setMode("jefe")}
-                    className={`flex-1 py-1.5 text-[10px] font-bold uppercase tracking-widest transition-all ${mode === "jefe" ? "bg-[var(--surface)] text-[var(--text)] shadow-sm" : "text-slate-400"}`}
+                    className={`flex-1 inline-flex items-center justify-center gap-2 py-2 px-3 text-[11px] font-semibold uppercase tracking-wider transition-all rounded-md ${
+                      mode === "jefe"
+                        ? "text-[var(--text)] shadow-sm"
+                        : "text-[var(--text-muted)] hover:text-[var(--text)]"
+                    }`}
+                    style={mode === "jefe" ? { background: "var(--surface)" } : undefined}
                   >
-                    Jefe de Mesa
+                    <UserCog className="h-3.5 w-3.5" />
+                    Jefe de Grupo
                   </button>
                 )}
                 <button
+                  type="button"
+                  role="tab"
+                  aria-selected={mode === "abogado"}
                   onClick={() => setMode("abogado")}
-                  className={`flex-1 py-1.5 text-[10px] font-bold uppercase tracking-widest transition-all ${mode === "abogado" ? "bg-[var(--surface)] text-[var(--text)] shadow-sm" : "text-slate-400"}`}
+                  className={`flex-1 inline-flex items-center justify-center gap-2 py-2 px-3 text-[11px] font-semibold uppercase tracking-wider transition-all rounded-md ${
+                    mode === "abogado"
+                      ? "text-[var(--text)] shadow-sm"
+                      : "text-[var(--text-muted)] hover:text-[var(--text)]"
+                  }`}
+                  style={mode === "abogado" ? { background: "var(--surface)" } : undefined}
                 >
-                  Multi-Abogados
+                  <Scale className="h-3.5 w-3.5" />
+                  Equipo Legal
                 </button>
               </div>
 
               {mode === "jefe" ? (
                 <div className="space-y-2">
-                  <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Responsable Estratégico</label>
+                  <label className="form-label">Responsable Estratégico</label>
                   <select
                     value={selectedJefe}
                     onChange={(e) => setSelectedJefe(e.target.value)}
-                    className="w-full border border-slate-200 rounded px-3 py-2 text-sm outline-none focus:border-[var(--gold)]"
+                    className="form-input"
                   >
-                    <option value="">Selecciona un Jefe de Mesa...</option>
+                    <option value="">Selecciona un Jefe de Grupo...</option>
                     {filteredJefes.map((m) => (
                       <option key={m.id} value={m.id}>{m.fullName}</option>
                     ))}
                   </select>
+                  <p className="form-help">
+                    El Jefe de Grupo seleccionado podrá asignar abogados a estos casos.
+                  </p>
                 </div>
               ) : (
                 <div className="space-y-2">
-                  <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Equipo Legal (1 o más)</label>
-                  <div className="max-h-[200px] overflow-y-auto border border-slate-200 rounded divide-y divide-slate-100">
-                    {abogados.map((m) => (
-                      <button
-                        key={m.id}
-                        type="button"
-                        onClick={() => toggleLawyer(m.id)}
-                        className="w-full flex items-center justify-between px-3 py-2 hover:bg-[rgba(255,255,255,0.02)] transition-colors text-left"
-                      >
-                        <span className={`text-xs ${selectedLawyers.includes(m.id) ? "font-bold text-[var(--text)]" : "text-slate-600"}`}>
-                          {m.fullName}
-                        </span>
-                        {selectedLawyers.includes(m.id) && <Check className="w-4 h-4 text-emerald-500" />}
-                      </button>
-                    ))}
+                  <div className="flex items-center justify-between">
+                    <label className="form-label !mb-0">Equipo Legal (1 o más)</label>
+                    <span className="text-[11px] font-semibold text-[var(--text-muted)]">
+                      {selectedLawyers.length === 0
+                        ? "Ninguno seleccionado"
+                        : `${selectedLawyers.length} seleccionado${selectedLawyers.length === 1 ? "" : "s"}`}
+                    </span>
                   </div>
+                  <div
+                    className="max-h-[220px] overflow-y-auto rounded-lg divide-y"
+                    style={{ border: "1px solid var(--card-border)", borderColor: "var(--card-border)" }}
+                  >
+                    {abogados.length === 0 ? (
+                      <p className="px-4 py-6 text-center text-xs text-[var(--text-muted)]">
+                        No hay abogados activos disponibles.
+                      </p>
+                    ) : (
+                      abogados.map((m) => {
+                        const selected = selectedLawyers.includes(m.id);
+                        return (
+                          <button
+                            key={m.id}
+                            type="button"
+                            onClick={() => toggleLawyer(m.id)}
+                            className="w-full flex items-center justify-between px-3.5 py-2.5 hover:bg-[var(--row-hover)] transition-colors text-left"
+                            aria-pressed={selected}
+                          >
+                            <span className={`text-sm ${selected ? "font-semibold text-[var(--text)]" : "text-[var(--text-soft)]"}`}>
+                              {m.fullName}
+                            </span>
+                            {selected && <Check className="w-4 h-4 text-[var(--green)]" />}
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                  <p className="form-help">
+                    Los casos pasarán automáticamente a <strong className="text-[var(--text)]">En Proceso</strong> al confirmar.
+                  </p>
                 </div>
               )}
 
               {error && (
-                <div className="p-3 bg-[rgba(239,68,68,0.1)] border border-red-100 rounded text-red-600 text-[10px] font-bold uppercase">
+                <StatusBanner tone="error" title="No se pudo completar la asignación" assertive>
                   {error}
-                </div>
+                </StatusBanner>
               )}
+            </div>
 
-              <div className="flex justify-end gap-2 pt-4">
-                <button
-                  onClick={() => setOpen(false)}
-                  className="text-[10px] font-bold uppercase tracking-widest px-4 py-2 text-slate-400 hover:text-slate-600"
-                  disabled={pending}
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={submit}
-                  disabled={pending || (mode === "jefe" ? !selectedJefe : selectedLawyers.length === 0)}
-                  className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] px-6 py-2 bg-[var(--bg)] text-[var(--gold)] rounded-sm hover:bg-black transition-all shadow-lg disabled:opacity-30"
-                >
-                  {pending ? (
-                    <>
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                      Procesando...
-                    </>
-                  ) : "Confirmar"}
-                </button>
-              </div>
+            <div
+              className="flex items-center justify-end gap-2 px-6 py-4"
+              style={{ background: "var(--surface-2)", borderTop: "1px solid var(--card-border)" }}
+            >
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="btn-secondary"
+                disabled={pending}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={submit}
+                disabled={pending || (mode === "jefe" ? !selectedJefe : selectedLawyers.length === 0)}
+                className="btn-primary"
+              >
+                {pending ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    Procesando…
+                  </>
+                ) : (
+                  <>Confirmar {mode === "jefe" ? "derivación" : "asignación"}</>
+                )}
+              </button>
             </div>
           </div>
         </div>

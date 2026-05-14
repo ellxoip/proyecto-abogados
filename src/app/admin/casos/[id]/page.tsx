@@ -1,9 +1,8 @@
 import { notFound } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { withRls } from "@/lib/rls";
-import { CaseStage, CommentType, Role } from "@prisma/client";
+import { CaseStage, Role } from "@/lib/db-enums";
 import { CategoryBadge } from "@/components/CategoryBadge";
-import { CaseChatTabs } from "@/components/messenger/CaseChatTabs";
 import { RealtimeCaseSync } from "@/components/RealtimeCaseSync";
 import { HaltedOverlay } from "@/components/HaltedOverlay";
 import { StageTimeline } from "@/components/StageTimeline";
@@ -15,6 +14,7 @@ import { UpdateForm } from "./UpdateForm";
 import { Scale, Clock, User, Briefcase, FileText, CheckCircle, AlertTriangle, Shield, Download } from "lucide-react";
 import { FinishCaseButton } from "@/components/FinishCaseButton";
 import { TimeEntryButton } from "./TimeEntryButton";
+import { TimerLauncher } from "@/components/productividad/TimerLauncher";
 
 export default async function AdminCaseDetailPage({ params }: { params: { id: string } }) {
   const session = await auth();
@@ -72,20 +72,6 @@ export default async function AdminCaseDetailPage({ params }: { params: { id: st
 
   const realtimeToken = generateSupabaseToken(session.user.id, session.user.role);
 
-  const publicComments = kase.comments
-    .filter((c) => c.type === CommentType.PUBLIC)
-    .map((c) => ({
-      id: c.id, body: c.body, createdAt: c.createdAt.toISOString(),
-      authorId: c.authorId, authorName: c.author.fullName
-    }));
-
-  const internalComments = kase.comments
-    .filter((c) => c.type === CommentType.INTERNAL)
-    .map((c) => ({
-      id: c.id, body: c.body, createdAt: c.createdAt.toISOString(),
-      authorId: c.authorId, authorName: c.author.fullName
-    }));
-
   // Progress calculation
   const hasLawyer = kase.abogados.length > 0;
   const hasUpdates = kase.updates.length > 0;
@@ -128,11 +114,14 @@ export default async function AdminCaseDetailPage({ params }: { params: { id: st
           </div>
 
           <div className="flex items-center gap-3 flex-shrink-0">
+            {!isFinished && !isHalted && !isWaiting && session.user.role !== Role.CLIENTE && (
+              <TimerLauncher caseId={kase.id} caseCode={kase.code} />
+            )}
             {session.user.role !== Role.CLIENTE && (
-              <TimeEntryButton caseId={kase.id} caseCode={kase.code} />
+              <TimeEntryButton caseId={kase.id} caseCode={kase.code} caseStage={kase.stage} />
             )}
             {!isFinished && session.user.role !== Role.CLIENTE && (
-              <FinishCaseButton caseId={kase.id} />
+              <FinishCaseButton caseId={kase.id} caseCode={kase.code} />
             )}
           </div>
         </div>
@@ -195,9 +184,9 @@ export default async function AdminCaseDetailPage({ params }: { params: { id: st
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+      <div className="grid grid-cols-1 gap-5">
         {/* ─── LEFT COLUMN ─── */}
-        <div className="lg:col-span-8 space-y-5">
+        <div className="space-y-5">
 
           {/* Info Cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -228,7 +217,7 @@ export default async function AdminCaseDetailPage({ params }: { params: { id: st
                   {hasLawyer ? "Ya tiene abogado asignado." : "Se asignará el responsable al iniciar."} Haz clic para avanzar el expediente a &quot;En Desarrollo&quot;.
                 </p>
               </div>
-              <AdvanceStageButton caseId={kase.id} />
+              <AdvanceStageButton caseId={kase.id} caseCode={kase.code} />
             </div>
           )}
 
@@ -319,7 +308,7 @@ export default async function AdminCaseDetailPage({ params }: { params: { id: st
                       <td className="px-4 py-2 font-bold text-[var(--text)]">{log.action.replace(/_/g, " ")}</td>
                       <td className="px-4 py-2">
                         <span className={`px-1.5 py-0.5 rounded-sm font-bold uppercase ${
-                          log.status === "ok" ? "bg-[rgba(52,211,153,0.1)] text-emerald-400" : log.status === "failed" ? "bg-[rgba(248,113,113,0.1)] text-red-400" : "bg-[rgba(255,255,255,0.05)] text-[var(--text-muted)]"
+                          log.status === "ok" ? "bg-[rgba(52,211,153,0.1)] text-emerald-400" : log.status === "failed" ? "bg-[rgba(248,113,113,0.1)] text-red-400" : "bg-[var(--btn-dark-bg)] text-[var(--text-muted)]"
                         }`}>
                           {log.status ?? "INFO"}
                         </span>
@@ -333,28 +322,6 @@ export default async function AdminCaseDetailPage({ params }: { params: { id: st
           </details>
         </div>
 
-        {/* ─── RIGHT COLUMN: MESSENGER ─── */}
-        <div className="lg:col-span-4">
-          <div className="bg-[var(--surface)] border border-[var(--border-glass)] rounded-md shadow-sm h-[700px] flex flex-col overflow-hidden sticky top-24">
-            <div className="px-4 py-3 flex items-center justify-between bg-[var(--bg)]">
-              <span className="text-[11px] font-bold uppercase tracking-widest text-[var(--gold)]">
-                Centro de Mensajería
-              </span>
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            </div>
-            <div className="flex-1 overflow-hidden">
-              <CaseChatTabs
-                caseId={kase.id}
-                realtimeToken={realtimeToken}
-                currentUserId={session.user.id}
-                currentRole={session.user.role}
-                publicComments={publicComments}
-                internalComments={internalComments}
-                isFinished={isFinished}
-              />
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   );

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { Role } from "@prisma/client";
+import { Role } from "@/lib/db-enums";
 import { withSystemRls } from "@/lib/rls";
 import { ingestCase } from "@/lib/services/ingestion";
 
@@ -63,7 +63,7 @@ export async function POST(req: Request) {
             code,
             is_paid: is_paid ?? false,
             categoryId,
-            metadata: { source: "CRM_DANTE", verified_by: "Dante", ingested_at: new Date().toISOString() },
+            metadata: JSON.stringify({ source: "CRM_DANTE", verified_by: "Dante", ingested_at: new Date().toISOString() }),
           },
         });
       });

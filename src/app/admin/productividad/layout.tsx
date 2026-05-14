@@ -1,5 +1,5 @@
 import { auth } from "@/lib/auth";
-import { Role } from "@prisma/client";
+import { Role } from "@/lib/db-enums";
 import { notFound } from "next/navigation";
 
 export default async function ProductividadLayout({ children }: { children: React.ReactNode }) {

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { supabase, isPlaceholder } from "@/lib/supabase-client";
 import { RealtimeChannel } from "@supabase/supabase-js";
-import { CommentType } from "@prisma/client";
+import { CommentType } from "@/lib/db-enums";
 import { postComment } from "@/app/admin/casos/[id]/actions";
 import { parseAudioMessage } from "@/lib/chat-message";
 import { Send } from "lucide-react";
@@ -104,11 +104,11 @@ export function StaffChat({ caseId, initialComments, realtimeToken, currentUserI
 
   return (
     <div className="flex flex-col h-full bg-[var(--surface)] border rounded-lg overflow-hidden">
-      <div className="px-4 py-3 bg-slate-800 text-[var(--gold)] flex items-center justify-between">
+      <div className="px-4 py-3 bg-[var(--bg)] text-[var(--gold)] flex items-center justify-between">
         <span className="text-[11px] font-bold uppercase tracking-widest">Chat Interno de Equipo</span>
         <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
       </div>
-      <div ref={scrollRef} className="flex-1 p-4 overflow-y-auto space-y-4 bg-[rgba(255,255,255,0.02)] min-h-[300px]">
+      <div ref={scrollRef} className="flex-1 p-4 overflow-y-auto space-y-4 bg-[var(--surface-3)] min-h-[300px]">
         {comments.map((c) => {
           const isMe = c.authorId === currentUserId;
           return (
@@ -150,7 +150,7 @@ export function StaffChat({ caseId, initialComments, realtimeToken, currentUserI
         <button
           type="submit"
           disabled={!newMessage.trim() || pending}
-          className="bg-slate-900 text-[var(--gold)] text-sm px-4 py-2 rounded disabled:opacity-50 flex items-center gap-1.5"
+          className="bg-[var(--bg)] text-[var(--gold)] text-sm px-4 py-2 rounded disabled:opacity-50 flex items-center gap-1.5"
         >
           <Send className="w-3.5 h-3.5" />
           {pending ? "Enviando..." : "Enviar"}

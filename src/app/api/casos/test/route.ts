@@ -10,7 +10,7 @@
 
 import { NextResponse } from "next/server";
 import { withSystemRls } from "@/lib/rls";
-import { CaseStage } from "@prisma/client";
+import { CaseStage } from "@/lib/db-enums";
 import { enqueueWhatsApp } from "@/lib/notifications";
 
 type TestCaseInput = {

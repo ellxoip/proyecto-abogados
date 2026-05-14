@@ -1,14 +1,28 @@
 "use client";
 
-import { useState } from "react";
+import Image from "next/image";
+import Link from "next/link";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
+import { useState } from "react";
+import {
+  Lock,
+  Mail,
+  ArrowRight,
+  ShieldCheck,
+  Gavel,
+  Scale,
+  Eye,
+  EyeOff,
+  ArrowLeft,
+} from "lucide-react";
+import { BrandMark } from "@/components/BrandMark";
 
 export default function EquipoLoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -27,77 +41,290 @@ export default function EquipoLoginPage() {
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-[var(--bg)] p-6 relative overflow-hidden">
-      {/* Subtle background pattern */}
-      <div className="absolute inset-0 opacity-[0.03]" style={{
-        backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%239CFF00' fill-opacity='1'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
-      }} />
+    <main className="relative min-h-screen overflow-hidden bg-[#0B0C10] text-white">
+      {/* ── Fullscreen background image ───────────────────────────────────── */}
+      <Image
+        src="/brand/login-hero-hive.png"
+        alt="Hive Control — Sistema de gestión legal con trazabilidad forense, inteligencia legal y panel digital sobre escritorio jurídico"
+        fill
+        priority
+        className="object-cover"
+        sizes="100vw"
+      />
+      <div
+        aria-hidden
+        className="absolute inset-0"
+        style={{
+          background:
+            "linear-gradient(90deg, rgba(6,7,10,0.36) 0%, rgba(6,7,10,0.08) 42%, rgba(6,7,10,0.22) 100%)",
+        }}
+      />
+      <div
+        aria-hidden
+        className="absolute inset-0"
+        style={{
+          background:
+            "linear-gradient(180deg, rgba(4,5,8,0.22) 0%, rgba(4,5,8,0.08) 45%, rgba(4,5,8,0.48) 100%)",
+        }}
+      />
+      <div
+        aria-hidden
+        className="absolute hidden lg:block"
+        style={{
+          left: "27.5%",
+          top: "8%",
+          width: "37.5%",
+          height: "84%",
+          borderRadius: "14px",
+          background: "transparent",
+        }}
+      />
 
-      <form onSubmit={onSubmit} className="relative w-full max-w-md glass-panel p-10 space-y-6 shadow-2xl">
-        {/* Header */}
-        <div className="text-center space-y-2">
-          <h1 className="text-3xl font-serif tracking-wider text-[var(--text)]">
-            AT INFORMA
-          </h1>
-          <p className="text-xs text-[var(--gold)] uppercase tracking-[0.25em]">
-            Panel del Equipo
-          </p>
-        </div>
+      <div className="relative z-10 grid min-h-screen lg:grid-cols-[1.15fr_0.85fr]">
+        {/* Hero copy */}
+        <section className="flex flex-col justify-between p-7 sm:p-10 lg:p-14">
+          <div className="flex items-center gap-4">
+            <div
+              className="rounded-2xl p-2.5"
+              style={{
+                background: "rgba(255,255,255,0.98)",
+                boxShadow: "0 18px 48px -12px rgba(201,168,76,0.45), 0 2px 6px rgba(0,0,0,0.30)",
+              }}
+            >
+              <BrandMark size="sm" />
+            </div>
+            <div className="hidden sm:block">
+              <p className="text-[10px] uppercase tracking-[0.42em] text-white">Legal Operating System</p>
+            </div>
+          </div>
 
-        {/* Email field */}
-        <div className="space-y-2">
-          <label className="block text-[11px] text-[var(--text-muted)] uppercase tracking-widest">
-            Email
-          </label>
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="abogado@estudio.cl"
-            required
-            className="w-full bg-[var(--bg)] border border-[var(--border-subtle)] text-[var(--text)] rounded px-4 py-3 text-sm outline-none focus:border-[var(--gold)] transition-colors placeholder:text-[var(--text-muted)]"
-          />
-        </div>
+          <div className="max-w-xl mt-10 lg:mt-0">
+            <div className="mb-6 inline-flex items-center gap-3" aria-hidden>
+              <span className="h-px w-10" style={{ background: "var(--gold)" }} />
+              <span className="text-[10px] font-semibold uppercase tracking-[0.42em]" style={{ color: "var(--gold-soft)" }}>
+                Portal Interno · Equipo Legal
+              </span>
+            </div>
+            <h1
+              className="font-serif text-4xl leading-[1.05] tracking-tight text-white sm:text-5xl lg:text-[3.4rem]"
+              style={{ textShadow: "0 6px 28px rgba(0,0,0,0.75)" }}
+            >
+              Bienvenido, <span style={{ color: "var(--gold-soft)" }}>letrado</span>.
+            </h1>
+            <p
+              className="mt-5 max-w-lg text-[15px] leading-7 text-white"
+              style={{ textShadow: "0 2px 14px rgba(0,0,0,0.65)" }}
+            >
+              Tu mesa de trabajo está lista. Casos activos, plazos, audiencias y la bitácora del
+              despacho — todo a un solo acceso. Vuelve a tu escritorio con la calma de saber que
+              cada expediente está en orden.
+            </p>
 
-        {/* Password field */}
-        <div className="space-y-2">
-          <label className="block text-[11px] text-[var(--text-muted)] uppercase tracking-widest">
-            Contraseña
-          </label>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="••••••••"
-            required
-            className="w-full bg-[var(--bg)] border border-[var(--border-subtle)] text-[var(--text)] rounded px-4 py-3 text-sm outline-none focus:border-[var(--gold)] transition-colors placeholder:text-[var(--text-muted)]"
-          />
-        </div>
+            <div
+              className="mt-9 flex flex-wrap items-center gap-6 text-[11px] uppercase tracking-[0.28em] text-white"
+              style={{ textShadow: "0 2px 10px rgba(0,0,0,0.6)" }}
+            >
+              <span className="inline-flex items-center gap-2">
+                <Gavel className="h-4 w-4" style={{ color: "var(--gold-soft)" }} />
+                Expedientes
+              </span>
+              <span className="inline-flex items-center gap-2">
+                <Scale className="h-4 w-4" style={{ color: "var(--gold-soft)" }} />
+                Audiencias
+              </span>
+              <span className="inline-flex items-center gap-2">
+                <ShieldCheck className="h-4 w-4" style={{ color: "var(--gold-soft)" }} />
+                Sesión Cifrada
+              </span>
+            </div>
+          </div>
 
-        {/* Error */}
-        {error && (
-          <p className="text-sm text-red-400 text-center">{error}</p>
-        )}
-
-        {/* Submit */}
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full bg-[var(--gold)] text-[#050606] font-semibold text-xs uppercase tracking-widest rounded py-3.5 disabled:opacity-50 hover:bg-[var(--lemon-soft)] transition-colors"
-        >
-          {loading ? "Ingresando…" : "Ingresar al Panel"}
-        </button>
-
-        {/* Footer links */}
-        <div className="text-center pt-2">
-          <Link
-            href="/login"
-            className="text-xs text-[var(--text-muted)] hover:text-[var(--text)] transition-colors"
+          <div
+            className="mt-10 lg:mt-0 flex items-end justify-between gap-4"
+            style={{ textShadow: "0 2px 10px rgba(0,0,0,0.6)" }}
           >
-            ← Portal clientes
-          </Link>
-        </div>
-      </form>
+            <p className="text-[10px] uppercase tracking-[0.38em] text-white">
+              Justicia · Precisión · Discreción
+            </p>
+            <p className="text-[10px] tracking-[0.18em] text-white">v3.0 · Legal OS</p>
+          </div>
+        </section>
+
+        {/* Form — translucent glass over the image */}
+        <section className="flex items-center justify-center px-5 py-10 sm:px-8 lg:px-14">
+          <form
+            onSubmit={onSubmit}
+            className="relative w-full max-w-md rounded-[20px] border p-8 sm:p-10"
+            style={{
+              background: "rgba(255, 255, 255, 0.99)",
+              borderColor: "rgba(255, 255, 255, 0.72)",
+              boxShadow: "0 34px 80px -22px rgba(0,0,0,0.62), 0 12px 28px -10px rgba(0,0,0,0.34)",
+            }}
+          >
+            <div className="-mt-8 mb-7 flex items-center gap-3 sm:-mt-10">
+              <span
+                className="h-[2px] flex-1 rounded-full"
+                style={{
+                  background:
+                    "linear-gradient(90deg, transparent 0%, var(--gold) 50%, transparent 100%)",
+                }}
+              />
+            </div>
+
+            <div className="flex flex-col items-center gap-3 text-center">
+              <BrandMark size="md" />
+              <p
+                className="text-[10px] font-semibold uppercase tracking-[0.42em]"
+                style={{ color: "var(--gold-deep)" }}
+              >
+                Acceso del Equipo
+              </p>
+              <h2
+                className="font-serif text-2xl leading-snug tracking-tight"
+                style={{ color: "#1A1A1F" }}
+              >
+                Vuelve a tu escritorio.
+              </h2>
+              <p className="text-sm" style={{ color: "var(--gold-deep)" }}>
+                Credenciales internas del despacho. SuperAdmin, Jefe de Grupo o Abogado.
+              </p>
+            </div>
+
+            <div className="mt-8 space-y-5">
+              <div className="space-y-2">
+                <label
+                  className="block text-[10px] font-semibold uppercase tracking-[0.28em]"
+                  style={{ color: "var(--gold-deep)" }}
+                >
+                  Correo Profesional
+                </label>
+                <div className="relative">
+                  <Mail
+                    aria-hidden
+                    className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2"
+                    style={{ color: "var(--gold-deep)" }}
+                  />
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="abogado@estudio.cl"
+                    required
+                    autoComplete="email"
+                    className="w-full rounded-xl border bg-white px-4 py-3 pl-11 text-sm transition-all outline-none focus:border-[var(--gold)] focus:shadow-[var(--ring-focus)]"
+                    style={{ borderColor: "#D9CFB1", color: "#1A1A1F" }}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label
+                  className="block text-[10px] font-semibold uppercase tracking-[0.28em]"
+                  style={{ color: "var(--gold-deep)" }}
+                >
+                  Contraseña
+                </label>
+                <div className="relative">
+                  <Lock
+                    aria-hidden
+                    className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2"
+                    style={{ color: "var(--gold-deep)" }}
+                  />
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    required
+                    autoComplete="current-password"
+                    className="w-full rounded-xl border bg-white px-4 py-3 pl-11 pr-11 text-sm transition-all outline-none focus:border-[var(--gold)] focus:shadow-[var(--ring-focus)]"
+                    style={{ borderColor: "#D9CFB1", color: "#1A1A1F" }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((s) => !s)}
+                    aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-1.5 transition-colors hover:bg-[var(--surface-2)]"
+                    style={{ color: "var(--gold-deep)" }}
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+
+              {error && (
+                <p
+                  className="rounded-xl border px-4 py-3 text-sm"
+                  style={{
+                    background: "var(--red-dim)",
+                    borderColor: "var(--red-border)",
+                    color: "var(--red)",
+                  }}
+                  role="alert"
+                >
+                  {error}
+                </p>
+              )}
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="group relative inline-flex w-full items-center justify-center gap-2 rounded-xl py-3.5 text-xs font-bold uppercase tracking-[0.28em] text-white transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                style={{
+                  background:
+                    "linear-gradient(180deg, var(--sidebar-bg) 0%, var(--sidebar-deep) 100%)",
+                  boxShadow:
+                    "0 14px 26px -10px rgba(201,168,76,0.55), 0 1px 0 rgba(255,255,255,0.4) inset",
+                }}
+              >
+                {loading ? (
+                  <>
+                    <span className="spinner" />
+                    Ingresando…
+                  </>
+                ) : (
+                  <>
+                    Ingresar al Panel
+                    <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+                  </>
+                )}
+              </button>
+            </div>
+
+            <div className="my-8 flex items-center gap-3">
+              <span className="h-px flex-1" style={{ background: "#E2DBC4" }} />
+              <span
+                className="text-[9px] font-semibold uppercase tracking-[0.32em]"
+                style={{ color: "var(--gold-deep)" }}
+              >
+                ó
+              </span>
+              <span className="h-px flex-1" style={{ background: "#E2DBC4" }} />
+            </div>
+
+            <div className="flex flex-col items-center gap-3 text-center">
+              <Link
+                href="/login"
+                className="inline-flex items-center gap-2 rounded-full border px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.28em] transition-all hover:bg-[var(--surface-2)]"
+                style={{
+                  borderColor: "#D9CFB1",
+                  color: "var(--gold-deep)",
+                }}
+              >
+                <ArrowLeft className="h-3.5 w-3.5" />
+                Portal de Clientes
+              </Link>
+            </div>
+
+            <p
+              className="mt-7 text-center text-[9px] uppercase tracking-[0.32em]"
+              style={{ color: "var(--gold-deep)" }}
+            >
+              Sesión auditada · Cumple ISO 27001
+            </p>
+          </form>
+        </section>
+      </div>
     </main>
   );
 }

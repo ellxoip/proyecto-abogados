@@ -1,4 +1,5 @@
-import { CaseStage, PaymentStatus, Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
+import { CaseStage, PaymentStatus } from "@/lib/db-enums";
 import { withSystemRls } from "@/lib/rls";
 import { reactivateCaseIfPaid, forceHalt } from "@/lib/case-health";
 

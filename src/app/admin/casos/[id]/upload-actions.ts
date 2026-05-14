@@ -2,7 +2,7 @@
 
 import { auth } from "@/lib/auth";
 import { withRls } from "@/lib/rls";
-import { Role } from "@prisma/client";
+import { Role } from "@/lib/db-enums";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { revalidatePath, revalidateTag } from "next/cache";
 import { assertCaseActive } from "@/lib/case-health";

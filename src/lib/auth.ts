@@ -1,7 +1,7 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
-import { Role } from "@prisma/client";
+import { Role } from "@/lib/db-enums";
 // Auth bootstrap legitimately needs direct DB access: RLS depends on a
 // session, but here we are establishing one. Allowlisted in .eslintrc.
 import { _prisma } from "@/lib/db/_client";

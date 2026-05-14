@@ -1,7 +1,7 @@
 import { Resend } from "resend";
 
 const API_KEY = process.env.RESEND_API_KEY;
-const FROM = process.env.RESEND_FROM_EMAIL ?? "AT Informa <noreply@atinforma.cl>";
+const FROM = process.env.RESEND_FROM_EMAIL ?? "Hive Control <noreply@atinforma.cl>";
 
 const client =
   API_KEY && API_KEY !== "REEMPLAZAR_CON_API_KEY_RESEND" ? new Resend(API_KEY) : null;
@@ -40,10 +40,10 @@ const SUBJECTS: Record<EmailTemplate, (code: string) => string> = {
   payment_receipt: (c) => `Caso ${c} — Pago confirmado`,
   case_finished: (c) => `Caso ${c} — Cierre del caso`,
   non_payment_warning: (c) => `Caso ${c} — Aviso por falta de pago`,
-  client_credentials: (c) => `Bienvenido a AT Informa — Credenciales de Acceso (${c})`,
-  lead_confirmation: (c) => `AT Informa — Reunión confirmada (${c})`,
-  lead_reminder: (c) => `AT Informa — Recordatorio: tu reunión empieza pronto (${c})`,
-  lead_reassigned: (c) => `AT Informa — Cambio de profesional asignado (${c})`,
+  client_credentials: (c) => `Bienvenido a Hive Control — Credenciales de Acceso (${c})`,
+  lead_confirmation: (c) => `Hive Control — Reunión confirmada (${c})`,
+  lead_reminder: (c) => `Hive Control — Recordatorio: tu reunión empieza pronto (${c})`,
+  lead_reassigned: (c) => `Hive Control — Cambio de profesional asignado (${c})`,
 };
 
 export async function sendEmailTemplate(args: SendArgs): Promise<EmailSendResult> {
@@ -73,7 +73,7 @@ function renderHtml({ toName, caseCode, template, body }: SendArgs): string {
   const main = body
     ? `<p>${escapeHtml(body).replace(/\n/g, "<br>")}</p>`
     : `<p>${defaultBody(template)}</p>`;
-  const footer = `<hr/><p style="color:#666;font-size:12px">AT Informa — este es un mensaje automático del sistema de gestión de casos.</p>`;
+  const footer = `<hr/><p style="color:#666;font-size:12px">Hive Control — este es un mensaje automático del sistema de gestión de casos.</p>`;
   return `<!doctype html><html><body style="font-family:Arial,sans-serif;color:#222">${greeting}${main}${ref}${footer}</body></html>`;
 }
 
@@ -90,15 +90,15 @@ function defaultBody(template: EmailTemplate): string {
     case "payment_receipt":
       return "Hemos recibido su pago. Su caso continúa activo.";
     case "case_finished":
-      return "Su caso ha sido cerrado. Gracias por confiar en AT Informa.";
+      return "Su caso ha sido cerrado. Gracias por confiar en Hive Control.";
     case "non_payment_warning":
       return "Su caso se encuentra detenido por falta de pago. Regularice para reactivarlo.";
     case "client_credentials":
-      return "Se han generado sus credenciales de acceso al portal de AT Informa. Ingrese con su correo electrónico y la contraseña proporcionada para consultar el estado de su caso.";
+      return "Se han generado sus credenciales de acceso al portal de Hive Control. Ingrese con su correo electrónico y la contraseña proporcionada para consultar el estado de su caso.";
     case "lead_confirmation":
-      return "Su reunión con AT Informa fue agendada correctamente. Recibirá un recordatorio una hora antes del encuentro.";
+      return "Su reunión con Hive Control fue agendada correctamente. Recibirá un recordatorio una hora antes del encuentro.";
     case "lead_reminder":
-      return "Le recordamos que su reunión con AT Informa comienza dentro de una hora. Manténgase atento al canal acordado.";
+      return "Le recordamos que su reunión con Hive Control comienza dentro de una hora. Manténgase atento al canal acordado.";
     case "lead_reassigned":
       return "Hemos reasignado su caso a otro profesional para garantizar la mejor atención. Recibirá novedades en breve.";
   }

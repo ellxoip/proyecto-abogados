@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Role } from "@prisma/client";
+import { Role } from "@/lib/db-enums";
 import { ClientChat } from "./ClientChat";
 import { StaffChat } from "./StaffChat";
 import { Lock, Users } from "lucide-react";

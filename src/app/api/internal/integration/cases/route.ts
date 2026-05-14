@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { CaseStage, Role } from "@prisma/client";
+import { CaseStage, Role } from "@/lib/db-enums";
 import bcrypt from "bcryptjs";
 import { withSystemRls } from "@/lib/rls";
 import { logAudit } from "@/lib/audit";
 import { generateClientPassword } from "@/lib/services/crm-onboarding";
+import { sendEmailTemplate } from "@/lib/email-resend";
+import { sendWhatsAppTemplate } from "@/lib/whatsapp-meta";
 
 /**
  * POST /api/internal/integration/cases
@@ -39,6 +41,7 @@ const schema = z.object({
   correlation_id: z.string().optional().nullable(),
   initial_payment_amount: z.number().optional().nullable(),
   contrato_id_sis_contable: z.number().optional().nullable(),
+  payment_link: z.string().url().optional().nullable(),
 });
 
 export async function POST(req: Request) {
@@ -75,6 +78,7 @@ export async function POST(req: Request) {
     correlation_id,
     initial_payment_amount,
     contrato_id_sis_contable,
+    payment_link,
   } = parsed.data;
 
   try {
@@ -106,6 +110,7 @@ export async function POST(req: Request) {
             role: Role.CLIENTE,
             passwordHash,
             rut: normalizedRut,
+            paymentLink: payment_link ?? null,
             active: true,
           },
         });
@@ -114,6 +119,8 @@ export async function POST(req: Request) {
           where: { id: client.id },
           data: {
             rut: client.rut ?? normalizedRut,
+            passwordHash,
+            paymentLink: payment_link ?? client.paymentLink,
             active: true,
           },
         });
@@ -134,7 +141,7 @@ export async function POST(req: Request) {
           categoryId: cat.id,
           is_paid: true,
           stage: CaseStage.OPEN,
-          metadata: {
+          metadata: JSON.stringify({
             source: "SIS_CONTABLE",
             crm_lead_id,
             crm_opportunity_id,
@@ -142,7 +149,7 @@ export async function POST(req: Request) {
             initial_payment_amount,
             contrato_id_sis_contable,
             ingested_at: new Date().toISOString(),
-          },
+          }),
         },
       });
 
@@ -153,8 +160,41 @@ export async function POST(req: Request) {
         message: `Caso creado desde SIS.CONTABLE. Pago inicial confirmado. Contrato SIS: ${contrato_id_sis_contable ?? "N/A"}.`,
       });
 
-      return { caseId: kase.id, clientId: client.id };
+      return { caseId: kase.id, clientId: client.id, clientEmail: client.email, clientPhone: client.phone };
     });
+
+    const credentialsBody = [
+      "Tu pago fue confirmado y tu cuenta en Hive Service Control quedo activa.",
+      `Usuario: ${safeEmail}`,
+      `Contrasena temporal: ${plainPassword}`,
+      `Portal: ${process.env.APP_URL ?? process.env.NEXTAUTH_URL ?? "http://localhost:3001"}/login`,
+      "Cambia tu contrasena despues del primer acceso.",
+    ].join("\n");
+
+    if (email) {
+      await sendEmailTemplate({
+        toEmail: safeEmail,
+        toName: nombre,
+        caseCode: case_code,
+        template: "client_credentials",
+        body: credentialsBody,
+      });
+    }
+
+    if (telefono) {
+      await sendWhatsAppTemplate({
+        toPhoneE164: telefono,
+        template: "client_credentials",
+        variables: [nombre, safeEmail, plainPassword, `${process.env.APP_URL ?? process.env.NEXTAUTH_URL ?? "http://localhost:3001"}/login`],
+      });
+    }
+
+    await withSystemRls((tx) =>
+      tx.user.update({
+        where: { id: result.clientId },
+        data: { credentialsSentAt: new Date() },
+      }),
+    );
 
     return NextResponse.json({ ok: true, ...result }, { status: 201 });
   } catch (err: unknown) {

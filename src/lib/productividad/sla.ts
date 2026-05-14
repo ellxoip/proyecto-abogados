@@ -1,4 +1,4 @@
-import { CaseStage } from "@prisma/client";
+import { CaseStage } from "@/lib/db-enums";
 import { differenceInCalendarDays } from "date-fns";
 
 export type SlaResult = {

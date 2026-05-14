@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { withRls } from "@/lib/rls";
-import { Role } from "@prisma/client";
+import { Role } from "@/lib/db-enums";
 import * as XLSX from "xlsx";
 import { subDays, format } from "date-fns";
 import { ACTIVITY_LABELS } from "@/lib/productividad/metrics";
@@ -85,7 +85,7 @@ export async function GET(req: Request) {
     XLSX.utils.book_append_sheet(wb, ws2, "Métricas de Equipo");
 
     const buffer = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
-    const filename = `AT-INFORMA-Productividad-${format(new Date(), "yyyy-MM-dd")}.xlsx`;
+    const filename = `HIVE CONTROL-Productividad-${format(new Date(), "yyyy-MM-dd")}.xlsx`;
 
     return new Response(buffer, {
       headers: {

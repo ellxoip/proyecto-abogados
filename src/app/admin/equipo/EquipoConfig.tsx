@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createCategory, createStaffMember } from "./actions";
 import { UserPlus, FolderPlus, CheckCircle, AlertCircle, Crown, Scale, ChevronDown } from "lucide-react";
-import { Role } from "@prisma/client";
+import { Role } from "@/lib/db-enums";
 
 type JefeMesa = { id: string; fullName: string };
 
@@ -54,7 +54,7 @@ export function EquipoConfig({ role, jefes }: Props) {
         managedById: staffRole === "ABOGADO" ? staffData.managedById : undefined,
       });
       if (res.ok) {
-        const roleName = staffRole === "JEFE_DE_MESA" ? "Jefe de Mesa" : "Abogado";
+        const roleName = staffRole === "JEFE_DE_MESA" ? "Jefe de Grupo" : "Abogado";
         setMsg({ type: "ok", text: `${roleName} "${staffData.fullName}" registrado exitosamente.` });
         setStaffData({ fullName: "", email: "", phone: "", password: "", managedById: "" });
         router.refresh();
@@ -100,7 +100,7 @@ export function EquipoConfig({ role, jefes }: Props) {
             <button
               type="submit"
               disabled={isPending || !catName.trim()}
-              className="w-full bg-[var(--bg)] text-[var(--gold)] text-xs font-bold uppercase tracking-[0.2em] py-3.5 rounded-sm hover:bg-black transition-colors disabled:opacity-50"
+              className="w-full bg-[var(--bg)] text-white text-xs font-bold uppercase tracking-[0.2em] py-3.5 rounded-sm hover:bg-[var(--bg-deep)] transition-colors disabled:opacity-50"
             >
               {isPending ? "Procesando..." : "Registrar Categoría"}
             </button>
@@ -115,7 +115,7 @@ export function EquipoConfig({ role, jefes }: Props) {
           <div className="bg-[var(--surface)] border border-[var(--border-glass)] rounded-sm p-8 shadow-sm relative overflow-hidden">
             {/* Power badge */}
             <div className="absolute top-0 right-0 p-3">
-              <span className="text-[8px] font-black bg-[var(--gold)] text-[var(--text)] px-2 py-0.5 rounded-full uppercase tracking-tighter shadow-sm">Super Admin Only</span>
+              <span className="text-[8px] font-black bg-[var(--sidebar-bg)] text-white px-2 py-0.5 rounded-full uppercase tracking-tighter shadow-sm">Super Admin Only</span>
             </div>
 
             <div className="flex items-center gap-3 mb-6">
@@ -140,7 +140,7 @@ export function EquipoConfig({ role, jefes }: Props) {
                     }`}
                   >
                     <Crown className="w-3.5 h-3.5" />
-                    Jefe de Mesa
+                    Jefe de Grupo
                   </button>
                   <button
                     type="button"
@@ -157,14 +157,14 @@ export function EquipoConfig({ role, jefes }: Props) {
                 </div>
               </div>
 
-              {/* Jefe de Mesa Assignment (only for Abogados) */}
+              {/* Jefe de Grupo Assignment (only for Abogados) */}
               {staffRole === "ABOGADO" && (
                 <div className="p-4 bg-[var(--surface-2)] border border-[var(--border-glass)] rounded-sm space-y-2">
                   <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--gold)] mb-1.5 block">
-                    Jefe de Mesa Responsable
+                    Jefe de Grupo Responsable
                   </label>
                   <p className="text-[9px] text-[var(--text-muted)] mb-2">
-                    Selecciona bajo qué Jefe de Mesa operará este abogado (ej: el Jefe de Tributario, el Jefe de Penal, etc.)
+                    Selecciona bajo qué Jefe de Grupo operará este abogado (ej: el Jefe de Tributario, el Jefe de Penal, etc.)
                   </p>
                   <div className="relative">
                     <select
@@ -174,7 +174,7 @@ export function EquipoConfig({ role, jefes }: Props) {
                       className="w-full text-sm border border-[var(--border-glass)] rounded-sm px-4 py-2.5 outline-none focus:border-[var(--gold)] transition-all appearance-none bg-[var(--surface)] pr-10"
                       disabled={isPending}
                     >
-                      <option value="">Selecciona un Jefe de Mesa...</option>
+                      <option value="">Selecciona un Jefe de Grupo...</option>
                       {jefes.map((j) => (
                         <option key={j.id} value={j.id}>{j.fullName}</option>
                       ))}
@@ -243,21 +243,21 @@ export function EquipoConfig({ role, jefes }: Props) {
                 disabled={isPending || (staffRole === "ABOGADO" && !staffData.managedById)}
                 className={`w-full text-[var(--gold)] text-xs font-bold uppercase tracking-[0.2em] py-3.5 rounded-sm transition-colors disabled:opacity-50 mt-2 ${
                   staffRole === "JEFE_DE_MESA"
-                    ? "bg-[var(--bg)] hover:bg-black"
+                    ? "bg-[var(--bg)] hover:bg-[var(--bg-deep)]"
                     : "bg-[#1e3a8a] hover:bg-blue-900"
                 }`}
               >
                 {isPending
                   ? "Creando Credenciales..."
                   : staffRole === "JEFE_DE_MESA"
-                    ? "Habilitar Acceso Jefe de Mesa"
+                    ? "Habilitar Acceso Jefe de Grupo"
                     : "Habilitar Acceso Abogado"
                 }
               </button>
             </form>
           </div>
         ) : (
-          <div className="bg-[rgba(255,255,255,0.02)] border border-[var(--border-glass)] border-dashed rounded-sm p-12 flex flex-col items-center justify-center text-center opacity-60">
+          <div className="bg-[var(--surface-3)] border border-[var(--border-glass)] border-dashed rounded-sm p-12 flex flex-col items-center justify-center text-center opacity-60">
              <AlertCircle className="w-8 h-8 text-slate-300 mb-3" />
              <h4 className="text-sm font-bold text-slate-400 uppercase tracking-widest">Gestión de Staff Restringida</h4>
              <p className="text-[11px] text-slate-400 mt-1">Solo el Super Admin puede registrar nuevos miembros del equipo.</p>

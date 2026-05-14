@@ -8,7 +8,7 @@ import { reactivateCaseIfPaid, forceHalt } from "@/lib/case-health";
 /**
  * POST /api/v1/pagos
  *
- * El sistema de contabilidad notifica un pago o una mora al sistema AT-INFORMA.
+ * El sistema de contabilidad notifica un pago o una mora al sistema HIVE CONTROL.
  *
  * Autenticación: Bearer <EXTERNAL_API_KEY>
  */

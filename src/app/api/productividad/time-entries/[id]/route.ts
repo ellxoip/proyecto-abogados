@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { withRls } from "@/lib/rls";
-import { ActivityCategory, Role } from "@prisma/client";
+import { ActivityCategory, Role } from "@/lib/db-enums";
 import { z } from "zod";
 import { differenceInHours, differenceInDays } from "date-fns";
 

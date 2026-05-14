@@ -63,7 +63,7 @@ export function SlaManagerClient({ categories }: { categories: Category[] }) {
         <h2 className="text-[11px] font-bold uppercase tracking-widest" style={{ color: "var(--gold)" }}>
           Definiciones de SLA por Categoría
         </h2>
-        <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>Solo Jefe de Mesa y SuperAdmin</span>
+        <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>Solo Jefe de Grupo y SuperAdmin</span>
       </div>
       <div className="divide-y divide-[var(--border-glass)]">
         {cats.map((cat) => (

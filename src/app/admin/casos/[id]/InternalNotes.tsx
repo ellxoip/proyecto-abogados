@@ -33,14 +33,14 @@ export function InternalNotes({ caseId, initialNotes }: Props) {
           </span>
         </div>
         <span className="text-[9px] font-bold uppercase tracking-widest text-[var(--gold)] bg-[var(--gold)15] px-2 py-0.5 rounded-full">
-          Solo SuperAdmin / Jefe de Mesa
+          Solo SuperAdmin / Jefe de Grupo
         </span>
       </div>
       <div className="p-6 space-y-3">
         <textarea
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
-          placeholder="Escribe notas confidenciales sobre este caso. Solo visibles para SuperAdmin y Jefe de Mesa..."
+          placeholder="Escribe notas confidenciales sobre este caso. Solo visibles para SuperAdmin y Jefe de Grupo..."
           className="w-full h-28 p-4 text-sm border border-[var(--border-glass)] rounded-md outline-none focus:border-[var(--gold)] transition-colors resize-none bg-[var(--surface)] text-[var(--text)]"
           disabled={isPending}
         />
@@ -56,7 +56,7 @@ export function InternalNotes({ caseId, initialNotes }: Props) {
           <button
             onClick={handleSave}
             disabled={isPending}
-            className="flex items-center gap-2 bg-[var(--bg)] text-[var(--gold)] px-5 py-2.5 rounded-md text-[10px] font-bold uppercase tracking-widest hover:bg-[var(--border-subtle)] transition-colors disabled:opacity-50"
+            className="flex items-center gap-2 bg-[var(--bg)] text-white px-5 py-2.5 rounded-md text-[10px] font-bold uppercase tracking-widest hover:bg-[var(--border-subtle)] transition-colors disabled:opacity-50"
           >
             <Save className="w-3.5 h-3.5" />
             {isPending ? "Guardando..." : "Guardar Notas"}

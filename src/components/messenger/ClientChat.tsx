@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { supabase, isPlaceholder } from "@/lib/supabase-client";
 import { RealtimeChannel } from "@supabase/supabase-js";
-import { CommentType, Role } from "@prisma/client";
+import { CommentType, Role } from "@/lib/db-enums";
 import { postAudioComment, postComment, postFileComment } from "@/app/admin/casos/[id]/actions";
 import { encodeAudioMessage, encodeFileMessage, parseAudioMessage, parseFileMessage } from "@/lib/chat-message";
 import { FileText, Mic, Paperclip, Send, Square } from "lucide-react";
@@ -257,7 +257,7 @@ export function ClientChat({
         <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
       </div>
 
-      <div ref={scrollRef} className="flex-1 p-4 overflow-y-auto space-y-4 bg-[rgba(255,255,255,0.02)] min-h-[300px]">
+      <div ref={scrollRef} className="flex-1 p-4 overflow-y-auto space-y-4 bg-[var(--surface-3)] min-h-[300px]">
         {comments.map((c) => {
           const isMe = c.authorId === currentUserId;
           return (

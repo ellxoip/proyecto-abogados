@@ -3,10 +3,11 @@ import { auth } from "@/lib/auth";
 import { Sidebar } from "@/components/Sidebar";
 import { ModernHeader } from "@/components/ModernHeader";
 import { updatePresence } from "@/lib/update-presence";
+import { ActiveTimerWidget } from "@/components/productividad/ActiveTimerWidget";
 
 const ROLE_LABELS: Record<string, string> = {
   SUPER_ADMIN: "SuperAdmin",
-  JEFE_DE_MESA: "Jefe de Mesa",
+  JEFE_DE_MESA: "Jefe de Grupo",
   ABOGADO: "Abogado",
   CLIENTE: "Cliente",
   SISTEMA_CUOTAS: "Sistema de Cuotas",
@@ -28,6 +29,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         <ModernHeader userName={session.user.name ?? "Usuario"} userRole={userRole} />
         <main className="flex-1 p-4 sm:p-6 lg:p-8">{children}</main>
       </div>
+      {/* Persistent timer widget — appears whenever the lawyer has an open session */}
+      <ActiveTimerWidget />
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import { auth } from "@/lib/auth";
 import { withRls } from "@/lib/rls";
 import { notFound } from "next/navigation";
-import { Role, CaseStage } from "@prisma/client";
+import { Role, CaseStage } from "@/lib/db-enums";
 import Link from "next/link";
 import { Shield, ChevronRight } from "lucide-react";
 import { computeSlaStatus, slaStatusLabel, slaStatusColor, slaStatusBg } from "@/lib/productividad/sla";

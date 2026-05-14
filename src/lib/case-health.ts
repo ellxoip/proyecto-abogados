@@ -1,4 +1,5 @@
-import { CaseStage, PaymentStatus, Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
+import { CaseStage, PaymentStatus } from "@/lib/db-enums";
 import { revalidatePath, revalidateTag } from "next/cache";
 import { enqueueWhatsApp, enqueueEmail } from "@/lib/notifications";
 import { logAudit } from "@/lib/audit";

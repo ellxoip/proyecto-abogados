@@ -1,4 +1,5 @@
-import { Prisma, AuditAction } from "@prisma/client";
+import { Prisma } from "@prisma/client";
+import { AuditAction } from "@/lib/db-enums";
 
 type AuditParams = {
   tx: Prisma.TransactionClient;

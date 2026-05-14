@@ -77,7 +77,7 @@ export function ModernModal({
           </h2>
           <button
             onClick={onClose}
-            className="p-2 rounded-lg transition-all duration-200 hover:bg-[rgba(255,255,255,0.05)]"
+            className="p-2 rounded-lg transition-all duration-200 hover:bg-[var(--btn-ghost-hover)]"
             style={{ color: "var(--text-muted)" }}
           >
             <X size={20} />

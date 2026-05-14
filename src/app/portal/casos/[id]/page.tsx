@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { withRls } from "@/lib/rls";
 import { auth } from "@/lib/auth";
-import { CaseStage, CommentType } from "@prisma/client";
+import { CaseStage, CommentType } from "@/lib/db-enums";
 import { ClientChat } from "@/components/messenger/ClientChat";
 import { RealtimeCaseSync } from "@/components/RealtimeCaseSync";
 import { generateSupabaseToken } from "@/lib/supabase-jwt";
@@ -459,7 +459,7 @@ export default async function PortalCaseDetail({ params }: { params: { id: strin
                         {kase.jefeMesa.fullName}
                       </div>
                       <div className="text-[10px] uppercase tracking-widest" style={{ color: "var(--text-muted)" }}>
-                        Jefe de Mesa
+                        Jefe de Grupo
                       </div>
                     </div>
                   </div>
@@ -528,7 +528,7 @@ export default async function PortalCaseDetail({ params }: { params: { id: strin
           <Scale className="w-4 h-4 flex-shrink-0" style={{ color: "var(--gold)" }} />
           <div>
             <p className="text-xs font-semibold" style={{ color: "var(--text)" }}>
-              AT INFORMA — Legal Operating System
+              HIVE CONTROL — Legal Operating System
             </p>
             <p className="text-[10px]" style={{ color: "var(--text-muted)" }}>
               Toda comunicación queda registrada y es parte oficial de su expediente.

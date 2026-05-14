@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Satisfaction } from "@prisma/client";
+import { Satisfaction } from "@/lib/db-enums";
 import { submitSatisfaction } from "@/app/portal/actions-feedback";
 
 import { Smile, Meh, Frown, CheckCircle2 } from "lucide-react";
@@ -61,7 +61,7 @@ export function SatisfactionWidget({ caseId, initialValue }: Props) {
               className={`flex-1 flex flex-col items-center gap-2 p-4 rounded-lg transition-all border ${
                 isActive 
                   ? `${opt.bg} border-current ${opt.color} scale-105 shadow-md` 
-                  : `bg-[rgba(255,255,255,0.02)] border-transparent text-slate-400 grayscale hover:grayscale-0 hover:border-slate-200`
+                  : `bg-[var(--surface-3)] border-transparent text-slate-400 grayscale hover:grayscale-0 hover:border-slate-200`
               } ${submitted && !isActive ? "opacity-30" : ""}`}
             >
               <Icon className={`w-8 h-8 ${isActive ? "animate-bounce-short" : ""}`} />

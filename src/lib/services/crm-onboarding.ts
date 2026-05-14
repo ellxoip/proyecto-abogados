@@ -1,18 +1,18 @@
-import { CaseStage, Role } from "@prisma/client";
+import { CaseStage, Role } from "@/lib/db-enums";
 import { withSystemRls } from "@/lib/rls";
 import { enqueueWhatsApp, enqueueEmail } from "@/lib/notifications";
 import { logAudit } from "@/lib/audit";
 import bcrypt from "bcryptjs";
 
 /**
- * CRM Onboarding Service — AT Informa v3.0
+ * CRM Onboarding Service — Hive Control v3.0
  * 
  * Receives validated leads from Dante/CRM and:
  * 1. Creates the client with private credentials (name-based password)
  * 2. Creates the case with the invoice already attached
  * 3. Sends credentials to the client via WhatsApp + Email
  * 
- * AT Informa is NOT a payment gateway. The payment is validated externally
+ * Hive Control is NOT a payment gateway. The payment is validated externally
  * by Dante. The receipt (comprobante) proves the client already paid.
  */
 

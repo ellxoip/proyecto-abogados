@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth, signOut } from "@/lib/auth";
 import Link from "next/link";
+import { BrandMark } from "@/components/BrandMark";
 
 export default async function PortalLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
@@ -15,17 +16,9 @@ export default async function PortalLayout({ children }: { children: React.React
         style={{ background: "var(--surface-2)", borderBottom: "1px solid var(--border-subtle)" }}
       >
         <Link href="/portal" className="flex items-center gap-3 min-w-0">
-          <div
-            className="w-8 h-8 rounded flex items-center justify-center text-xs font-bold flex-shrink-0"
-            style={{ background: "var(--gold)", color: "#050606" }}
-          >
-            AT
-          </div>
-          <div className="min-w-0">
-            <div className="text-sm font-bold tracking-wider text-[var(--text)] truncate">
-              AT <span style={{ color: "var(--gold)" }}>INFORMA</span>
-            </div>
-            <div className="hidden sm:block text-[10px] uppercase tracking-widest" style={{ color: "var(--text-muted)" }}>
+          <BrandMark size="sm" />
+          <div className="hidden sm:block min-w-0">
+            <div className="text-[10px] uppercase tracking-[0.3em]" style={{ color: "var(--text-muted)" }}>
               Portal de Seguimiento
             </div>
           </div>

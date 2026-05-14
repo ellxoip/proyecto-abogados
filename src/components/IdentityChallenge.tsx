@@ -73,7 +73,7 @@ export function IdentityChallenge({ caseId, caseCode }: Props) {
             <button
               type="submit"
               disabled={isPending || code.length < 4}
-              className="w-full bg-[var(--bg)] text-[var(--gold)] py-4 rounded-sm text-xs font-bold uppercase tracking-[0.2em] flex items-center justify-center gap-2 hover:bg-black transition-all group disabled:opacity-50"
+              className="w-full bg-[var(--bg)] text-white py-4 rounded-sm text-xs font-bold uppercase tracking-[0.2em] flex items-center justify-center gap-2 hover:bg-[var(--bg-deep)] transition-all group disabled:opacity-50"
             >
               {isPending ? "Validando..." : "Acceder al Expediente"}
               <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />

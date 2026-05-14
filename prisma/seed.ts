@@ -1,4 +1,5 @@
-import { PrismaClient, Role, CaseStage } from "@prisma/client";
+import { PrismaClient } from "@prisma/client";
+import { Role, CaseStage } from "../src/lib/db-enums";
 
 import bcrypt from "bcryptjs";
 
@@ -34,13 +35,13 @@ async function main() {
     },
   });
 
-  // ── Jefe de Mesa ──
+  // ── Jefe de Grupo ──
   const jefe = await prisma.user.upsert({
     where: { email: "jefe@atinforma.cl" },
     update: {},
     create: {
       role: Role.JEFE_DE_MESA,
-      fullName: "Ricardo Fuentes (Jefe de Mesa)",
+      fullName: "Ricardo Fuentes (Jefe de Grupo)",
       email: "jefe@atinforma.cl",
       phone: "+56922222222",
       passwordHash: await hash("Jefe2026!"),
@@ -118,7 +119,7 @@ async function main() {
 
   console.log("✅ Seed complete. Users created:");
   console.log("  SuperAdmin:    jorge@atinforma.cl     / Admin2026!");
-  console.log("  Jefe de Mesa:  jefe@atinforma.cl      / Jefe2026!");
+  console.log("  Jefe de Grupo:  jefe@atinforma.cl      / Jefe2026!");
   console.log("  Abogado:       abogado@atinforma.cl   / Abogado2026!");
   console.log("  Cliente:       cliente@gmail.com      / Cliente2026!");
 }

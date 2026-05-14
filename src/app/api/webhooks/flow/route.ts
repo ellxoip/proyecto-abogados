@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { PaymentStatus } from "@prisma/client";
+import { PaymentStatus } from "@/lib/db-enums";
 import { recordPaymentEvent } from "@/lib/payments";
 
 /**

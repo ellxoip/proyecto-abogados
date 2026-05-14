@@ -71,5 +71,7 @@ export default async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|fonts/).*)"],
+  // Skip Next internals, fonts, and any path that ends with a file extension
+  // (so static assets in /public/** are served directly without auth redirects).
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|fonts/|brand/|.*\\..*).*)"],
 };

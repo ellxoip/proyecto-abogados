@@ -1,5 +1,5 @@
 /**
- * Supabase Realtime channel naming convention for AT INFORMA Messenger.
+ * Supabase Realtime channel naming convention for HIVE CONTROL Messenger.
  *
  * Why Supabase (not Socket.io): Vercel's serverless runtime cannot host a
  * long-lived WebSocket server. Supabase Realtime is already provisioned with

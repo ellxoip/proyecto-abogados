@@ -1,4 +1,4 @@
-import { CaseStage } from "@prisma/client";
+import { CaseStage } from "@/lib/db-enums";
 import { withSystemRls } from "@/lib/rls";
 import { enqueueEmail, enqueueWhatsApp } from "@/lib/notifications";
 

@@ -94,7 +94,7 @@ export function PaymentProofUploader({ caseId }: { caseId: string }) {
         <button
           type="submit"
           disabled={status.kind === "uploading" || !fileName}
-          className="bg-[var(--gold)] text-[var(--text)] text-[10px] font-bold uppercase tracking-widest px-4 py-1.5 rounded hover:bg-[#D4B85C] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          className="bg-[var(--sidebar-bg)] text-white text-[10px] font-bold uppercase tracking-widest px-4 py-1.5 rounded hover:bg-[var(--sidebar-deep)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
         >
           {status.kind === "uploading" ? (
             <>

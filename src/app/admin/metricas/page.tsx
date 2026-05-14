@@ -1,7 +1,7 @@
 import { withRls } from "@/lib/rls";
 import { auth } from "@/lib/auth";
 import { notFound } from "next/navigation";
-import { Role, CaseStage, Satisfaction } from "@prisma/client";
+import { Role, CaseStage, Satisfaction } from "@/lib/db-enums";
 import { 
   Scale, Users, TrendingUp, Clock, AlertCircle
 } from "lucide-react";

@@ -1,5 +1,5 @@
 import jwt from "jsonwebtoken";
-import { Role } from "@prisma/client";
+import { Role } from "@/lib/db-enums";
 
 /**
  * Generates a Supabase-compatible JWT token for Realtime RLS.

@@ -40,7 +40,7 @@ type Density = "Comoda" | "Compacta";
 type Theme = "LemonKiller Dark" | "GestionLegal Light" | "Alto Contraste";
 type ActivePanel = "sla" | "resumen" | "whatsapp" | "logs" | "sesion" | "2fa" | null;
 
-const STORAGE_KEY = "at-informa-config";
+const STORAGE_KEY = "hive-control-config";
 const VALID_THEMES: Theme[] = ["LemonKiller Dark", "GestionLegal Light", "Alto Contraste"];
 
 export function ConfigClient({ initialTwoFactorEnabled, initialLogs, whatsappConfigured }: ConfigClientProps) {
@@ -211,7 +211,7 @@ export function ConfigClient({ initialTwoFactorEnabled, initialLogs, whatsappCon
           Configuracion del Sistema
         </h1>
         <p className="text-sm mt-2" style={{ color: "var(--text-muted)" }}>
-          Personaliza tu experiencia y ajusta los parametros operativos de AT INFORMA
+          Personaliza tu experiencia y ajusta los parametros operativos de HIVE CONTROL
         </p>
       </div>
 

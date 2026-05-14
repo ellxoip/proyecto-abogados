@@ -1,4 +1,4 @@
-import { CaseStage, LeadStatus, NotificationType, Role } from "@prisma/client";
+import { CaseStage, LeadStatus, NotificationType, Role } from "@/lib/db-enums";
 import { checkCaseHealth } from "@/lib/case-health";
 import { withSystemRls } from "@/lib/rls";
 import { enqueueEmail, enqueueWhatsApp } from "@/lib/notifications";

@@ -2,7 +2,8 @@
 
 import { auth } from "@/lib/auth";
 import { withRls } from "@/lib/rls";
-import { PaymentStatus, Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
+import { PaymentStatus } from "@/lib/db-enums";
 import { revalidatePath } from "next/cache";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 

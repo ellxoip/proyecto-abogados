@@ -24,13 +24,13 @@ export function BandejaHelpWidget() {
       <div className="flex justify-end mt-4">
         <button
           onClick={handleGenerateHelp}
-          className="flex items-center gap-2 bg-[var(--bg)] text-[var(--gold)] px-5 py-2.5 rounded-sm text-[11px] font-bold uppercase tracking-widest hover:bg-black transition-all shadow-lg shadow-black/10"
+          className="flex items-center gap-2 bg-[var(--bg)] text-white px-5 py-2.5 rounded-sm text-[11px] font-bold uppercase tracking-widest hover:bg-[var(--bg-deep)] transition-all shadow-lg shadow-black/10"
         >
           <Plus className="w-4 h-4" />
           Generar Autoayuda
         </button>
         <button
-          className="ml-3 flex items-center gap-2 bg-[var(--bg)] text-[var(--gold)] px-5 py-2.5 rounded-sm text-[11px] font-bold uppercase tracking-widest hover:bg-black transition-all shadow-lg shadow-black/10"
+          className="ml-3 flex items-center gap-2 bg-[var(--bg)] text-white px-5 py-2.5 rounded-sm text-[11px] font-bold uppercase tracking-widest hover:bg-[var(--bg-deep)] transition-all shadow-lg shadow-black/10"
         >
           Publicar e Informar Cliente
         </button>

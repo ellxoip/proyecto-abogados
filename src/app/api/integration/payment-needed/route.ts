@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { NotificationType, Role } from "@prisma/client";
+import { NotificationType, Role } from "@/lib/db-enums";
 import { withSystemRls } from "@/lib/rls";
 
 /**

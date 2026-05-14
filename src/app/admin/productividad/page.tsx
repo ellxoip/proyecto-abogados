@@ -1,7 +1,7 @@
 import { auth } from "@/lib/auth";
 import { withRls } from "@/lib/rls";
 import { notFound } from "next/navigation";
-import { Role, CaseStage } from "@prisma/client";
+import { Role, CaseStage } from "@/lib/db-enums";
 import Link from "next/link";
 import {
   BarChart3, Clock, TrendingUp, Users, AlertTriangle, Brain,
@@ -119,7 +119,7 @@ export default async function ProductividadPage() {
             </a>
             <Link
               href="/admin/productividad/ia"
-              className="flex items-center gap-2 px-4 py-2.5 rounded-md text-[11px] font-bold uppercase tracking-widest text-[var(--text)] transition-colors"
+              className="flex items-center gap-2 px-4 py-2.5 rounded-md text-[11px] font-bold uppercase tracking-widest text-white transition-colors"
               style={{ background: "var(--bg)" }}
             >
               <Brain className="w-3.5 h-3.5" />

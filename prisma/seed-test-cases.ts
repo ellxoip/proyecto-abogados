@@ -7,7 +7,8 @@
  * Uso: npx ts-node --compiler-options '{"module":"CommonJS"}' prisma/seed-test-cases.ts
  */
 
-import { PrismaClient, Role, CaseStage, PaymentStatus } from "@prisma/client";
+import { PrismaClient } from "@prisma/client";
+import { Role, CaseStage, PaymentStatus } from "../src/lib/db-enums";
 import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();

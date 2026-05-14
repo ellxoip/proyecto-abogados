@@ -5,7 +5,7 @@ import { format } from "date-fns";
 import { Trash2, ExternalLink } from "lucide-react";
 import Link from "next/link";
 import { ACTIVITY_LABELS } from "@/lib/productividad/metrics";
-import { ActivityCategory } from "@prisma/client";
+import { ActivityCategory } from "@/lib/db-enums";
 
 interface Entry {
   id: string;

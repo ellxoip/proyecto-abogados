@@ -1,4 +1,4 @@
-import { CaseStage } from "@prisma/client";
+import { CaseStage } from "@/lib/db-enums";
 import { getStageMessage } from "@/lib/case-health";
 import { Shield, Clock } from "lucide-react";
 import { UploadReceiptButton } from "./UploadReceiptButton";
