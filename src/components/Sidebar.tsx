@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
-import { Activity, AlertCircle, BarChart3, Clock, Folder, Inbox, KeyRound, MessageSquare, Shield, Timer, TrendingUp, Menu, X } from "lucide-react";
+import { Activity, AlertCircle, BarChart3, Clock, Folder, Inbox, KeyRound, MessageSquare, Shield, Timer, TrendingUp, Menu, X, FolderTree } from "lucide-react";
 import { BrandMark } from "@/components/BrandMark";
 
 export function Sidebar() {
@@ -55,6 +55,7 @@ export function Sidebar() {
   }
 
   if (role === "SUPER_ADMIN") {
+    items.push({ href: "/admin/documentos", label: "Documentos", icon: FolderTree });
     items.push({ href: "/admin/productividad/sesiones", label: "Sesiones de Cronómetro", icon: Timer });
     items.push({ href: "/admin/monitoreo", label: "Monitor del Sistema", icon: Activity });
     items.push({ href: "/admin/credenciales", label: "Credenciales", icon: KeyRound });

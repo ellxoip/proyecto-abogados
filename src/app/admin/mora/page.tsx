@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth";
 import { withRls } from "@/lib/rls";
 import { CaseStage, Role, PaymentStatus } from "@/lib/db-enums";
+import { fetchWarningSummariesByRut, type WarningLevel } from "@/lib/financial-warnings";
 import {
   TrendingDown,
   Clock,
@@ -8,6 +9,7 @@ import {
   FileText,
   CheckCircle2,
   AlertTriangle,
+  Bell,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import Link from "next/link";
@@ -15,11 +17,15 @@ import { MoraActions } from "./MoraActions";
 import { EmptyState } from "@/components/EmptyState";
 import { HelpTip } from "@/components/HelpTip";
 
+type MoraSearchParams = { sort?: string; severity?: "all" | "w10" | "w20" | "w30" };
+
 export default async function MoraDashboardPage({
   searchParams,
 }: {
-  searchParams: { sort?: string };
+  searchParams: MoraSearchParams | Promise<MoraSearchParams>;
 }) {
+  // Next 15+ entrega searchParams como Promise. Defensivo para ambas formas.
+  const params = (await Promise.resolve(searchParams)) as MoraSearchParams;
   const session = await auth();
   if (session?.user.role !== Role.SUPER_ADMIN) {
     return (
@@ -34,7 +40,9 @@ export default async function MoraDashboardPage({
     );
   }
 
-  const { cases, stats } = await withRls(async (tx) => {
+  const severityFilter = params.severity ?? "all";
+
+  const baseData = await withRls(async (tx) => {
     const cases = await tx.case.findMany({
       where: {
         OR: [
@@ -44,11 +52,14 @@ export default async function MoraDashboardPage({
         ],
       },
       include: {
-        client: { select: { fullName: true, phone: true } },
+        client: { select: { fullName: true, phone: true, rut: true } },
         payments: { orderBy: { createdAt: "desc" }, take: 1 },
+        warnings: {
+          select: { level: true, sent_at: true, createdAt: true, delivery_status: true },
+        },
       },
       orderBy:
-        searchParams.sort === "client_asc"
+        params.sort === "client_asc"
           ? { client: { fullName: "asc" } }
           : { updatedAt: "desc" },
     });
@@ -63,12 +74,67 @@ export default async function MoraDashboardPage({
 
     return {
       cases,
-      stats: {
-        atRisk: atRiskSum._sum.amount?.toNumber() ?? 0,
-        haltedCount: cases.filter((c) => c.stage === CaseStage.HALTED_BY_PAYMENT).length,
-        waitingCount: cases.filter((c) => c.stage === CaseStage.WAITING_CUOTAS).length,
-      },
+      atRisk: atRiskSum._sum.amount?.toNumber() ?? 0,
     };
+  });
+
+  // Enriquecimiento opcional: financial puede aportar saldo vencido si el
+  // caso tiene contrato allí. Si financial está caído, devuelve mapa vacío
+  // y el dashboard sigue funcionando con la data local de CaseWarning.
+  const financialSummaries = await fetchWarningSummariesByRut(
+    baseData.cases.map((c) => c.client.rut),
+  );
+
+  // Severidad ordinal para sacar el máximo nivel local emitido por caso.
+  const rank = (lvl: string | null) =>
+    lvl === "WARNING_30" ? 3 : lvl === "WARNING_20" ? 2 : lvl === "WARNING_10" ? 1 : 0;
+
+  const enrichedCases = baseData.cases.map((c) => {
+    const localMax = c.warnings.reduce<string | null>((acc, w) => {
+      return rank(w.level) > rank(acc) ? w.level : acc;
+    }, null);
+    const localCount = c.warnings.length;
+
+    const rutKey = (c.client.rut ?? "").replace(/\./g, "").toLowerCase().trim();
+    const financial = rutKey ? financialSummaries.get(rutKey) : undefined;
+    const financialMax = (financial?.max_level ?? null) as string | null;
+    const financialCount = financial
+      ? financial.counts.WARNING_10 + financial.counts.WARNING_20 + financial.counts.WARNING_30
+      : 0;
+
+    // Fusión: el nivel mostrado es el MAYOR entre local y financial.
+    const mergedLevel =
+      rank(financialMax) > rank(localMax) ? financialMax : localMax;
+
+    return {
+      ...c,
+      warnings_sent: localCount + financialCount,
+      max_level: mergedLevel as WarningLevel | null,
+      saldo_vencido: financial?.saldo_vencido ?? 0,
+      dias_detenido:
+        c.halted_at ? Math.floor((Date.now() - c.halted_at.getTime()) / 86_400_000) : 0,
+    };
+  });
+
+  const cases = enrichedCases;
+  const stats = {
+    atRisk: baseData.atRisk,
+    haltedCount: baseData.cases.filter((c) => c.stage === CaseStage.HALTED_BY_PAYMENT).length,
+    waitingCount: baseData.cases.filter((c) => c.stage === CaseStage.WAITING_CUOTAS).length,
+    activeWarnings: {
+      w10: enrichedCases.filter((c) => c.max_level === "WARNING_10").length,
+      w20: enrichedCases.filter((c) => c.max_level === "WARNING_20").length,
+      w30: enrichedCases.filter((c) => c.max_level === "WARNING_30").length,
+    },
+  };
+
+  // Filtro de severidad por nivel real de warning emitido. Fuente: financial.
+  const filteredCases = cases.filter((c) => {
+    if (severityFilter === "all") return true;
+    if (severityFilter === "w30") return c.max_level === "WARNING_30";
+    if (severityFilter === "w20") return c.max_level === "WARNING_20";
+    if (severityFilter === "w10") return c.max_level === "WARNING_10";
+    return true;
   });
 
   return (
@@ -90,7 +156,7 @@ export default async function MoraDashboardPage({
         </p>
       </header>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-5 mb-8">
         <StatCard
           icon={TrendingDown}
           label="Cartera Vencida (En Riesgo)"
@@ -112,6 +178,45 @@ export default async function MoraDashboardPage({
           sub="Pendientes de validación inicial"
           tone="info"
         />
+        <StatCard
+          icon={Bell}
+          label="Warnings activos (W10/W20/W30)"
+          value={`${stats.activeWarnings.w10} / ${stats.activeWarnings.w20} / ${stats.activeWarnings.w30}`}
+          sub="Casos por nivel actual de aviso emitido. Fuente: hive-financial-control."
+          tone="info"
+        />
+      </div>
+
+      {/* Filtro de severidad por tramo de días detenido */}
+      <div className="mb-5 flex flex-wrap items-center gap-2 text-xs">
+        <span className="text-[11px] font-bold uppercase tracking-widest text-[var(--text-muted)] mr-2">
+          Filtro:
+        </span>
+        {(["all", "w10", "w20", "w30"] as const).map((key) => {
+          const active = severityFilter === key;
+          const label =
+            key === "all"
+              ? "Todos"
+              : key === "w10"
+                ? "W10 — Recordatorio"
+                : key === "w20"
+                  ? "W20 — Aviso crítico"
+                  : "W30 — Corte de servicio";
+          return (
+            <Link
+              key={key}
+              href={`?severity=${key}${params.sort ? `&sort=${params.sort}` : ""}`}
+              className="px-3 py-1.5 rounded-md text-[11px] font-bold uppercase tracking-widest transition-all"
+              style={{
+                background: active ? "var(--gold-dim)" : "var(--surface-2)",
+                color: active ? "var(--gold-deep)" : "var(--text-muted)",
+                border: `1px solid ${active ? "var(--gold-deep)" : "var(--card-border)"}`,
+              }}
+            >
+              {label}
+            </Link>
+          );
+        })}
       </div>
 
       <div
@@ -124,7 +229,7 @@ export default async function MoraDashboardPage({
         >
           <h2 className="text-sm font-semibold text-[var(--text)]">Casos con incidencia financiera</h2>
           <span className="text-xs text-[var(--text-muted)]">
-            {cases.length} {cases.length === 1 ? "caso" : "casos"}
+            {filteredCases.length} de {cases.length} {cases.length === 1 ? "caso" : "casos"}
           </span>
         </div>
 
@@ -137,12 +242,12 @@ export default async function MoraDashboardPage({
                 </th>
                 <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-[var(--gold-deep)] border-b border-[var(--card-border)]">
                   <Link
-                    href={`?sort=${searchParams.sort === "client_asc" ? "" : "client_asc"}`}
+                    href={`?sort=${params.sort === "client_asc" ? "" : "client_asc"}`}
                     className="flex items-center gap-1 hover:text-[var(--text)] transition-colors"
                     title="Alternar orden alfabético"
                   >
                     Cliente
-                    {searchParams.sort === "client_asc" ? (
+                    {params.sort === "client_asc" ? (
                       <span className="text-[var(--text)] font-extrabold">↑ A-Z</span>
                     ) : (
                       <span className="opacity-50 font-normal">⇵</span>
@@ -152,25 +257,39 @@ export default async function MoraDashboardPage({
                 <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-[var(--gold-deep)] border-b border-[var(--card-border)]">
                   Motivo Suspensión
                 </th>
+                <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-[var(--gold-deep)] border-b border-[var(--card-border)] text-center">
+                  Nivel Warning
+                </th>
+                <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-[var(--gold-deep)] border-b border-[var(--card-border)] text-center">
+                  Avisos Enviados
+                </th>
                 <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-[var(--gold-deep)] border-b border-[var(--card-border)] text-right">
                   Acciones de Cobranza
                 </th>
               </tr>
             </thead>
             <tbody>
-              {cases.length === 0 ? (
+              {filteredCases.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="p-0">
+                  <td colSpan={6} className="p-0">
                     <EmptyState
                       icon={CheckCircle2}
-                      title="Sin morosidad activa"
-                      description="No hay casos en mora ni cuentas por cobrar pendientes. La gestión financiera está al día."
+                      title={
+                        cases.length === 0
+                          ? "Sin morosidad activa"
+                          : "Sin casos en este tramo"
+                      }
+                      description={
+                        cases.length === 0
+                          ? "No hay casos en mora ni cuentas por cobrar pendientes. La gestión financiera está al día."
+                          : "Ningún caso cae en el rango de días seleccionado. Cambia el filtro para ver más casos."
+                      }
                       size="lg"
                     />
                   </td>
                 </tr>
               ) : (
-                cases.map((c) => {
+                filteredCases.map((c) => {
                   const isHalted = c.stage === CaseStage.HALTED_BY_PAYMENT;
                   return (
                     <tr
@@ -218,6 +337,60 @@ export default async function MoraDashboardPage({
                                 : "Pendiente de validación")}
                           </span>
                         </div>
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        {c.max_level ? (
+                          <span
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-bold tracking-wider"
+                            style={{
+                              background:
+                                c.max_level === "WARNING_30"
+                                  ? "var(--red-dim)"
+                                  : c.max_level === "WARNING_20"
+                                    ? "var(--amber-dim)"
+                                    : "var(--blue-dim)",
+                              color:
+                                c.max_level === "WARNING_30"
+                                  ? "var(--red)"
+                                  : c.max_level === "WARNING_20"
+                                    ? "var(--amber)"
+                                    : "var(--blue)",
+                              border: `1px solid ${
+                                c.max_level === "WARNING_30"
+                                  ? "var(--red-border)"
+                                  : c.max_level === "WARNING_20"
+                                    ? "var(--amber-border)"
+                                    : "var(--blue-border)"
+                              }`,
+                            }}
+                            title={`Mora: ${c.dias_detenido} días${c.saldo_vencido > 0 ? ` · Saldo vencido (financial): $${c.saldo_vencido.toLocaleString("es-CL")}` : ""}`}
+                          >
+                            {c.max_level === "WARNING_30"
+                              ? "W30 — Corte"
+                              : c.max_level === "WARNING_20"
+                                ? "W20 — Crítico"
+                                : "W10 — Aviso"}
+                          </span>
+                        ) : c.dias_detenido > 0 ? (
+                          <span
+                            className="inline-flex items-center gap-1 text-[11px] text-[var(--text-muted)]"
+                            title={`Próximo aviso automático: W10 en ${Math.max(0, 10 - c.dias_detenido)} días`}
+                          >
+                            <Clock className="w-3 h-3" />
+                            En seguimiento · {c.dias_detenido}d / 10
+                          </span>
+                        ) : (
+                          <span className="text-[11px] text-[var(--text-muted)]">—</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        <span
+                          className="inline-flex items-center gap-1 text-xs font-bold text-[var(--text)]"
+                          title="Avisos automáticos enviados al cliente (warnings 10/20/30 días). Fuente: hive-financial-control."
+                        >
+                          <Bell className="w-3 h-3 text-[var(--gold-deep)]" />
+                          {c.warnings_sent}
+                        </span>
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center justify-end gap-2 relative">

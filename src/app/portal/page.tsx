@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import Link from "next/link";
 import { CaseStage } from "@/lib/db-enums";
 import { STAGE_MESSAGES } from "@/lib/case-health";
+import { ensurePagaCuotasPaymentLink } from "@/lib/pagacuotas";
 import { redirect } from "next/navigation";
 import {
   Folder, MessageSquare, Lock, Scale, CheckCircle, Clock,
@@ -18,7 +19,7 @@ export default async function PortalHome() {
   const { cases, client } = await withRls(async (tx) => ({
     client: await tx.user.findUnique({
       where: { id: session.user.id },
-      select: { paymentLink: true },
+      select: { id: true, rut: true, fullName: true, email: true, phone: true, paymentLink: true },
     }),
     cases: await tx.case.findMany({
         where: { client_id: session.user.id },
@@ -43,6 +44,10 @@ export default async function PortalHome() {
   }));
 
   const firstName = session.user.name?.split(" ")[0] ?? "Cliente";
+  const paymentLink = client ? await ensurePagaCuotasPaymentLink(client) : null;
+  const paymentUnavailableMessage = client?.rut
+    ? "No fue posible conectar con PagaCuotas. Intenta nuevamente en unos minutos."
+    : "Falta registrar tu RUT para generar el enlace de pago.";
   const totalCases = cases.length;
   const activeCases = cases.filter(
     (c) => c.stage === CaseStage.IN_PROGRESS || c.stage === CaseStage.OPEN
@@ -152,30 +157,48 @@ export default async function PortalHome() {
         )}
       </div>
 
-      {client?.paymentLink && (
-        <a
-          href={client.paymentLink}
-          target="_blank"
-          rel="noreferrer"
-          className="flex items-center justify-between gap-4 rounded-lg p-5 transition-all hover:shadow-lg"
-          style={{
-            background: "linear-gradient(180deg, var(--sidebar-bg) 0%, var(--sidebar-deep) 100%)",
-            border: "1px solid var(--gold-border)",
-            color: "#FFFFFF",
-          }}
-        >
+      <div
+        className="flex items-center justify-between gap-4 rounded-lg p-5 transition-all"
+        style={{
+          background: paymentLink
+            ? "linear-gradient(180deg, var(--sidebar-bg) 0%, var(--sidebar-deep) 100%)"
+            : "var(--surface)",
+          border: paymentLink ? "1px solid var(--gold-border)" : "1px solid var(--border-glass)",
+          color: paymentLink ? "#FFFFFF" : "var(--text)",
+        }}
+      >
+        {paymentLink ? (
+          <a
+            href={paymentLink}
+            target="_blank"
+            rel="noreferrer"
+            className="flex flex-1 items-center justify-between gap-4"
+          >
+            <div className="flex items-center gap-3">
+              <div className="rounded-md p-2" style={{ background: "rgba(255,255,255,0.10)" }}>
+                <CreditCard className="h-5 w-5" style={{ color: "var(--gold-soft)" }} />
+              </div>
+              <div>
+                <p className="text-sm font-bold">Pagar cuotas pendientes</p>
+                <p className="text-xs opacity-75">Abre tu enlace seguro de PagaCuotas.</p>
+              </div>
+            </div>
+            <ChevronRight className="h-5 w-5" />
+          </a>
+        ) : (
           <div className="flex items-center gap-3">
-            <div className="rounded-md p-2" style={{ background: "rgba(255,255,255,0.10)" }}>
-              <CreditCard className="h-5 w-5" style={{ color: "var(--gold-soft)" }} />
+            <div className="rounded-md p-2" style={{ background: "var(--surface-2)" }}>
+              <CreditCard className="h-5 w-5" style={{ color: "var(--gold)" }} />
             </div>
             <div>
               <p className="text-sm font-bold">Pagar cuotas pendientes</p>
-              <p className="text-xs opacity-75">Abre tu enlace seguro de PagaCuotas.</p>
+              <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
+                {paymentUnavailableMessage}
+              </p>
             </div>
           </div>
-          <ChevronRight className="h-5 w-5" />
-        </a>
-      )}
+        )}
+      </div>
 
       {/* ── Cases section ── */}
       <div>

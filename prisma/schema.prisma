@@ -119,6 +119,7 @@ model Case {
   timeEntries TimeEntry[]
   timerSessions TimerSession[]
   aiAnalyses  AiCaseAnalysis[]
+  warnings    CaseWarning[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -128,8 +129,39 @@ model Case {
   @@index([stage])
   @@index([is_paid])
   @@index([categoryId])
+  @@index([stage, halted_at])
 
   @@map("cases")
+}
+
+/// Bitácora idempotente de avisos automáticos de morosidad ejecutados sobre un
+/// Caso (a diferencia de hive-financial-control que los traquea por Cuota,
+/// aquí trackeamos a nivel de expediente porque no siempre existe un Cuota
+/// asociado en financial-control). Cron diario en /api/cron/case-warnings.
+model CaseWarning {
+  id                    String   @id @default(uuid())
+  caseId                String
+  case                  Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  /// "WARNING_10" | "WARNING_20" | "WARNING_30"
+  level                 String
+  dias_halted_at_send   Int
+  /// "EMAIL" | "WHATSAPP" | "BOTH"
+  channel               String   @default("BOTH")
+  /// "PENDING" | "SENT" | "FAILED"
+  delivery_status       String   @default("PENDING")
+  delivery_error        String?
+  /// Para WARNING_30: si ya se ejecutaron las acciones de corte (user.active=false, etc).
+  side_effects_applied  Boolean  @default(false)
+  sent_at               DateTime?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@unique([caseId, level])
+  @@index([caseId])
+  @@index([level])
+  @@index([delivery_status])
+  @@index([createdAt])
+  @@map("case_warnings")
 }
 
 

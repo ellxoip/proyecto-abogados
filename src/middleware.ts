@@ -11,6 +11,7 @@ const PUBLIC_PATHS = [
   "/api/v1",
   "/api/internal/",
   "/api/integration/",
+  "/api/cron/",
 ];
 
 // NextAuth v5 cookie names (Auth.js renamed from "next-auth" to "authjs").

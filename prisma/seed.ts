@@ -66,12 +66,15 @@ async function main() {
   // ── Cliente ──
   const cliente = await prisma.user.upsert({
     where: { email: "cliente@gmail.com" },
-    update: {},
+    update: {
+      rut: "12345678-9",
+    },
     create: {
       role: Role.CLIENTE,
       fullName: "Pedro González (Cliente)",
       email: "cliente@gmail.com",
       phone: "+56944444444",
+      rut: "12345678-9",
       passwordHash: await hash("Cliente2026!"),
     },
   });

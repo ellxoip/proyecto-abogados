@@ -36,13 +36,13 @@ export function AiAnalyzeButton() {
         onClick={handleAnalyze}
         disabled={loading}
         className="flex items-center gap-2 px-5 py-2.5 rounded-md text-[11px] font-bold uppercase tracking-widest text-[var(--text)] transition-colors disabled:opacity-60"
-        style={{ background: loading ? "var(--text-muted)" : "var(--bg)" }}
+        style={{ background: loading ? "var(--text-muted)" : "var(--bg)", color: "white" }}
       >
         <Brain className={`w-4 h-4 ${loading ? "animate-pulse" : ""}`} />
         {loading ? "Analizando..." : "Analizar todos con IA"}
       </button>
       {result && (
-        <p className="text-[11px] font-medium" style={{ color: result.startsWith("Error") ? "var(--red)" : "#4ADE80" }}>
+        <p className="text-[11px] font-medium" style={{ color: result.startsWith("Error") ? "var(--red)" : "#d7ebde" }}>
           {result}
         </p>
       )}
