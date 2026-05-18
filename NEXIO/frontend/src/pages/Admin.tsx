@@ -1,0 +1,1752 @@
+import { useState, useEffect, useCallback } from 'react'
+import {
+  getUsers, createUser, updateUser, deleteUser,
+  getGroups, createGroup, updateGroup, deleteGroup,
+  getGroupAreas, createArea, updateArea, deleteArea,
+  getAvailableWhatsApp,
+  getStageLabels, updateStageLabels,
+  getPipelineStages, createPipelineStage, updatePipelineStage, deletePipelineStage,
+  adminListWASessions, adminDeleteWASession,
+  getAtInformaAbogados, syncVendedoresFromAtInforma,
+  getAIAgents, createAIAgent, updateAIAgent, toggleAIAgent, deleteAIAgent, getAIAgentLogs,
+  getAllWhatsAppConfigs, assignAgentWhatsApp, addAgentConfig, removeAgentConfig,
+} from '../api'
+import type { User, Group, Area, WhatsAppConfig } from '../types'
+import { STAGE_LABELS as DEFAULT_STAGE_LABELS } from '../types'
+import { Users, Building, Plus, Edit2, Trash2, X, Shield, GitBranch, Phone, ChevronRight, Layers, Smartphone, Wifi, WifiOff, RefreshCw, Link2, UserCheck, UserMinus, Bot, Zap, ChevronDown, ChevronUp, Eye, Clock, MessageSquare, ToggleLeft, ToggleRight, GripVertical } from 'lucide-react'
+import toast from 'react-hot-toast'
+import { useAuthStore } from '../store/auth'
+
+type Tab = 'users' | 'groups' | 'pipeline' | 'whatsapp_sessions' | 'ai_agents'
+
+export default function Admin() {
+  const { user: me } = useAuthStore()
+  const [activeTab, setActiveTab] = useState<Tab>('users')
+  const [users, setUsers] = useState<User[]>([])
+  const [groups, setGroups] = useState<Group[]>([])
+  const [selectedGroup, setSelectedGroup] = useState<number | null>(null)
+  const [areas, setAreas] = useState<Area[]>([])
+  const [availableWA, setAvailableWA] = useState<{ id: number; phone_number: string; api_provider: string; name?: string; group_name?: string | null }[]>([])
+  const [showUserModal, setShowUserModal] = useState(false)
+  const [showGroupModal, setShowGroupModal] = useState(false)
+  const [showAreaModal, setShowAreaModal] = useState(false)
+  const [showAreasModal, setShowAreasModal] = useState(false)
+  const [editUser, setEditUser] = useState<User | null>(null)
+  const [editGroup, setEditGroup] = useState<Group | null>(null)
+  const [editArea, setEditArea] = useState<Area | null>(null)
+
+  const [userForm, setUserForm] = useState({ name: '', email: '', password: '', role: 'agendadora', group_id: '', whatsapp_number: '' })
+  const [groupForm, setGroupForm] = useState({ name: '', description: '' })
+  const [areaForm, setAreaForm] = useState({ name: '', whatsapp_config_ids: [] as number[] })
+  const [saving, setSaving] = useState(false)
+  const [stageLabels, setStageLabels] = useState<Record<string, string>>(DEFAULT_STAGE_LABELS)
+  const [labelsSaving, setLabelsSaving] = useState(false)
+  const [pipelineStages, setPipelineStages] = useState<any[]>([])
+  const [stagesLoading, setStagesLoading] = useState(false)
+  const [stageForm, setStageForm] = useState({ key: '', name: '', color: '#ccff00', order: 0 })
+  const [editingStage, setEditingStage] = useState<any | null>(null)
+  const [showStageModal, setShowStageModal] = useState(false)
+  const [atSyncing, setAtSyncing] = useState(false)
+  const [atPreview, setAtPreview] = useState<{
+    abogados: {id:string;fullName:string;email:string;phone:string;role:string;status:'new'|'update'}[];
+    to_deactivate: {name:string;email:string}[];
+  } | null>(null)
+
+  // Members modal
+  const [showMembersModal, setShowMembersModal] = useState(false)
+  const [membersGroupId, setMembersGroupId]     = useState<number|null>(null)
+  const [groupMembers, setGroupMembers]         = useState<User[]>([])
+  const [unassigned, setUnassigned]             = useState<User[]>([])
+  const [membersLoading, setMembersLoading]     = useState(false)
+
+  const loadUsers  = () => getUsers().then(setUsers)
+  const loadGroups = () => getGroups().then(setGroups)
+  const loadGroupData = async (gid: number) => {
+    try {
+      const areasData = await getGroupAreas(gid)
+      setAreas(areasData)
+    } catch {
+      toast.error('Error cargando datos del grupo')
+    }
+  }
+
+  const openGroupAreas = async (gid: number) => {
+    setSelectedGroup(gid)
+    setShowAreasModal(true)
+  }
+
+  const openGroupMembers = async (gid: number) => {
+    setMembersGroupId(gid)
+    setShowMembersModal(true)
+    setMembersLoading(true)
+    try {
+      const [members, all] = await Promise.all([
+        getUsers({ group_id: gid }),
+        getUsers(),
+      ])
+      setGroupMembers(members.filter((u: User) => u.is_active && ['vendedor', 'agendadora'].includes(u.role)))
+      setUnassigned(
+        all.filter((u: User) =>
+          u.is_active &&
+          ['vendedor', 'agendadora'].includes(u.role) &&
+          !u.group_id
+        )
+      )
+    } catch { toast.error('Error cargando miembros') }
+    finally { setMembersLoading(false) }
+  }
+
+  const handleAssignMember = async (userId: number) => {
+    try {
+      await updateUser(userId, { group_id: membersGroupId })
+      await openGroupMembers(membersGroupId!)
+      loadUsers()
+    } catch { toast.error('Error al asignar') }
+  }
+
+  const handleRemoveMember = async (userId: number) => {
+    try {
+      await updateUser(userId, { group_id: null })
+      await openGroupMembers(membersGroupId!)
+      loadUsers()
+    } catch { toast.error('Error al quitar del grupo') }
+  }
+
+  const loadPipelineStages = useCallback(async () => {
+    setStagesLoading(true)
+    try { setPipelineStages(await getPipelineStages()) }
+    catch { /* non-abogados only */ }
+    finally { setStagesLoading(false) }
+  }, [])
+
+  useEffect(() => {
+    loadUsers(); loadGroups(); getStageLabels().then(setStageLabels)
+    loadPipelineStages()
+  }, [loadPipelineStages])
+  useEffect(() => { if (selectedGroup) loadGroupData(selectedGroup) }, [selectedGroup])  // eslint-disable-line
+
+  const handleSaveUser = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      const data: any = { ...userForm }
+      if (!data.password) delete data.password
+      data.group_id = data.group_id ? parseInt(data.group_id) : null
+      if (editUser) {
+        await updateUser(editUser.id, data)
+        toast.success('Usuario actualizado')
+      } else {
+        await createUser(data)
+        toast.success('Usuario creado')
+      }
+      setShowUserModal(false)
+      loadUsers()
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || 'Error al guardar usuario')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const openEditUser = (u: User) => {
+    setEditUser(u)
+    setUserForm({ name: u.name, email: u.email, password: '', role: u.role, group_id: u.group_id?.toString() || '', whatsapp_number: u.whatsapp_number || '' })
+    setShowUserModal(true)
+  }
+
+  const openCreateUser = () => {
+    setEditUser(null)
+    setUserForm({ name: '', email: '', password: '', role: 'agendadora', group_id: '', whatsapp_number: '' })
+    setShowUserModal(true)
+  }
+
+  const handleSaveGroup = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      if (editGroup) {
+        await updateGroup(editGroup.id, groupForm)
+        toast.success('Grupo actualizado')
+      } else {
+        await createGroup(groupForm)
+        toast.success('Grupo creado')
+      }
+      setShowGroupModal(false)
+      setEditGroup(null)
+      loadGroups()
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || 'Error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const openEditGroup = (g: Group) => {
+    setEditGroup(g)
+    setGroupForm({ name: g.name, description: (g as any).description ?? '' })
+    setShowGroupModal(true)
+  }
+
+  const openCreateGroup = () => {
+    setEditGroup(null)
+    setGroupForm({ name: '', description: '' })
+    setShowGroupModal(true)
+  }
+
+  const handleDeleteGroup = async (id: number, name: string) => {
+    if (!confirm(`¿Eliminar el grupo "${name}"? Se eliminarán todas sus áreas y leads asociados.`)) return
+    try {
+      await deleteGroup(id)
+      toast.success('Grupo eliminado')
+      if (selectedGroup === id) setSelectedGroup(null)
+      loadGroups()
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || 'Error al eliminar grupo')
+    }
+  }
+
+  const handleSaveArea = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!selectedGroup) return
+    setSaving(true)
+    try {
+      const payload = {
+        name: areaForm.name,
+        whatsapp_config_ids: areaForm.whatsapp_config_ids,
+        whatsapp_config_id: areaForm.whatsapp_config_ids[0] ?? null,
+      }
+      if (editArea) {
+        await updateArea(editArea.id, payload)
+        toast.success('Área actualizada')
+      } else {
+        await createArea(selectedGroup, { ...payload, kpi_leads: 50, group_id: selectedGroup })
+        toast.success('Área creada')
+      }
+      setShowAreaModal(false)
+      setEditArea(null)
+      await loadGroupData(selectedGroup)
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || 'Error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const openEditArea = async (a: Area) => {
+    setEditArea(a)
+    const currentIds = (a.phone_configs ?? []).map((c: any) => c.id)
+    setAreaForm({ name: a.name, whatsapp_config_ids: currentIds })
+    const available = await getAvailableWhatsApp().catch(() => [])
+    setAvailableWA(available)
+    setShowAreaModal(true)
+  }
+
+  const openCreateArea = async () => {
+    setEditArea(null)
+    setAreaForm({ name: '', whatsapp_config_ids: [] })
+    const available = await getAvailableWhatsApp().catch(() => [])
+    setAvailableWA(available)
+    setShowAreaModal(true)
+  }
+
+  const toggleWASelection = (id: number) => {
+    setAreaForm(f => ({
+      ...f,
+      whatsapp_config_ids: f.whatsapp_config_ids.includes(id)
+        ? f.whatsapp_config_ids.filter(x => x !== id)
+        : [...f.whatsapp_config_ids, id],
+    }))
+  }
+
+  const handleDeleteArea = async (id: number) => {
+    if (!confirm('¿Eliminar esta área? Se perderán los leads asociados.')) return
+    try {
+      await deleteArea(id)
+      toast.success('Área eliminada')
+      if (selectedGroup) await loadGroupData(selectedGroup)
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || 'Error al eliminar')
+    }
+  }
+
+  const handleDeleteUser = async (id: number) => {
+    if (!confirm('¿Desactivar este usuario?')) return
+    try {
+      await deleteUser(id)
+      toast.success('Usuario desactivado')
+      loadUsers()
+    } catch {
+      toast.error('Error')
+    }
+  }
+
+  const roleLabel: Record<string, string> = {
+    superadmin: 'Super Admin', subadmin: 'Sub Admin', agendadora: 'Agendadora',
+    vendedor: 'Vendedor', dante: 'Verificador Pagos',
+  }
+  const roleBadge: Record<string, string> = {
+    superadmin: 'bg-surface-1 text-white border-lime',
+    subadmin:   'bg-surface-2 text-white/85 border-white/10',
+    agendadora: 'bg-surface-2 text-white/85 border-white/10',
+    vendedor:   'bg-surface-2 text-white/85 border-white/10',
+    dante:      'bg-surface-2 text-white/85 border-white/10',
+  }
+
+  const handleSaveStage = async () => {
+    setSaving(true)
+    try {
+      if (editingStage) {
+        const updated = await updatePipelineStage(editingStage.id, stageForm)
+        setPipelineStages(ps => ps.map(s => s.id === updated.id ? updated : s))
+        toast.success('Etapa actualizada')
+      } else {
+        const created = await createPipelineStage({ ...stageForm, order: pipelineStages.length })
+        setPipelineStages(ps => [...ps, created])
+        toast.success('Etapa creada')
+      }
+      setShowStageModal(false)
+      setEditingStage(null)
+      setStageForm({ key: '', name: '', color: '#ccff00', order: 0 })
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail || 'Error al guardar etapa')
+    } finally { setSaving(false) }
+  }
+
+  const handleDeleteStage = async (id: number) => {
+    if (!confirm('¿Eliminar esta etapa?')) return
+    try {
+      await deletePipelineStage(id)
+      setPipelineStages(ps => ps.filter(s => s.id !== id))
+      toast.success('Etapa eliminada')
+    } catch { toast.error('Error al eliminar') }
+  }
+
+  const handleSaveLabels = async () => {
+    setLabelsSaving(true)
+    try {
+      const updated = await updateStageLabels(stageLabels)
+      setStageLabels(updated)
+      toast.success('Nombres del pipeline actualizados')
+    } catch {
+      toast.error('Error al guardar')
+    } finally {
+      setLabelsSaving(false)
+    }
+  }
+
+  // Filter out tecnico users from the display list
+  const visibleUsers = users.filter(u => u.role !== 'tecnico')
+  const isTecnico = me?.role === 'tecnico'
+  const myGroup = groups.find(g => g.id === me?.group_id)
+  const negocioTipo: string = (myGroup as any)?.tipo ?? 'abogados'
+
+  const tabs = [
+    { id: 'users' as Tab,             label: 'Usuarios',        icon: Users },
+    { id: 'groups' as Tab,            label: 'Grupos & Áreas',   icon: Building },
+    { id: 'pipeline' as Tab,          label: 'Pipeline',         icon: GitBranch },
+    { id: 'whatsapp_sessions' as Tab, label: 'WhatsApp QR',      icon: Smartphone },
+    // "Agentes IA" = tecnico full CRUD | business admins = "Mis Agentes" (read + toggle)
+    { id: 'ai_agents' as Tab, label: isTecnico ? 'Agentes IA' : 'Mis Agentes', icon: Bot },
+  ]
+
+  // ── WhatsApp sessions state ──────────────────────────────────
+  const [waSessions, setWASessions] = useState<any[]>([])
+  const [waLoading, setWALoading] = useState(false)
+
+  const loadWASessions = useCallback(async () => {
+    setWALoading(true)
+    try { setWASessions(await adminListWASessions()) }
+    catch { toast.error('Error cargando sesiones') }
+    finally { setWALoading(false) }
+  }, [])
+
+  useEffect(() => { if (activeTab === 'whatsapp_sessions') loadWASessions() }, [activeTab])
+
+  // ── AI Agents state ──────────────────────────────────────
+  const [agents, setAgents]               = useState<any[]>([])
+  const [agentsLoading, setAgentsLoading] = useState(false)
+  const [showAgentModal, setShowAgentModal] = useState(false)
+  const [editAgent, setEditAgent]         = useState<any | null>(null)
+  const [agentLogs, setAgentLogs]         = useState<Record<number, any[]>>({})
+  const [agentLogsOpen, setAgentLogsOpen] = useState<Record<number, boolean>>({})
+  const [allWAConfigs, setAllWAConfigs]   = useState<any[]>([])
+  const [assignWAOpen, setAssignWAOpen]   = useState<Record<number, boolean>>({})
+  const [assigningWA, setAssigningWA]     = useState<Record<number, boolean>>({})
+
+  const MODELS = ['gpt-4o-mini', 'gpt-4o', 'gpt-4-turbo', 'gpt-3.5-turbo']
+
+  const defaultAgentForm = {
+    name: '', description: '', whatsapp_config_id: '',
+    is_active: true,
+    openai_api_key: '', openai_model: 'gpt-4o-mini',
+    temperature: 0.7, max_tokens: 500, max_history_messages: 20,
+    system_prompt: `Eres el asistente virtual de Abogados Tributarios. Atiendes mensajes recibidos fuera del horario de oficina.
+
+Tu única misión es recopilar el nombre del cliente y el motivo de su consulta, y dejar el caso registrado para que el equipo lo atienda a primera hora del día siguiente.
+
+Flujo:
+1. Saluda cordialmente e indica que la oficina está cerrada en este momento.
+2. Pide el nombre del cliente.
+3. Pregunta brevemente el motivo de su consulta (ej: deuda SII, TGR, factura falsa, planificación tributaria).
+4. Cuando tengas nombre y motivo, llama a registrar_caso.
+5. Dile al cliente que su caso quedó registrado y que un asesor lo contactará a primera hora del día siguiente.
+
+Reglas:
+- Mensajes cortos y amables. Máximo 2-3 oraciones por respuesta.
+- No des asesoría legal ni tributaria.
+- No intentes resolver el problema del cliente, solo registrar su caso.
+- Si el cliente insiste en hablar con alguien ahora, dile "ESCALAR".`,
+    response_delay_seconds: 2,
+    escalation_keywords: [] as string[],
+    escalation_kw_input: '',
+    business_hours_start: '', business_hours_end: '',
+  }
+
+  const [agentForm, setAgentForm] = useState(defaultAgentForm)
+  const [agentSaving, setAgentSaving] = useState(false)
+
+  const loadAgents = useCallback(async () => {
+    setAgentsLoading(true)
+    try {
+      const [ag, cfgs] = await Promise.all([getAIAgents(), getAllWhatsAppConfigs()])
+      setAgents(ag)
+      setAllWAConfigs(cfgs)
+    } catch { toast.error('Error cargando agentes') }
+    finally { setAgentsLoading(false) }
+  }, [])
+
+  useEffect(() => { if (activeTab === 'ai_agents') loadAgents() }, [activeTab])
+
+  const openAgentModal = (agent?: any) => {
+    if (agent) {
+      setEditAgent(agent)
+      setAgentForm({
+        name: agent.name, description: agent.description ?? '',
+        whatsapp_config_id: String(agent.whatsapp_config_id),
+        is_active: agent.is_active,
+        openai_api_key: '',
+        openai_model: agent.openai_model,
+        temperature: agent.temperature, max_tokens: agent.max_tokens,
+        max_history_messages: agent.max_history_messages,
+        system_prompt: agent.system_prompt,
+        response_delay_seconds: agent.response_delay_seconds,
+        escalation_keywords: agent.escalation_keywords ?? [],
+        escalation_kw_input: '',
+        business_hours_start: agent.business_hours_start ?? '',
+        business_hours_end: agent.business_hours_end ?? '',
+      })
+    } else {
+      setEditAgent(null)
+      setAgentForm(defaultAgentForm)
+    }
+    setShowAgentModal(true)
+  }
+
+  const handleSaveAgent = async () => {
+    if (!agentForm.name.trim()) { toast.error('El nombre es obligatorio'); return }
+    if (!agentForm.whatsapp_config_id) { toast.error('Selecciona un número de WhatsApp'); return }
+    if (!agentForm.system_prompt.trim()) { toast.error('El prompt del sistema es obligatorio'); return }
+    if (!editAgent && !agentForm.openai_api_key.trim()) { toast.error('La API Key de OpenAI es obligatoria'); return }
+
+    setAgentSaving(true)
+    try {
+      const payload: any = {
+        name: agentForm.name.trim(),
+        description: agentForm.description || null,
+        whatsapp_config_id: parseInt(agentForm.whatsapp_config_id),
+        is_active: agentForm.is_active,
+        openai_model: agentForm.openai_model,
+        temperature: agentForm.temperature,
+        max_tokens: agentForm.max_tokens,
+        max_history_messages: agentForm.max_history_messages,
+        system_prompt: agentForm.system_prompt.trim(),
+        response_delay_seconds: agentForm.response_delay_seconds,
+        escalation_keywords: agentForm.escalation_keywords,
+        business_hours_start: agentForm.business_hours_start || null,
+        business_hours_end: agentForm.business_hours_end || null,
+      }
+      if (agentForm.openai_api_key.trim()) payload.openai_api_key = agentForm.openai_api_key.trim()
+
+      if (editAgent) {
+        await updateAIAgent(editAgent.id, payload)
+        toast.success('Agente actualizado')
+      } else {
+        payload.openai_api_key = agentForm.openai_api_key.trim()
+        await createAIAgent(payload)
+        toast.success('Agente creado')
+      }
+      setShowAgentModal(false)
+      loadAgents()
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail || 'Error guardando agente')
+    } finally { setAgentSaving(false) }
+  }
+
+  const handleToggleAgent = async (id: number, currentActive: boolean) => {
+    try {
+      await toggleAIAgent(id)
+      setAgents(prev => prev.map(a => a.id === id ? { ...a, is_active: !currentActive } : a))
+      toast.success(currentActive ? 'Agente desactivado' : 'Agente activado')
+    } catch { toast.error('Error actualizando agente') }
+  }
+
+  const handleDeleteAgent = async (id: number) => {
+    if (!confirm('¿Eliminar este agente? Se perderán todos sus logs.')) return
+    try { await deleteAIAgent(id); toast.success('Agente eliminado'); loadAgents() }
+    catch { toast.error('Error al eliminar') }
+  }
+
+  const handleAssignWA = async (agentId: number, configId: number | null) => {
+    setAssigningWA(p => ({ ...p, [agentId]: true }))
+    try {
+      await assignAgentWhatsApp(agentId, configId)
+      toast.success(configId ? 'Número asignado' : 'Número desasignado')
+      setAssignWAOpen(p => ({ ...p, [agentId]: false }))
+      loadAgents()
+    } catch { toast.error('Error al asignar número') }
+    finally { setAssigningWA(p => ({ ...p, [agentId]: false })) }
+  }
+
+  const handleAddConfig = async (agentId: number, configId: number) => {
+    try {
+      const updated = await addAgentConfig(agentId, configId)
+      setAgents((prev: any[]) => prev.map((a: any) => a.id === agentId ? updated : a))
+      toast.success('Número agregado')
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail || 'Error al agregar número')
+    }
+  }
+
+  const handleRemoveConfig = async (agentId: number, configId: number) => {
+    try {
+      const updated = await removeAgentConfig(agentId, configId)
+      setAgents((prev: any[]) => prev.map((a: any) => a.id === agentId ? updated : a))
+      toast.success('Número quitado')
+    } catch { toast.error('Error al quitar número') }
+  }
+
+  const toggleAgentLogs = async (agentId: number) => {
+    const isOpen = agentLogsOpen[agentId]
+    setAgentLogsOpen(prev => ({ ...prev, [agentId]: !isOpen }))
+    if (!isOpen && !agentLogs[agentId]) {
+      try {
+        const logs = await getAIAgentLogs(agentId, 30)
+        setAgentLogs(prev => ({ ...prev, [agentId]: logs }))
+      } catch { toast.error('Error cargando logs') }
+    }
+  }
+
+  return (
+    <div className="space-y-5">
+
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 bg-surface-2 rounded-xl flex items-center justify-center">
+          <Shield size={20} className="text-white/90" />
+        </div>
+        <div>
+          <h1 className="text-2xl font-bold text-white">Administración</h1>
+          <p className="text-white/62 text-sm">Gestión del sistema CRM</p>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-1 bg-surface-2 p-1 rounded-xl w-fit">
+        {tabs.map(({ id, label, icon: Icon }) => (
+          <button key={id} onClick={() => setActiveTab(id)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${
+              activeTab === id ? 'bg-surface-1 text-white shadow-sm' : 'text-white/62 hover:text-white/85'
+            }`}>
+            <Icon size={14} /> {label}
+          </button>
+        ))}
+      </div>
+
+      {/* Users tab */}
+      {activeTab === 'users' && (
+        <div className="bg-surface-1 rounded-xl border border-white/[0.07] shadow-sm overflow-hidden">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-white/5">
+            <h2 className="font-semibold text-white/90">Usuarios <span className="text-white/52 font-normal">({visibleUsers.length})</span></h2>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={async () => {
+                  setAtSyncing(true)
+                  try {
+                    const data = await getAtInformaAbogados()
+                    setAtPreview({ abogados: data.abogados ?? [], to_deactivate: data.to_deactivate ?? [] })
+                  } catch { toast.error('No se pudo conectar con AT Informa') }
+                  finally { setAtSyncing(false) }
+                }}
+                disabled={atSyncing}
+                className="flex items-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-xl border border-white/10 bg-surface-2 text-white/78 hover:bg-surface-1 transition-colors disabled:opacity-50"
+              >
+                <Link2 size={14} className={atSyncing ? 'animate-spin' : ''} />
+                Sync AT Informa
+              </button>
+              <button onClick={openCreateUser} className="btn-primary text-sm">
+                <Plus size={15} /> Nuevo Usuario
+              </button>
+            </div>
+          </div>
+          {/* AT Informa sync panel */}
+          {atPreview && (
+            <div className="mx-6 mt-4 mb-2 rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-bold text-amber-400 text-sm">
+                    {atPreview.abogados.length} abogados en AT Informa
+                    {atPreview.to_deactivate.length > 0 && ` · ${atPreview.to_deactivate.length} se desactivarán`}
+                  </p>
+                  <p className="text-white/52 text-xs mt-0.5">
+                    <span className="text-green-400 font-medium">{atPreview.abogados.filter(a => a.status === 'new').length} nuevos</span>
+                    {' · '}
+                    <span className="text-blue-400 font-medium">{atPreview.abogados.filter(a => a.status === 'update').length} actualizar</span>
+                    {atPreview.to_deactivate.length > 0 && <>{' · '}<span className="text-red-400 font-medium">{atPreview.to_deactivate.length} desactivar</span></>}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => setAtPreview(null)} className="text-white/40 hover:text-white/70 text-xs">Cancelar</button>
+                  <button
+                    onClick={async () => {
+                      setAtSyncing(true)
+                      try {
+                        const r = await syncVendedoresFromAtInforma()
+                        const parts = [`${r.created.length} creados`, `${r.updated.length} actualizados`]
+                        if (r.deactivated?.length) parts.push(`${r.deactivated.length} desactivados`)
+                        toast.success(`Sync completado: ${parts.join(', ')}`)
+                        setAtPreview(null)
+                        loadUsers()
+                      } catch { toast.error('Error en el sync') }
+                      finally { setAtSyncing(false) }
+                    }}
+                    disabled={atSyncing}
+                    className="btn-primary text-xs px-3 py-1.5"
+                  >
+                    {atSyncing ? 'Sincronizando...' : 'Confirmar Sync'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Abogados from AT Informa */}
+              <div className="divide-y divide-white/5 max-h-48 overflow-y-auto rounded-lg border border-white/10">
+                {atPreview.abogados.map(ab => (
+                  <div key={ab.id} className="flex items-center gap-3 px-3 py-2 text-xs">
+                    <div className={`w-7 h-7 rounded-lg font-bold flex items-center justify-center text-[11px] flex-shrink-0 ${
+                      ab.status === 'new' ? 'bg-green-500/20 text-green-400' : 'bg-blue-500/20 text-blue-400'
+                    }`}>
+                      {ab.fullName?.charAt(0) ?? '?'}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold text-white/90 truncate">{ab.fullName}</p>
+                      <p className="text-white/42 truncate">{ab.email}</p>
+                    </div>
+                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${
+                      ab.status === 'new'
+                        ? 'bg-green-500/15 text-green-400'
+                        : 'bg-blue-500/15 text-blue-400'
+                    }`}>
+                      {ab.status === 'new' ? 'Nuevo' : 'Actualizar'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              {/* CRM users not in AT → will be deactivated */}
+              {atPreview.to_deactivate.length > 0 && (
+                <div className="space-y-1">
+                  <p className="text-[10px] font-semibold text-red-400 uppercase tracking-wide">No están en AT Informa — se desactivarán</p>
+                  <div className="divide-y divide-white/5 max-h-28 overflow-y-auto rounded-lg border border-red-500/20 bg-red-500/5">
+                    {atPreview.to_deactivate.map(u => (
+                      <div key={u.email} className="flex items-center gap-3 px-3 py-2 text-xs">
+                        <div className="w-7 h-7 rounded-lg bg-red-500/20 text-red-400 font-bold flex items-center justify-center text-[11px] flex-shrink-0">
+                          {u.name?.charAt(0) ?? '?'}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="font-semibold text-white/70 truncate">{u.name}</p>
+                          <p className="text-white/38 truncate">{u.email}</p>
+                        </div>
+                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-red-500/15 text-red-400">Desactivar</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-surface-0 border-b border-white/[0.07]">
+                <tr>
+                  <th className="table-header">Nombre</th>
+                  <th className="table-header">Email</th>
+                  <th className="table-header">Rol</th>
+                  <th className="table-header">Grupo</th>
+                  <th className="table-header">Estado</th>
+                  <th className="table-header" />
+                </tr>
+              </thead>
+              <tbody>
+                {visibleUsers.map(u => (
+                  <tr key={u.id} className="table-row">
+                    <td className="table-cell">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-surface-2 border border-white/10 flex items-center justify-center flex-shrink-0">
+                          <span className="text-white/90 font-bold text-xs">{u.name.charAt(0)}</span>
+                        </div>
+                        <span className="font-semibold text-white/90">{u.name}</span>
+                      </div>
+                    </td>
+                    <td className="table-cell text-white/62 text-xs">{u.email}</td>
+                    <td className="table-cell">
+                      <span className={`badge border text-[11px] ${roleBadge[u.role] ?? 'bg-surface-2 text-white/78'}`}>
+                        {roleLabel[u.role] ?? u.role}
+                      </span>
+                    </td>
+                    <td className="table-cell text-xs text-white/62">
+                      {groups.find(g => g.id === u.group_id)?.name ?? '—'}
+                    </td>
+                    <td className="table-cell">
+                      <span className={`badge border text-[11px] ${u.is_active ? 'text-lime border border-lime/30 bg-lime/10' : 'text-danger border border-danger/30 bg-danger/10'}`}>
+                        {u.is_active ? 'Activo' : 'Inactivo'}
+                      </span>
+                    </td>
+                    <td className="table-cell">
+                      <div className="flex gap-1 justify-end">
+                        <button onClick={() => openEditUser(u)}
+                          className="p-1.5 hover:bg-surface-2 rounded-lg text-white/52 hover:text-white/90 transition-colors">
+                          <Edit2 size={14} />
+                        </button>
+                        {me?.role === 'superadmin' && u.id !== me.id && (
+                          <button onClick={() => handleDeleteUser(u.id)}
+                            className="p-1.5 hover:bg-danger/10 rounded-lg text-white/38 hover:text-danger transition-colors">
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Groups tab */}
+      {activeTab === 'groups' && (
+        <div className="bg-surface-1 rounded-xl border border-white/[0.07] shadow-sm overflow-hidden">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-white/5">
+            <h2 className="font-semibold text-white/90">
+              Grupos <span className="text-white/52 font-normal">({groups.length})</span>
+            </h2>
+            {me?.role === 'superadmin' && (
+              <button onClick={openCreateGroup} className="btn-primary text-sm">
+                <Plus size={15} /> Nuevo Grupo
+              </button>
+            )}
+          </div>
+          <div className="divide-y divide-white/5">
+            {groups.length === 0 ? (
+              <p className="text-sm text-white/52 text-center py-10">Sin grupos creados</p>
+            ) : groups.map(g => (
+              <div key={g.id} className="flex items-center justify-between px-6 py-4 hover:bg-surface-0 transition-colors group">
+                <button
+                  className="flex items-center gap-3 flex-1 text-left"
+                  onClick={() => openGroupAreas(g.id)}>
+                  <div className="w-9 h-9 rounded-xl bg-surface-2 flex items-center justify-center flex-shrink-0 group-hover:bg-surface-3 transition-colors">
+                    <Layers size={15} className="text-white/78" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-white/90 text-sm">{g.name}</p>
+                    <p className="text-xs text-white/52 mt-0.5">Click para ver áreas legales</p>
+                  </div>
+                </button>
+                <div className="flex items-center gap-2 flex-shrink-0 ml-4">
+                  <button
+                    onClick={() => openGroupMembers(g.id)}
+                    className="flex items-center gap-1.5 text-xs font-medium text-white/62 hover:text-white bg-surface-2 hover:bg-surface-3 px-3 py-1.5 rounded-lg transition-colors">
+                    <UserCheck size={12} /> Abogados
+                  </button>
+                  <button
+                    onClick={() => openGroupAreas(g.id)}
+                    className="flex items-center gap-1.5 text-xs font-medium text-white/62 hover:text-white bg-surface-2 hover:bg-surface-3 px-3 py-1.5 rounded-lg transition-colors">
+                    Ver áreas <ChevronRight size={12} />
+                  </button>
+                  {me?.role === 'superadmin' && (
+                    <>
+                      <button
+                        onClick={() => openEditGroup(g)}
+                        className="p-1.5 hover:bg-surface-2 rounded-lg text-white/38 hover:text-white/90 transition-colors"
+                        title="Editar grupo">
+                        <Edit2 size={14} />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteGroup(g.id, g.name)}
+                        className="p-1.5 hover:bg-danger/10 rounded-lg text-white/38 hover:text-danger transition-colors"
+                        title="Eliminar grupo">
+                        <Trash2 size={14} />
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Areas Modal — centrado */}
+      {showAreasModal && selectedGroup && (
+        <div className="fixed inset-0 modal-backdrop flex items-center justify-center z-50 p-4">
+          <div className="bg-surface-1 rounded-2xl shadow-modal w-full max-w-xl max-h-[85vh] flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-5 border-b border-white/[0.07] flex-shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 bg-surface-2 rounded-xl flex items-center justify-center">
+                  <Layers size={16} className="text-white/85" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-white">
+                    Áreas — {groups.find(g => g.id === selectedGroup)?.name}
+                  </h2>
+                  <p className="text-xs text-white/52 mt-0.5">{areas.length} área{areas.length !== 1 ? 's' : ''} configurada{areas.length !== 1 ? 's' : ''}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => { setShowAreasModal(false); setSelectedGroup(null) }}
+                className="p-2 hover:bg-surface-2 rounded-xl text-white/52 hover:text-white/85 transition-colors">
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto p-5 space-y-2">
+              {areas.length === 0 ? (
+                <div className="text-center py-12">
+                  <div className="w-12 h-12 bg-surface-2 rounded-2xl flex items-center justify-center mx-auto mb-3">
+                    <Layers size={20} className="text-white/52" />
+                  </div>
+                  <p className="text-sm text-white/52 font-medium">Sin áreas configuradas</p>
+                  <p className="text-xs text-white/38 mt-1">Agrega la primera área con el botón de abajo</p>
+                </div>
+              ) : areas.map(a => {
+                const phones: any[] = a.phone_configs ?? []
+                return (
+                  <div key={a.id}
+                    className="flex items-center justify-between p-4 bg-surface-0 hover:bg-surface-2 rounded-xl border border-white/[0.07] transition-colors">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold text-sm text-white/90">{a.name}</p>
+                      {phones.length > 0 ? (
+                        <div className="flex flex-wrap gap-1.5 mt-1.5">
+                          {phones.map((wp: any) => (
+                            <div key={wp.id}
+                              className="flex items-center gap-1 bg-lime/10 border border-lime/20 rounded-lg px-2 py-1">
+                              <Phone size={10} className="text-lime flex-shrink-0" />
+                              <p className="text-xs text-lime font-medium">{wp.phone_number}</p>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-white/38 mt-1">Sin número asociado</p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1 flex-shrink-0 ml-3">
+                      <button onClick={() => openEditArea(a)}
+                        className="p-2 hover:bg-surface-1 hover:shadow-sm rounded-lg text-white/52 hover:text-white/90 transition-all">
+                        <Edit2 size={14} />
+                      </button>
+                      <button onClick={() => handleDeleteArea(a.id)}
+                        className="p-2 hover:bg-danger/10 rounded-lg text-white/38 hover:text-danger transition-colors">
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-white/[0.07] flex-shrink-0">
+              <button onClick={openCreateArea} className="btn-primary w-full justify-center">
+                <Plus size={15} /> Nueva Área Legal
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Pipeline tab */}
+      {activeTab === 'pipeline' && (
+        negocioTipo === 'abogados' ? (
+          /* ── Abogados: only rename stages ── */
+          <div className="card space-y-5">
+            <div>
+              <h2 className="font-semibold text-white/90">Nombres de Etapas del Pipeline</h2>
+              <p className="text-sm text-white/62 mt-0.5">Personaliza cómo se llaman las columnas del pipeline.</p>
+            </div>
+            <div className="space-y-3">
+              {Object.entries(DEFAULT_STAGE_LABELS).map(([key, defaultLabel]) => (
+                <div key={key} className="flex items-center gap-3">
+                  <span className="text-xs text-white/52 w-44 truncate font-mono">{key}</span>
+                  <input
+                    className="input flex-1"
+                    value={stageLabels[key] ?? defaultLabel}
+                    onChange={e => setStageLabels(prev => ({ ...prev, [key]: e.target.value }))}
+                    placeholder={defaultLabel}
+                  />
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-end pt-2 border-t border-white/[0.07]">
+              <button onClick={handleSaveLabels} disabled={labelsSaving} className="btn-primary">
+                {labelsSaving ? 'Guardando...' : 'Guardar nombres'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          /* ── Non-abogados: full CRUD pipeline stages ── */
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="font-semibold text-white/90">Etapas del Pipeline</h2>
+                <p className="text-sm text-white/52 mt-0.5">Define las columnas del pipeline de tu negocio.</p>
+              </div>
+              <button
+                onClick={() => { setEditingStage(null); setStageForm({ key: '', name: '', color: '#ccff00', order: pipelineStages.length }); setShowStageModal(true) }}
+                className="btn-primary flex items-center gap-2"
+              >
+                <Plus size={15} /> Nueva etapa
+              </button>
+            </div>
+
+            {stagesLoading ? (
+              <div className="flex justify-center py-10">
+                <div className="w-6 h-6 border-2 border-lime border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : pipelineStages.length === 0 ? (
+              <div className="flex flex-col items-center py-14 rounded-xl border border-dashed border-white/10 space-y-3">
+                <GitBranch size={28} className="text-white/25" />
+                <p className="text-sm text-white/42">Sin etapas configuradas</p>
+                <button onClick={() => { setEditingStage(null); setStageForm({ key: '', name: '', color: '#ccff00', order: 0 }); setShowStageModal(true) }} className="btn-primary text-xs">
+                  Crear primera etapa
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {pipelineStages.map((s: any, idx: number) => (
+                  <div key={s.id} className="flex items-center gap-3 px-4 py-3 bg-surface-1 border border-white/[0.08] rounded-xl">
+                    <GripVertical size={14} className="text-white/25 flex-shrink-0" />
+                    <span className="w-6 h-6 rounded-full flex-shrink-0 border border-white/20" style={{ backgroundColor: s.color ?? '#ccff00' }} />
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-sm text-white">{s.name}</p>
+                      <p className="text-xs text-white/42 font-mono">{s.key}</p>
+                    </div>
+                    <span className="text-xs text-white/30">#{idx + 1}</span>
+                    <button onClick={() => { setEditingStage(s); setStageForm({ key: s.key, name: s.name, color: s.color ?? '#ccff00', order: s.order }); setShowStageModal(true) }}
+                      className="w-8 h-8 flex items-center justify-center text-white/42 hover:text-white hover:bg-white/5 rounded-lg transition-colors">
+                      <Edit2 size={13} />
+                    </button>
+                    <button onClick={() => handleDeleteStage(s.id)}
+                      className="w-8 h-8 flex items-center justify-center text-white/42 hover:text-danger hover:bg-danger/5 rounded-lg transition-colors">
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Stage modal */}
+            {showStageModal && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setShowStageModal(false)}>
+                <div className="bg-surface-0 border border-white/10 rounded-2xl p-6 w-full max-w-sm space-y-4" onClick={e => e.stopPropagation()}>
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-bold text-white">{editingStage ? 'Editar etapa' : 'Nueva etapa'}</h3>
+                    <button onClick={() => setShowStageModal(false)} className="text-white/42 hover:text-white"><X size={16} /></button>
+                  </div>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="input-label">Nombre visible *</label>
+                      <input className="input w-full" placeholder="Ej: Contactado, En proceso..." value={stageForm.name}
+                        onChange={e => setStageForm(f => ({ ...f, name: e.target.value }))} />
+                    </div>
+                    <div>
+                      <label className="input-label">Clave interna *</label>
+                      <input className="input w-full font-mono" placeholder="Ej: contactado, en_proceso..." value={stageForm.key}
+                        onChange={e => setStageForm(f => ({ ...f, key: e.target.value.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '') }))} />
+                      <p className="text-xs text-white/35 mt-1">Solo letras minúsculas, números y guion bajo.</p>
+                    </div>
+                    <div>
+                      <label className="input-label">Color</label>
+                      <div className="flex items-center gap-3">
+                        <input type="color" className="w-10 h-10 rounded-lg border border-white/10 bg-transparent cursor-pointer" value={stageForm.color}
+                          onChange={e => setStageForm(f => ({ ...f, color: e.target.value }))} />
+                        <span className="text-xs text-white/52 font-mono">{stageForm.color}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex gap-3 pt-1">
+                    <button onClick={() => setShowStageModal(false)} className="btn-secondary flex-1">Cancelar</button>
+                    <button onClick={handleSaveStage} disabled={saving || !stageForm.name.trim() || !stageForm.key.trim()} className="btn-primary flex-1">
+                      {saving ? 'Guardando...' : editingStage ? 'Guardar' : 'Crear'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )
+      )}
+
+      {/* ── WhatsApp Sessions tab ── */}
+      {activeTab === 'whatsapp_sessions' && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="font-semibold text-white/90">Sesiones WhatsApp QR</h2>
+              <p className="text-sm text-white/52 mt-0.5">Números vinculados por agendadoras vía QR</p>
+            </div>
+            <button onClick={loadWASessions} className="w-9 h-9 flex items-center justify-center border border-white/10 rounded-xl bg-surface-1 text-white/45 hover:text-white/78 transition-colors">
+              <RefreshCw size={14} className={waLoading ? 'animate-spin' : ''} />
+            </button>
+          </div>
+
+          {waLoading ? (
+            <div className="flex justify-center py-10">
+              <div className="w-6 h-6 border-2 border-lime border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : waSessions.length === 0 ? (
+            <div className="flex flex-col items-center py-12 rounded-xl border border-white/[0.07] space-y-3">
+              <Smartphone size={28} className="text-white/25" />
+              <p className="text-sm text-white/45">Ninguna agendadora ha vinculado WhatsApp aún</p>
+            </div>
+          ) : (
+            <div className="bg-surface-1 rounded-xl border border-white/[0.07] overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-surface-0 border-b border-white/[0.07]">
+                  <tr>
+                    <th className="table-header">Agendadora</th>
+                    <th className="table-header">Número</th>
+                    <th className="table-header">Nombre sesión</th>
+                    <th className="table-header">Estado</th>
+                    <th className="table-header">Grupo</th>
+                    <th className="table-header">Áreas</th>
+                    <th className="table-header" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {waSessions.map((s: any) => {
+                    const connected = s.live_status === 'connected'
+                    return (
+                      <tr key={s.id} className="table-row">
+                        <td className="table-cell">
+                          <p className="font-semibold text-white/90">{s.owner_name ?? '—'}</p>
+                          <p className="text-xs text-white/45">{s.owner_role ?? ''}</p>
+                        </td>
+                        <td className="table-cell text-white/78 font-mono text-xs">
+                          {s.phone_number === 'pending' ? <span className="text-white/38 italic">Pendiente</span> : s.phone_number}
+                        </td>
+                        <td className="table-cell text-white/78">{s.name}</td>
+                        <td className="table-cell">
+                          <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full ${
+                            connected ? 'bg-lime/10 text-lime' : 'bg-white/[0.06] text-white/45'
+                          }`}>
+                            {connected ? <Wifi size={10} /> : <WifiOff size={10} />}
+                            {connected ? 'Conectado' : (s.live_status ?? 'Desconocido')}
+                          </span>
+                        </td>
+                        <td className="table-cell text-white/62 text-xs">{s.group_name ?? '—'}</td>
+                        <td className="table-cell">
+                          {s.areas?.length > 0 ? (
+                            <div className="flex flex-wrap gap-1">
+                              {s.areas.map((a: any) => (
+                                <span key={a.id} className="text-[10px] px-1.5 py-0.5 rounded border" style={{ background: 'rgba(67,97,238,0.14)', color: 'rgba(147,168,255,0.85)', borderColor: 'rgba(67,97,238,0.22)' }}>{a.name}</span>
+                              ))}
+                            </div>
+                          ) : <span className="text-white/25 text-xs">Sin área</span>}
+                        </td>
+                        <td className="table-cell">
+                          <button
+                            onClick={async () => {
+                              if (!confirm(`¿Eliminar sesión "${s.name}"? Se desconectará el número.`)) return
+                              try {
+                                await adminDeleteWASession(s.id)
+                                toast.success('Sesión eliminada')
+                                loadWASessions()
+                              } catch { toast.error('Error al eliminar') }
+                            }}
+                            className="p-1.5 hover:bg-danger/10 rounded-lg text-white/25 hover:text-danger transition-colors">
+                            <Trash2 size={14} />
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <div className="rounded-xl p-3 flex items-start gap-2.5"
+            style={{ background: 'rgba(67,97,238,0.08)', border: '1px solid rgba(67,97,238,0.18)' }}>
+            <Smartphone size={13} className="flex-shrink-0 mt-0.5" style={{ color: 'rgba(67,97,238,0.85)' }} />
+            <p className="text-xs" style={{ color: 'rgba(147,168,255,0.80)' }}>
+              Las agendadoras gestionan sus propios números desde <strong>Mis WhatsApp</strong> en el menú lateral.
+              Cada una puede vincular hasta 3 números. Desde aquí puedes monitorear todas las conexiones y eliminar sesiones problemáticas.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* ──────────── MODALS ──────────── */}
+
+      {/* Members modal */}
+      {showMembersModal && membersGroupId && (
+        <div className="fixed inset-0 modal-backdrop flex items-center justify-center z-50 p-4">
+          <div className="bg-surface-1 rounded-2xl shadow-modal w-full max-w-lg max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-white/[0.07] flex-shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 bg-surface-2 rounded-xl flex items-center justify-center">
+                  <UserCheck size={16} className="text-white/85" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-white">
+                    Abogados — {groups.find(g => g.id === membersGroupId)?.name}
+                  </h2>
+                  <p className="text-xs text-white/52 mt-0.5">{groupMembers.length} abogado{groupMembers.length !== 1 ? 's' : ''} asignado{groupMembers.length !== 1 ? 's' : ''}</p>
+                </div>
+              </div>
+              <button onClick={() => { setShowMembersModal(false); setMembersGroupId(null) }}
+                className="p-2 hover:bg-surface-2 rounded-xl text-white/52 hover:text-white/85 transition-colors">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-5 space-y-4">
+              {membersLoading ? (
+                <p className="text-center text-white/40 text-sm py-8">Cargando...</p>
+              ) : (
+                <>
+                  {/* Current members */}
+                  <div>
+                    <p className="text-[10px] font-semibold text-white/40 uppercase tracking-wide mb-2">Asignados a este grupo</p>
+                    {groupMembers.length === 0 ? (
+                      <div className="text-center py-6 bg-surface-0 rounded-xl border border-white/[0.07]">
+                        <UserCheck size={20} className="text-white/25 mx-auto mb-2" />
+                        <p className="text-sm text-white/40">Sin abogados asignados</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {groupMembers.map(u => (
+                          <div key={u.id} className="flex items-center gap-3 px-4 py-3 bg-surface-0 rounded-xl border border-white/[0.07]">
+                            <div className={`w-8 h-8 rounded-lg font-bold flex items-center justify-center text-sm flex-shrink-0 ${u.role === 'agendadora' ? 'bg-neon/15 text-neon' : 'bg-lime/15 text-lime'}`}>
+                              {u.name.charAt(0).toUpperCase()}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <p className="text-sm font-semibold text-white/90 truncate">{u.name}</p>
+                                <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0 ${u.role === 'agendadora' ? 'bg-neon/10 text-neon' : 'bg-lime/10 text-lime'}`}>
+                                  {u.role === 'agendadora' ? 'Agendadora' : 'Abogado'}
+                                </span>
+                              </div>
+                              <p className="text-xs text-white/42 truncate">{u.email}</p>
+                            </div>
+                            <button
+                              onClick={() => handleRemoveMember(u.id)}
+                              title="Quitar del grupo"
+                              className="p-1.5 hover:bg-danger/10 rounded-lg text-white/30 hover:text-danger transition-colors flex-shrink-0">
+                              <UserMinus size={14} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Unassigned vendedores to add */}
+                  {unassigned.length > 0 && (
+                    <div>
+                      <p className="text-[10px] font-semibold text-white/40 uppercase tracking-wide mb-2">Sin grupo — disponibles para asignar</p>
+                      <div className="space-y-1.5">
+                        {unassigned.map(u => (
+                          <div key={u.id} className="flex items-center gap-3 px-4 py-3 bg-surface-0 rounded-xl border border-white/[0.07] opacity-60 hover:opacity-100 transition-opacity">
+                            <div className="w-8 h-8 rounded-lg bg-surface-2 text-white/52 font-bold flex items-center justify-center text-sm flex-shrink-0">
+                              {u.name.charAt(0).toUpperCase()}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <p className="text-sm font-semibold text-white/90 truncate">{u.name}</p>
+                                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-white/5 text-white/40 flex-shrink-0">
+                                  {u.role === 'agendadora' ? 'Agendadora' : 'Abogado'}
+                                </span>
+                              </div>
+                              <p className="text-xs text-white/42 truncate">{u.email}</p>
+                            </div>
+                            <button
+                              onClick={() => handleAssignMember(u.id)}
+                              title="Asignar a este grupo"
+                              className="flex items-center gap-1 text-xs font-semibold text-lime/80 hover:text-lime px-2.5 py-1.5 rounded-lg hover:bg-lime/10 transition-colors flex-shrink-0">
+                              <Plus size={12} /> Asignar
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* User modal */}
+      {showUserModal && (
+        <div className="fixed inset-0 modal-backdrop flex items-center justify-center z-50 p-4">
+          <div className="bg-surface-1 rounded-2xl shadow-modal w-full max-w-md">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-white/[0.07]">
+              <h2 className="text-lg font-bold text-white">{editUser ? 'Editar Usuario' : 'Nuevo Usuario'}</h2>
+              <button onClick={() => setShowUserModal(false)} className="p-2 hover:bg-surface-2 rounded-lg text-white/62">
+                <X size={18} />
+              </button>
+            </div>
+            <form onSubmit={handleSaveUser} className="px-6 py-5 space-y-4">
+              <div>
+                <label className="input-label">Nombre *</label>
+                <input className="input" value={userForm.name} required
+                  onChange={e => setUserForm(f => ({ ...f, name: e.target.value }))} />
+              </div>
+              <div>
+                <label className="input-label">Email *</label>
+                <input type="email" className="input" value={userForm.email} required
+                  onChange={e => setUserForm(f => ({ ...f, email: e.target.value }))} />
+              </div>
+              <div>
+                <label className="input-label">
+                  Contraseña {editUser ? '(vacío = no cambiar)' : '*'}
+                </label>
+                <input type="password" className="input" value={userForm.password}
+                  required={!editUser}
+                  onChange={e => setUserForm(f => ({ ...f, password: e.target.value }))} />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="input-label">Rol *</label>
+                  <select className="input" value={userForm.role}
+                    onChange={e => setUserForm(f => ({ ...f, role: e.target.value }))}>
+                    {me?.role === 'superadmin' && <option value="superadmin">Super Admin</option>}
+                    <option value="subadmin">Sub Admin</option>
+                    <option value="agendadora">Agendadora</option>
+                    <option value="vendedor">Vendedor</option>
+                    <option value="verificador">Verificador Pagos</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="input-label">Grupo</label>
+                  <select className="input" value={userForm.group_id}
+                    onChange={e => setUserForm(f => ({ ...f, group_id: e.target.value }))}>
+                    <option value="">Sin grupo</option>
+                    {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="input-label">WhatsApp personal</label>
+                <input className="input" value={userForm.whatsapp_number} placeholder="+56 9..."
+                  onChange={e => setUserForm(f => ({ ...f, whatsapp_number: e.target.value }))} />
+              </div>
+            </form>
+            <div className="px-6 py-4 border-t border-white/[0.07] flex gap-3">
+              <button type="button" onClick={() => setShowUserModal(false)} className="btn-secondary flex-1">Cancelar</button>
+              <button onClick={handleSaveUser} disabled={saving} className="btn-primary flex-1">
+                {saving ? 'Guardando...' : editUser ? 'Actualizar' : 'Crear'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Group modal */}
+      {showGroupModal && (
+        <div className="fixed inset-0 modal-backdrop flex items-center justify-center z-50 p-4">
+          <div className="bg-surface-1 rounded-2xl shadow-modal w-full max-w-md">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-white/[0.07]">
+              <h2 className="text-lg font-bold text-white">{editGroup ? 'Editar Grupo' : 'Nuevo Grupo'}</h2>
+              <button onClick={() => { setShowGroupModal(false); setEditGroup(null) }} className="p-2 hover:bg-surface-2 rounded-lg text-white/62">
+                <X size={18} />
+              </button>
+            </div>
+            <form onSubmit={handleSaveGroup} className="px-6 py-5 space-y-4">
+              <div>
+                <label className="input-label">Nombre *</label>
+                <input className="input" value={groupForm.name} required
+                  onChange={e => setGroupForm(f => ({ ...f, name: e.target.value }))} />
+              </div>
+              <div>
+                <label className="input-label">Descripción</label>
+                <input className="input" value={groupForm.description}
+                  onChange={e => setGroupForm(f => ({ ...f, description: e.target.value }))} />
+              </div>
+            </form>
+            <div className="px-6 py-4 border-t border-white/[0.07] flex gap-3">
+              <button type="button" onClick={() => { setShowGroupModal(false); setEditGroup(null) }} className="btn-secondary flex-1">Cancelar</button>
+              <button onClick={handleSaveGroup} disabled={saving} className="btn-primary flex-1">
+                {saving ? 'Guardando...' : editGroup ? 'Actualizar' : 'Crear Grupo'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Area modal */}
+      {showAreaModal && (
+        <div className="fixed inset-0 modal-backdrop flex items-center justify-center z-50 p-4">
+          <div className="bg-surface-1 rounded-2xl shadow-modal w-full max-w-md">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-white/[0.07]">
+              <div>
+                <h2 className="text-lg font-bold text-white">{editArea ? 'Editar Área' : 'Nueva Área Legal'}</h2>
+                <p className="text-xs text-white/52 mt-0.5">Un número puede asignarse a múltiples áreas</p>
+              </div>
+              <button onClick={() => { setShowAreaModal(false); setEditArea(null) }} className="p-2 hover:bg-surface-2 rounded-lg text-white/62">
+                <X size={18} />
+              </button>
+            </div>
+            <form onSubmit={handleSaveArea} className="px-6 py-5 space-y-4">
+              <div>
+                <label className="input-label">Nombre del área *</label>
+                <input className="input" value={areaForm.name} required
+                  placeholder="Ej: Deuda Ejecutiva"
+                  onChange={e => setAreaForm(f => ({ ...f, name: e.target.value }))} />
+              </div>
+              <div>
+                <label className="input-label">Números WhatsApp asociados</label>
+                {availableWA.length === 0 ? (
+                  <p className="text-xs text-warn mt-1 flex items-center gap-1">
+                    <Phone size={11} /> Sin números disponibles — el técnico debe agregar números primero.
+                  </p>
+                ) : (
+                  <div className="space-y-2 max-h-48 overflow-y-auto border border-white/10 rounded-xl p-2">
+                    {availableWA.map(wa => (
+                      <label key={wa.id} className="flex items-center gap-3 p-2 hover:bg-surface-0 rounded-lg cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={areaForm.whatsapp_config_ids.includes(wa.id)}
+                          onChange={() => toggleWASelection(wa.id)}
+                          className="rounded border-white/15 text-white"
+                        />
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Phone size={13} className="text-lime flex-shrink-0" />
+                          <div>
+                            <p className="text-sm font-medium text-white/90">{wa.phone_number}</p>
+                            <p className="text-xs text-white/52">{[wa.name, wa.group_name].filter(Boolean).join(' · ')}</p>
+                          </div>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                )}
+                {areaForm.whatsapp_config_ids.length > 0 && (
+                  <p className="text-xs text-lime mt-1.5 font-medium">
+                    {areaForm.whatsapp_config_ids.length} número{areaForm.whatsapp_config_ids.length > 1 ? 's' : ''} seleccionado{areaForm.whatsapp_config_ids.length > 1 ? 's' : ''}
+                  </p>
+                )}
+              </div>
+            </form>
+            <div className="px-6 py-4 border-t border-white/[0.07] flex gap-3">
+              <button type="button" onClick={() => { setShowAreaModal(false); setEditArea(null) }} className="btn-secondary flex-1">Cancelar</button>
+              <button onClick={handleSaveArea} disabled={saving} className="btn-primary flex-1">
+                {saving ? 'Guardando...' : editArea ? 'Actualizar' : 'Crear Área'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── AI Agents tab ─────────────────────────────────────────── */}
+      {activeTab === 'ai_agents' && (
+        <div className="space-y-4">
+          <div className="bg-surface-1 rounded-xl border border-white/[0.07] shadow-sm overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-white/5">
+              <div>
+                <h2 className="font-semibold text-white/90 flex items-center gap-2">
+                  <Bot size={16} className="text-lime" />
+                  {isTecnico ? 'Agentes IA' : 'Mis Agentes'}
+                  <span className="text-white/52 font-normal">({agents.length})</span>
+                </h2>
+                <p className="text-xs text-white/42 mt-0.5">
+                  {isTecnico
+                    ? 'Gestión global de agentes IA por número WhatsApp'
+                    : 'Agentes configurados para tu negocio'}
+                </p>
+              </div>
+              {/* Only tecnico can create agents */}
+              {isTecnico && (
+                <button onClick={() => openAgentModal()}
+                  className="flex items-center gap-1.5 btn-primary text-sm px-4 py-2">
+                  <Plus size={14} /> Nuevo Agente
+                </button>
+              )}
+            </div>
+
+            {agentsLoading ? (
+              <div className="px-6 py-10 text-center text-white/42 text-sm">Cargando agentes...</div>
+            ) : agents.length === 0 ? (
+              <div className="px-6 py-12 text-center space-y-3">
+                <Bot size={36} className="mx-auto text-white/20" />
+                <p className="text-white/52 text-sm">{isTecnico ? 'No hay agentes configurados.' : 'No tienes agentes asignados.'}</p>
+                <p className="text-white/32 text-xs">{isTecnico ? 'Crea el primer agente para automatizar respuestas de WhatsApp.' : 'Contacta al técnico para configurar un agente.'}</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-white/[0.05]">
+                {agents.map(agent => (
+                  <div key={agent.id} className="px-6 py-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex items-start gap-3 min-w-0">
+                        <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${agent.is_active ? 'bg-lime/10' : 'bg-white/5'}`}>
+                          <Bot size={16} className={agent.is_active ? 'text-lime' : 'text-white/30'} />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-semibold text-white/90 text-sm">{agent.name}</span>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${agent.is_active ? 'bg-lime/15 text-lime' : 'bg-white/8 text-white/40'}`}>
+                              {agent.is_active ? 'ACTIVO' : 'INACTIVO'}
+                            </span>
+                            {isTecnico && agent.group_name && (
+                              <span className="text-[10px] text-white/40 border border-white/10 px-1.5 py-0.5 rounded">
+                                {agent.group_name}
+                              </span>
+                            )}
+                          </div>
+                          {agent.description && <p className="text-xs text-white/42 mt-0.5 truncate">{agent.description}</p>}
+                          <div className="flex items-center gap-3 mt-1.5 flex-wrap">
+                            {/* Multi-number chips */}
+                            {(agent.configs ?? []).map((c: any) => (
+                              <span key={c.id} className="flex items-center gap-1.5 text-xs bg-lime/10 border border-lime/20 px-2 py-1 rounded-lg">
+                                <MessageSquare size={9} className="text-lime/70 flex-shrink-0" />
+                                <span className="flex flex-col leading-none">
+                                  <span className="text-lime/90 font-semibold">{c.phone_number}</span>
+                                  {c.group_name && (
+                                    <span className="text-white/40 text-[9px] mt-0.5">{c.group_name}</span>
+                                  )}
+                                </span>
+                                <button
+                                  onClick={() => handleRemoveConfig(agent.id, c.id)}
+                                  className="ml-0.5 text-white/25 hover:text-danger transition-colors flex-shrink-0"
+                                  title="Quitar número">
+                                  <X size={9} />
+                                </button>
+                              </span>
+                            ))}
+                            {/* Add number button */}
+                            {(agent.configs ?? []).length < 10 && (
+                              <button
+                                onClick={() => setAssignWAOpen(p => ({ ...p, [agent.id]: !p[agent.id] }))}
+                                className="flex items-center gap-1 text-xs text-amber-400/80 hover:text-amber-400 border border-amber-500/25 px-2 py-0.5 rounded-full transition-colors">
+                                <MessageSquare size={9} /> + Número
+                              </button>
+                            )}
+                            {isTecnico && (
+                              <span className="flex items-center gap-1 text-xs text-white/52">
+                                <Zap size={10} /> {agent.openai_model}
+                              </span>
+                            )}
+                            <span className="text-xs text-white/42">{agent.total_messages_sent ?? 0} enviados</span>
+                            {agent.business_hours_start && (
+                              <span className="flex items-center gap-1 text-xs text-white/52">
+                                <Clock size={10} /> {agent.business_hours_start}–{agent.business_hours_end}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Add-number dropdown */}
+                          {assignWAOpen[agent.id] && (
+                            <div className="mt-2 flex items-center gap-2">
+                              <select
+                                className="input text-xs py-1.5 flex-1"
+                                defaultValue=""
+                                onChange={e => {
+                                  const v = e.target.value
+                                  if (v) { handleAddConfig(agent.id, parseInt(v)); setAssignWAOpen(p => ({ ...p, [agent.id]: false })) }
+                                }}>
+                                <option value="">— Seleccionar número —</option>
+                                {allWAConfigs
+                                  .filter((c: any) => !(agent.configs ?? []).some((x: any) => x.id === c.id))
+                                  .map((c: any) => (
+                                    <option key={c.id} value={c.id}>
+                                      {c.phone_number}{c.name ? ` — ${c.name}` : ''}{c.group_name ? ` · ${c.group_name}` : ''}
+                                    </option>
+                                  ))}
+                              </select>
+                              <button
+                                onClick={() => setAssignWAOpen(p => ({ ...p, [agent.id]: false }))}
+                                className="text-white/42 hover:text-white/90 p-1">
+                                <X size={13} />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {/* Logs toggle — both tecnico and business admin */}
+                        <button onClick={() => toggleAgentLogs(agent.id)}
+                          className="flex items-center gap-1 text-xs text-white/52 hover:text-white/90 border border-white/10 px-2.5 py-1.5 rounded-lg transition-colors">
+                          <Eye size={11} />
+                          {agentLogsOpen[agent.id] ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+                        </button>
+
+                        {/* Toggle active — both tecnico and business admin */}
+                        <button
+                          onClick={() => handleToggleAgent(agent.id, agent.is_active)}
+                          title={agent.is_active ? 'Desactivar agente' : 'Activar agente'}
+                          className={`p-2 rounded-lg transition-colors ${agent.is_active ? 'text-lime hover:bg-lime/10' : 'text-white/30 hover:bg-white/[0.06]'}`}>
+                          {agent.is_active ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
+                        </button>
+
+                        {/* Edit / Delete — tecnico only */}
+                        {isTecnico && (
+                          <>
+                            <button onClick={() => openAgentModal(agent)}
+                              className="p-2 text-white/52 hover:text-white/90 hover:bg-white/[0.06] rounded-lg transition-colors">
+                              <Edit2 size={14} />
+                            </button>
+                            <button onClick={() => handleDeleteAgent(agent.id)}
+                              className="p-2 text-white/52 hover:text-danger hover:bg-danger/10 rounded-lg transition-colors">
+                              <Trash2 size={14} />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Logs panel */}
+                    {agentLogsOpen[agent.id] && (
+                      <div className="mt-4 bg-surface-2 rounded-xl border border-white/[0.07] overflow-hidden">
+                        <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/[0.07]">
+                          <span className="text-xs font-semibold text-white/62">Últimas interacciones</span>
+                          <button onClick={() => getAIAgentLogs(agent.id, 30).then(l => setAgentLogs(prev => ({ ...prev, [agent.id]: l })))}
+                            className="text-xs text-white/42 hover:text-white/90 flex items-center gap-1">
+                            <RefreshCw size={10} /> Actualizar
+                          </button>
+                        </div>
+                        {(!agentLogs[agent.id] || agentLogs[agent.id].length === 0) ? (
+                          <p className="text-xs text-white/42 px-4 py-4 text-center">Sin interacciones registradas aún.</p>
+                        ) : (
+                          <div className="divide-y divide-white/[0.05] max-h-72 overflow-y-auto">
+                            {agentLogs[agent.id].map(log => (
+                              <div key={log.id} className="px-4 py-3 text-xs">
+                                <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                                  <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${log.error ? 'bg-danger' : 'bg-lime'}`} />
+                                  <span className="text-white/42">{log.created_at ? new Date(log.created_at).toLocaleString('es-CL') : ''}</span>
+                                  <span className="text-white/20">·</span>
+                                  <span className="text-white/42">{log.model_used}</span>
+                                  <span className="text-white/20">·</span>
+                                  <span className="text-white/42">{log.tokens_used} tokens · {log.latency_ms}ms</span>
+                                </div>
+                                {log.error ? (
+                                  <p className="text-danger/80">Error: {log.error}</p>
+                                ) : (
+                                  <div className="space-y-1">
+                                    <p className="text-white/42 truncate"><span className="text-white/25">Cliente:</span> {log.input_message}</p>
+                                    <p className="text-white/75 truncate"><span className="text-lime/60">Agente:</span> {log.output_message}</p>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Agent modal — tecnico only ─────────────────────────────── */}
+      {showAgentModal && isTecnico && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-surface-1 rounded-2xl border border-white/[0.07] shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-white/[0.07]">
+              <h3 className="font-semibold text-white/90 flex items-center gap-2">
+                <Bot size={16} className="text-lime" />
+                {editAgent ? 'Editar Agente IA' : 'Nuevo Agente IA'}
+              </h3>
+              <button onClick={() => setShowAgentModal(false)} className="text-white/42 hover:text-white/90 p-1 rounded-lg"><X size={16} /></button>
+            </div>
+
+            <div className="overflow-y-auto flex-1 px-6 py-5 space-y-5">
+              {/* Básico */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold text-white/42 uppercase tracking-wider">Información básica</h4>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="col-span-2">
+                    <label className="text-xs text-white/52 block mb-1">Nombre del agente *</label>
+                    <input className="input w-full" placeholder="Ej: Asistente Ventas"
+                      value={agentForm.name} onChange={e => setAgentForm(f => ({ ...f, name: e.target.value }))} />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="text-xs text-white/52 block mb-1">Descripción (opcional)</label>
+                    <input className="input w-full" placeholder="Ej: Agente de ventas para canal Instagram"
+                      value={agentForm.description} onChange={e => setAgentForm(f => ({ ...f, description: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label className="text-xs text-white/52 block mb-1">Número WhatsApp *</label>
+                    <select className="input w-full" value={agentForm.whatsapp_config_id}
+                      onChange={e => setAgentForm(f => ({ ...f, whatsapp_config_id: e.target.value }))}>
+                      <option value="">— Seleccionar —</option>
+                      {allWAConfigs.map((c: any) => (
+                        <option key={c.id} value={c.id}>
+                          {c.phone_number}{c.name ? ` — ${c.name}` : ''}{c.group_name ? ` · ${c.group_name}` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex items-end">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <button type="button" onClick={() => setAgentForm(f => ({ ...f, is_active: !f.is_active }))}
+                        className={`w-10 h-5 rounded-full transition-colors ${agentForm.is_active ? 'bg-lime' : 'bg-white/20'} relative`}>
+                        <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all ${agentForm.is_active ? 'left-5' : 'left-0.5'}`} />
+                      </button>
+                      <span className="text-sm text-white/78">{agentForm.is_active ? 'Activo' : 'Inactivo'}</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              {/* Prompt */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold text-white/42 uppercase tracking-wider">Personalidad & Conocimiento</h4>
+                <div>
+                  <label className="text-xs text-white/52 block mb-1">Prompt del sistema *</label>
+                  <textarea className="input w-full resize-none font-mono text-xs" rows={8}
+                    placeholder="Describe la personalidad, servicios, precios y comportamiento del agente..."
+                    value={agentForm.system_prompt}
+                    onChange={e => setAgentForm(f => ({ ...f, system_prompt: e.target.value }))} />
+                  <p className="text-[10px] text-white/32 mt-1">Incluye nombre del negocio, servicios, precios, horarios y tono de voz.</p>
+                </div>
+              </div>
+
+              {/* OpenAI */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold text-white/42 uppercase tracking-wider">OpenAI</h4>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="col-span-2">
+                    <label className="text-xs text-white/52 block mb-1">
+                      API Key {editAgent ? '(dejar vacío para mantener la actual)' : '*'}
+                    </label>
+                    <input className="input w-full font-mono text-xs" type="password"
+                      placeholder={editAgent ? '••••••••••••••••••••' : 'sk-proj-...'}
+                      value={agentForm.openai_api_key}
+                      onChange={e => setAgentForm(f => ({ ...f, openai_api_key: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label className="text-xs text-white/52 block mb-1">Modelo</label>
+                    <select className="input w-full" value={agentForm.openai_model}
+                      onChange={e => setAgentForm(f => ({ ...f, openai_model: e.target.value }))}>
+                      {MODELS.map(m => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-white/52 block mb-1">Temperatura ({agentForm.temperature})</label>
+                    <input type="range" min="0" max="2" step="0.1" className="w-full accent-lime"
+                      value={agentForm.temperature}
+                      onChange={e => setAgentForm(f => ({ ...f, temperature: parseFloat(e.target.value) }))} />
+                    <div className="flex justify-between text-[10px] text-white/30 mt-0.5">
+                      <span>Preciso</span><span>Creativo</span>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs text-white/52 block mb-1">Máx. tokens respuesta</label>
+                    <input type="number" className="input w-full" min={50} max={4000}
+                      value={agentForm.max_tokens}
+                      onChange={e => setAgentForm(f => ({ ...f, max_tokens: parseInt(e.target.value) || 500 }))} />
+                  </div>
+                  <div>
+                    <label className="text-xs text-white/52 block mb-1">Mensajes de historial</label>
+                    <input type="number" className="input w-full" min={5} max={100}
+                      value={agentForm.max_history_messages}
+                      onChange={e => setAgentForm(f => ({ ...f, max_history_messages: parseInt(e.target.value) || 20 }))} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Comportamiento */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold text-white/42 uppercase tracking-wider">Comportamiento</h4>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="text-xs text-white/52 block mb-1">Demora de respuesta (seg)</label>
+                    <input type="number" className="input w-full" min={0} max={30}
+                      value={agentForm.response_delay_seconds}
+                      onChange={e => setAgentForm(f => ({ ...f, response_delay_seconds: parseInt(e.target.value) || 0 }))} />
+                  </div>
+                  <div>
+                    <label className="text-xs text-white/52 block mb-1">Horario inicio</label>
+                    <input type="time" className="input w-full"
+                      value={agentForm.business_hours_start}
+                      onChange={e => setAgentForm(f => ({ ...f, business_hours_start: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label className="text-xs text-white/52 block mb-1">Horario fin</label>
+                    <input type="time" className="input w-full"
+                      value={agentForm.business_hours_end}
+                      onChange={e => setAgentForm(f => ({ ...f, business_hours_end: e.target.value }))} />
+                  </div>
+                </div>
+                <p className="text-[10px] text-white/32">Sin horario = activo 24/7. Con horario = solo responde dentro del rango.</p>
+              </div>
+
+              {/* Escalación */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold text-white/42 uppercase tracking-wider">Escalación a humano</h4>
+                <p className="text-[10px] text-white/42">Palabras en la respuesta del bot que disparan la derivación automática a un agente humano.</p>
+                <div className="flex gap-2">
+                  <input className="input flex-1" placeholder="Ej: asesor humano, persona real..."
+                    value={agentForm.escalation_kw_input}
+                    onChange={e => setAgentForm(f => ({ ...f, escalation_kw_input: e.target.value }))}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' || e.key === ',') {
+                        e.preventDefault()
+                        const kw = agentForm.escalation_kw_input.trim()
+                        if (kw && !agentForm.escalation_keywords.includes(kw)) {
+                          setAgentForm(f => ({ ...f, escalation_keywords: [...f.escalation_keywords, kw], escalation_kw_input: '' }))
+                        }
+                      }
+                    }} />
+                  <button type="button"
+                    onClick={() => {
+                      const kw = agentForm.escalation_kw_input.trim()
+                      if (kw && !agentForm.escalation_keywords.includes(kw)) {
+                        setAgentForm(f => ({ ...f, escalation_keywords: [...f.escalation_keywords, kw], escalation_kw_input: '' }))
+                      }
+                    }}
+                    className="btn-secondary px-3 text-sm">Agregar</button>
+                </div>
+                {agentForm.escalation_keywords.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {agentForm.escalation_keywords.map(kw => (
+                      <span key={kw} className="flex items-center gap-1 text-xs bg-amber-500/15 text-amber-400 border border-amber-500/25 px-2.5 py-1 rounded-full">
+                        {kw}
+                        <button onClick={() => setAgentForm(f => ({ ...f, escalation_keywords: f.escalation_keywords.filter(k => k !== kw) }))}>
+                          <X size={10} />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t border-white/[0.07] flex gap-3">
+              <button onClick={() => setShowAgentModal(false)} className="btn-secondary flex-1">Cancelar</button>
+              <button onClick={handleSaveAgent} disabled={agentSaving} className="btn-primary flex-1">
+                {agentSaving ? 'Guardando...' : editAgent ? 'Actualizar Agente' : 'Crear Agente'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}

@@ -1,0 +1,522 @@
+// AT INFORMA v3.0 — Legal Operating System
+// Schema strictly per the v3.0 unified spec.
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ── Enums ────────────────────────────────────────────────────────────────
+
+enum Role {
+  SUPER_ADMIN
+  JEFE_DE_MESA
+  ABOGADO
+  CLIENTE
+  SISTEMA_CUOTAS
+}
+
+enum CaseStage {
+  OPEN
+  IN_PROGRESS
+  FINISHED
+  HALTED_BY_PAYMENT
+  WAITING_CUOTAS
+}
+
+enum CommentType {
+  INTERNAL
+  PUBLIC
+}
+
+enum PaymentStatus {
+  PAID
+  UNPAID
+  OVERDUE
+  RESTORED
+}
+
+enum CaseCategory {
+  TRIBUTARIO
+  PENAL
+  CIVIL
+  LABORAL
+  FAMILIA
+  MIGRATORIO
+  OTRO
+}
+
+enum Satisfaction {
+  HAPPY
+  NEUTRAL
+  SAD
+}
+
+enum AuditAction {
+  WHATSAPP_SENT
+  WHATSAPP_FAILED
+  EMAIL_SENT
+  EMAIL_FAILED
+  CASE_HALTED
+  CASE_REACTIVATED
+  CASE_FINISHED
+  CASE_DERIVED
+  CASE_ASSIGNED
+  PAYMENT_RECORDED
+  SATISFACTION_SUBMITTED
+  LOGIN_SUCCESS
+  LOGIN_FAILED
+  DATA_EXPORTED
+  PASSWORD_CHANGED
+}
+
+enum ActivityCategory {
+  INVESTIGACION
+  REDACCION
+  AUDIENCIAS
+  REUNIONES
+  GESTION_ADMINISTRATIVA
+  OTRO
+}
+
+enum SlaStatus {
+  CUMPLIDO
+  EN_RIESGO
+  INCUMPLIDO
+}
+
+enum RiskLevel {
+  BAJO
+  MEDIO
+  ALTO
+  CRITICO
+}
+
+enum NotificationType {
+  SLA_RIESGO
+  SLA_INCUMPLIDO
+  CASO_ESTANCADO
+  IA_URGENTE
+  RESUMEN_SEMANAL
+  RECORDATORIO_HORAS
+  LEAD_NUEVO
+  LEAD_RECORDATORIO
+}
+
+enum LeadSource {
+  CRM
+  MANUAL
+  WEB
+}
+
+enum LeadStatus {
+  PENDING
+  CONFIRMED
+  CONTACTED
+  CONVERTED
+  CANCELED
+  NO_SHOW
+}
+
+enum LeadPriority {
+  BAJA
+  NORMAL
+  ALTA
+  URGENTE
+}
+
+
+// ── Models ───────────────────────────────────────────────────────────────
+
+model Category {
+  id            String         @id @default(uuid())
+  name          String         @unique
+  cases         Case[]
+  slaDefinition SlaDefinition?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("categories")
+}
+
+model User {
+  id           String  @id @default(uuid())
+  role         Role
+  fullName     String
+  email        String  @unique
+  phone        String
+  passwordHash String
+  active       Boolean @default(true)
+  rut          String? @unique
+  secondary_code String? // For PIN or OTP verification
+  lastSeenAt   DateTime? // Updated on each page load for presence indicator
+
+  managedById  String?
+
+  managedBy    User?   @relation("UserHierarchy", fields: [managedById], references: [id], onDelete: SetNull)
+  subordinates User[]  @relation("UserHierarchy")
+
+  casesAsClient   Case[] @relation("CaseClient")
+  casesAsJefeMesa Case[] @relation("CaseJefeMesa")
+  casesAsLawyer   Case[] @relation("CaseLawyers")
+
+  leadsAssigned   Lead[] @relation("LeadAssignedAbogado")
+  leadsScheduled  Lead[] @relation("LeadScheduledBy")
+  googleCalendarConnections GoogleCalendarConnection[]
+
+
+  comments Comment[]
+
+  timeEntries           TimeEntry[]            @relation("LawyerTimeEntries")
+  notifications         Notification[]         @relation("UserNotifications")
+  slaDefinitionsCreated SlaDefinition[]        @relation("SlaCreatedBy")
+  productivitySnapshots ProductivitySnapshot[] @relation("LawyerSnapshots")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([role])
+  @@index([managedById])
+  @@map("users")
+}
+
+model Case {
+  id              String    @id @default(uuid())
+  code            String    @unique
+  client_id       String
+  client          User      @relation("CaseClient", fields: [client_id], references: [id], onDelete: Restrict)
+  jefe_mesa_id    String?
+  jefeMesa        User?     @relation("CaseJefeMesa", fields: [jefe_mesa_id], references: [id], onDelete: SetNull)
+  
+  abogados        User[]    @relation("CaseLawyers")
+
+  stage           CaseStage @default(OPEN)
+
+  is_paid         Boolean   @default(false)
+  initial_invoice String?
+  categoryId           String?
+  categoria            Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  is_delicate          Boolean   @default(false)
+  halted_at            DateTime?
+
+
+  halted_reason        String?
+  last_health_check_at DateTime?
+  resolvedAt           DateTime?
+  deadlineAt           DateTime?
+  satisfaction         Satisfaction?
+  unpaid_months        Int       @default(0)
+
+  // Financial info for payment plans
+  ccto                 Decimal?  @db.Decimal(12, 2)
+  pago_inicial         Decimal?  @db.Decimal(12, 2)
+  saldo_financiado     Decimal?  @db.Decimal(12, 2)
+  cantidad_cuotas      Int?
+  fecha_primera_cuota  DateTime? @db.Date
+  dia_pago             Int?
+
+
+
+  metadata             Json?
+  internalNotes        String?   @db.Text // Notas confidenciales (solo SuperAdmin/Jefe)
+  updates  Update[]
+
+  comments    Comment[]
+  payments    PaymentEvent[]
+  timeEntries TimeEntry[]
+  aiAnalyses  AiCaseAnalysis[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([client_id])
+  @@index([jefe_mesa_id])
+  @@index([stage])
+  @@index([is_paid])
+  @@index([categoryId])
+
+  @@map("cases")
+}
+
+
+model Comment {
+  id        String      @id @default(uuid())
+  caseId    String
+  case      Case        @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User        @relation(fields: [authorId], references: [id], onDelete: Restrict)
+  body      String      @db.Text
+  type      CommentType
+  createdAt DateTime    @default(now())
+
+  @@index([caseId])
+  @@index([authorId])
+  @@index([type])
+  @@map("comments")
+}
+
+model Update {
+  id            String   @id @default(uuid())
+  caseId        String
+  case          Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  description   String   @db.Text
+  document_url  String?
+  sent_whatsapp Boolean  @default(false)
+  sent_email    Boolean  @default(false)
+  createdAt     DateTime @default(now())
+
+  @@index([caseId])
+  @@map("updates")
+}
+
+model PaymentEvent {
+  id          String        @id @default(uuid())
+  caseId      String
+  case        Case          @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  status      PaymentStatus
+  amount      Decimal       @db.Decimal(12, 2)
+  monto_pagado Decimal?     @db.Decimal(12, 2)
+  receipt_url String?
+  numero_cuota Int?
+  fecha_vencimiento DateTime? @db.Date
+  pagado_en   DateTime?
+  createdAt   DateTime      @default(now())
+
+  @@index([caseId])
+  @@index([status])
+  @@map("payment_events")
+}
+
+model AuditLog {
+  id        String      @id @default(uuid())
+  action    AuditAction
+  caseId    String?
+  actorId   String?
+  channel   String?     // "whatsapp" | "email" | "system"
+  template  String?     // job kind / template name
+  status    String?     // "ok" | "failed"
+  message   String?     @db.Text
+  metadata  Json?
+  createdAt DateTime    @default(now())
+
+  @@index([action])
+  @@index([caseId])
+  @@index([actorId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ── Productividad & Control de Gestión ──────────────────────────────────────
+
+model TimeEntry {
+  id              String           @id @default(uuid())
+  caseId          String
+  case            Case             @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  lawyerId        String
+  lawyer          User             @relation("LawyerTimeEntries", fields: [lawyerId], references: [id], onDelete: Restrict)
+  date            DateTime         @db.Date
+  durationMinutes Int
+  category        ActivityCategory
+  description     String?          @db.VarChar(500)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([caseId])
+  @@index([lawyerId])
+  @@index([date])
+  @@map("time_entries")
+}
+
+model SlaDefinition {
+  id          String   @id @default(uuid())
+  categoryId  String   @unique
+  category    Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  maxDays     Int
+  active      Boolean  @default(true)
+  createdById String
+  createdBy   User     @relation("SlaCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("sla_definitions")
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  user      User             @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType
+  title     String
+  body      String           @db.Text
+  caseId    String?
+  leadId    String?
+  read      Boolean          @default(false)
+  createdAt DateTime         @default(now())
+  expiresAt DateTime?
+
+  @@index([userId, read])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+// ── Leads ───────────────────────────────────────────────────────────────
+// Posibles clientes ingresados desde el CRM (agendadoras) o manualmente.
+// Una agendadora elige al abogado en su panel y un POST a /api/crm/leads
+// crea el Lead, dispara una notificación al abogado y aparece en su Agenda.
+model Lead {
+  id              String     @id @default(uuid())
+  fullName        String
+  email           String?
+  phone           String
+  source          LeadSource @default(CRM)
+  status          LeadStatus @default(PENDING)
+
+  // Datos del cliente recibidos desde el CRM.
+  rut             String?
+  rutEmpresa      String?
+  empresa         String?
+  ciudad          String?
+
+  // Abogado asignado por la agendadora.
+  assignedAbogadoId String
+  assignedAbogado   User     @relation("LeadAssignedAbogado", fields: [assignedAbogadoId], references: [id], onDelete: Restrict)
+
+  // Quién registró el lead dentro de AT INFORMA (opcional, normalmente se crea
+  // vía API y queda null).
+  scheduledById   String?
+  scheduledBy     User?      @relation("LeadScheduledBy", fields: [scheduledById], references: [id], onDelete: SetNull)
+
+  meetingAt       DateTime
+  meetingDuration Int        @default(30) // minutos
+  category        String?    // "Área" en el CRM (ej. "Deuda Ejecutiva")
+  notes           String?    @db.Text
+
+  // Pipeline comercial proveniente del CRM.
+  priority        LeadPriority @default(NORMAL)
+  vendedor        String?
+  agendadora      String?
+  honorarios      Decimal?   @db.Decimal(12, 2)
+  cuotaInicial    Decimal?   @db.Decimal(12, 2)
+  numCuotas       Int?
+  montoCuota      Decimal?   @db.Decimal(12, 2)
+  descripcion     String?    @db.Text
+  notasInternas   String?    @db.Text
+
+  // Trazabilidad
+  externalId      String?    // id del CRM original (Dante u otro)
+  metadata        Json?      // payload bruto del CRM por si se necesita
+
+  // Auditoría / actividad
+  contactedAt          DateTime?
+  confirmationSentAt   DateTime?
+  reminderSentAt       DateTime?
+  reassignedAt         DateTime?
+  previousAbogadoId    String?
+  stuckNotifiedAt      DateTime?
+  convertedCaseId      String?    @unique
+  googleCalendarEvents LeadGoogleCalendarEvent[]
+
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  @@index([assignedAbogadoId, meetingAt])
+  @@index([status])
+  @@index([meetingAt])
+  @@index([reminderSentAt])
+  @@index([confirmationSentAt])
+  @@index([rut])
+  @@index([empresa])
+  @@map("leads")
+}
+
+model GoogleCalendarConnection {
+  id                 String   @id @default(uuid())
+  userId             String
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  googleAccountId    String
+  email              String
+  name               String?
+  picture            String?
+  accessToken        String   @db.Text
+  refreshToken       String?  @db.Text
+  accessTokenExpires DateTime
+  scope              String?  @db.Text
+  active             Boolean  @default(true)
+  lastSyncedAt       DateTime?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  events LeadGoogleCalendarEvent[]
+
+  @@unique([userId, googleAccountId])
+  @@index([userId, active])
+  @@map("google_calendar_connections")
+}
+
+model LeadGoogleCalendarEvent {
+  id           String   @id @default(uuid())
+  leadId       String
+  lead         Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  connectionId String
+  connection   GoogleCalendarConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  calendarId   String   @default("primary")
+  eventId      String
+  htmlLink     String?
+  syncedAt     DateTime @default(now())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([leadId, connectionId, calendarId])
+  @@index([connectionId])
+  @@index([leadId])
+  @@map("lead_google_calendar_events")
+}
+
+model AiCaseAnalysis {
+  id              String    @id @default(uuid())
+  caseId          String
+  case            Case      @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  healthScore     Int
+  riskLevel       RiskLevel
+  estimatedDays   Int?
+  minDays         Int?
+  maxDays         Int?
+  stagnant        Boolean   @default(false)
+  explanation     String    @db.Text
+  recommendations Json?
+  analyzedAt      DateTime  @default(now())
+
+  @@index([caseId])
+  @@index([analyzedAt])
+  @@map("ai_case_analyses")
+}
+
+model ProductivitySnapshot {
+  id               String   @id @default(uuid())
+  lawyerId         String
+  lawyer           User     @relation("LawyerSnapshots", fields: [lawyerId], references: [id], onDelete: Cascade)
+  periodStart      DateTime
+  periodEnd        DateTime
+  casesAssigned    Int      @default(0)
+  casesFinished    Int      @default(0)
+  totalMinutes     Int      @default(0)
+  avgMinutesPerCase Float   @default(0)
+  slaCompliancePct Float    @default(0)
+  avgDaysToFinish  Float    @default(0)
+  successRate      Float    @default(0)
+  compositeScore   Float    @default(0)
+  createdAt        DateTime @default(now())
+
+  @@index([lawyerId])
+  @@index([periodStart])
+  @@map("productivity_snapshots")
+}

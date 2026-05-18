@@ -1,0 +1,501 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Usuario {
+  id             Int                    @id @default(autoincrement())
+  nombre         String                 @db.VarChar(120)
+  email          String                 @unique @db.VarChar(180)
+  password_hash  String                 @db.VarChar(255)
+  rol            RolUsuario             @default(CONTADOR)
+  activo         Boolean                @default(true)
+  created_at     DateTime               @default(now())
+  updated_at     DateTime               @updatedAt
+  import_batches ClientImportBatch[]
+  aprobaciones   ModificacionContrato[] @relation("ModificacionesAprobadasPor")
+  modificaciones ModificacionContrato[] @relation("ModificacionesPorUsuario")
+}
+
+model Cliente {
+  id                  Int                  @id @default(autoincrement())
+  rut                 String               @unique @db.VarChar(20)
+  nombre              String               @db.VarChar(200)
+  tipo_cliente        TipoCliente
+  telefono            String?              @db.VarChar(30)
+  email               String?              @db.VarChar(180)
+  fecha_ingreso       DateTime             @db.Date
+  estado              EstadoCliente        @default(ACTIVO)
+  portal_password_hash         String?
+  portal_password_updated_at   DateTime?
+  portal_password_last_sent_at DateTime?
+  created_at          DateTime             @default(now())
+  updated_at          DateTime             @updatedAt
+  casos_legales       CasoLegal[]
+  client_import_items ClientImportItem[]
+  contactos           ClienteContacto[]
+  cuota_warnings      CuotaWarning[]
+  datos_facturacion   ClienteFacturacion[]
+  contratos           Contrato[]
+  pagos               Pago[]
+}
+
+model Contrato {
+  id                       Int                    @id @default(autoincrement())
+  cliente_id               Int
+  external_id              String?                @unique @db.VarChar(80)
+  tipo_servicio            String                 @db.VarChar(200)
+  fecha_contrato           DateTime               @db.Date
+  monto_ccto               Decimal                @db.Decimal(14, 2)
+  monto_pago_inicial       Decimal                @db.Decimal(14, 2)
+  saldo_financiado         Decimal                @db.Decimal(14, 2)
+  cantidad_cuotas_original Int
+  estado                   EstadoContrato         @default(ACTIVO)
+  crm_lead_id              Int?
+  crm_opportunity_id       String?                @unique @db.VarChar(120)
+  correlation_id           String?                @db.VarChar(120)
+  idempotency_key          String?                @unique @db.VarChar(200)
+  observaciones            String?
+  created_at               DateTime               @default(now())
+  updated_at               DateTime               @updatedAt
+  casos_legales            CasoLegal[]
+  contract_import_items    ContractImportItem[]
+  cliente                  Cliente                @relation(fields: [cliente_id], references: [id])
+  cuota_warnings           CuotaWarning[]
+  cuotas                   Cuota[]
+  modificaciones           ModificacionContrato[]
+  pagos                    Pago[]
+
+  @@unique([cliente_id, tipo_servicio, monto_ccto, fecha_contrato])
+  @@index([cliente_id])
+  @@index([estado])
+}
+
+model Cuota {
+  id                       Int                     @id @default(autoincrement())
+  contrato_id              Int
+  caso_legal_id            Int?
+  numero_cuota             Int
+  fecha_vencimiento        DateTime                @db.Date
+  monto_original           Decimal                 @db.Decimal(14, 2)
+  monto_actual             Decimal                 @db.Decimal(14, 2)
+  monto_pagado             Decimal                 @default(0) @db.Decimal(14, 2)
+  saldo_pendiente          Decimal                 @db.Decimal(14, 2)
+  estado                   EstadoCuota             @default(PENDIENTE)
+  cobrable                 Boolean                 @default(true)
+  motivo_no_cobrable       String?                 @db.VarChar(80)
+  fecha_pago               DateTime?               @db.Date
+  last_warning_level       CuotaWarningLevel?
+  last_warning_at          DateTime?
+  created_at               DateTime                @default(now())
+  updated_at               DateTime                @updatedAt
+  aplicaciones_pago        AplicacionPago[]
+  caso_legal               CasoLegal?              @relation(fields: [caso_legal_id], references: [id])
+  contrato                 Contrato                @relation(fields: [contrato_id], references: [id])
+  installment_import_items InstallmentImportItem[]
+  modificaciones           ModificacionContrato[]
+  pagos                    Pago[]
+  warnings                 CuotaWarning[]
+
+  @@unique([contrato_id, numero_cuota])
+  @@index([caso_legal_id])
+  @@index([contrato_id, estado])
+  @@index([fecha_vencimiento])
+}
+
+model Pago {
+  id                Int              @id @default(autoincrement())
+  cliente_id        Int
+  contrato_id       Int
+  cuota_id          Int?
+  fecha_pago        DateTime         @db.Date
+  monto_pagado      Decimal          @db.Decimal(14, 2)
+  estado            EstadoPago       @default(CONFIRMADO)
+  medio_pago        String           @db.VarChar(60)
+  payment_event_id  String?          @db.VarChar(120)
+  referencia        String?          @db.VarChar(120)
+  comprobante_url   String?          @db.VarChar(500)
+  observacion       String?
+  created_at        DateTime         @default(now())
+  updated_at        DateTime         @default(now()) @updatedAt
+  aplicaciones_pago AplicacionPago[]
+  cliente           Cliente          @relation(fields: [cliente_id], references: [id])
+  contrato          Contrato         @relation(fields: [contrato_id], references: [id])
+  cuota             Cuota?           @relation(fields: [cuota_id], references: [id], onDelete: Restrict)
+
+  @@index([cliente_id, fecha_pago])
+  @@index([contrato_id, fecha_pago])
+  @@index([cuota_id])
+  @@index([estado])
+  @@index([payment_event_id])
+}
+
+model ModificacionContrato {
+  id                 Int              @id @default(autoincrement())
+  contrato_id        Int
+  cuota_id           Int?
+  usuario_id         Int
+  tipo_modificacion  TipoModificacion
+  fecha_modificacion DateTime         @db.Date
+  valor_anterior     Json
+  valor_nuevo        Json
+  motivo             String
+  aprobado_por       Int?
+  created_at         DateTime         @default(now())
+  aprobador          Usuario?         @relation("ModificacionesAprobadasPor", fields: [aprobado_por], references: [id], onDelete: Restrict)
+  contrato           Contrato         @relation(fields: [contrato_id], references: [id])
+  cuota              Cuota?           @relation(fields: [cuota_id], references: [id], onDelete: Restrict)
+  usuario            Usuario          @relation("ModificacionesPorUsuario", fields: [usuario_id], references: [id])
+
+  @@index([contrato_id, fecha_modificacion])
+  @@index([usuario_id])
+  @@index([aprobado_por])
+}
+
+model CasoLegal {
+  id             Int       @id @default(autoincrement())
+  cliente_id     Int
+  contrato_id    Int?
+  codigo_interno String?   @unique @db.VarChar(80)
+  titulo         String    @db.VarChar(200)
+  descripcion    String?
+  estado         String    @default("ABIERTO") @db.VarChar(40)
+  fecha_apertura DateTime  @default(now()) @db.Date
+  fecha_cierre   DateTime? @db.Date
+  created_at     DateTime  @default(now())
+  updated_at     DateTime  @updatedAt
+  cliente        Cliente   @relation(fields: [cliente_id], references: [id])
+  contrato       Contrato? @relation(fields: [contrato_id], references: [id])
+  cuotas         Cuota[]
+
+  @@index([cliente_id])
+  @@index([contrato_id])
+  @@index([estado])
+}
+
+model AplicacionPago {
+  id             Int      @id @default(autoincrement())
+  pago_id        Int
+  cuota_id       Int
+  monto_aplicado Decimal  @db.Decimal(14, 2)
+  created_at     DateTime @default(now())
+  cuota          Cuota    @relation(fields: [cuota_id], references: [id])
+  pago           Pago     @relation(fields: [pago_id], references: [id], onDelete: Cascade)
+
+  @@unique([pago_id, cuota_id])
+  @@index([cuota_id])
+}
+
+model SistemaExterno {
+  id                  Int                 @id @default(autoincrement())
+  codigo              String              @unique @db.VarChar(40)
+  nombre              String              @db.VarChar(120)
+  base_url            String?             @db.VarChar(500)
+  activo              Boolean             @default(true)
+  created_at          DateTime            @default(now())
+  updated_at          DateTime            @updatedAt
+  external_references ExternalReference[]
+  external_sync_logs  ExternalSyncLog[]
+  integration_events  IntegrationEvent[]
+}
+
+model ExternalReference {
+  id                    Int                @id @default(autoincrement())
+  sistema_externo_id    Int
+  entity_type           ExternalEntityType
+  entity_id             Int
+  external_id           String             @db.VarChar(120)
+  external_secondary_id String?            @db.VarChar(120)
+  metadata              Json?
+  created_at            DateTime           @default(now())
+  updated_at            DateTime           @updatedAt
+  sistema_externo       SistemaExterno     @relation(fields: [sistema_externo_id], references: [id])
+
+  @@unique([sistema_externo_id, entity_type, external_id])
+  @@unique([sistema_externo_id, entity_type, entity_id])
+  @@index([entity_type, entity_id])
+}
+
+model IntegrationEvent {
+  id                 Int                    @id @default(autoincrement())
+  sistema_externo_id Int
+  event_type         String                 @db.VarChar(80)
+  external_event_id  String?                @db.VarChar(120)
+  idempotency_key    String                 @unique @db.VarChar(200)
+  status             IntegrationEventStatus @default(PENDING)
+  payload            Json
+  result_payload     Json?
+  error_message      String?
+  processed_at       DateTime?
+  created_at         DateTime               @default(now())
+  updated_at         DateTime               @updatedAt
+  sistema_externo    SistemaExterno         @relation(fields: [sistema_externo_id], references: [id])
+
+  @@unique([sistema_externo_id, event_type, external_event_id])
+  @@index([sistema_externo_id, status])
+  @@index([created_at])
+}
+
+model ExternalSyncLog {
+  id                 Int                @id @default(autoincrement())
+  sistema_externo_id Int
+  sync_type          String             @db.VarChar(80)
+  status             ExternalSyncStatus @default(STARTED)
+  request_payload    Json?
+  response_summary   Json?
+  error_message      String?
+  started_at         DateTime           @default(now())
+  finished_at        DateTime?
+  created_at         DateTime           @default(now())
+  updated_at         DateTime           @updatedAt
+  sistema_externo    SistemaExterno     @relation(fields: [sistema_externo_id], references: [id])
+
+  @@index([sistema_externo_id, status])
+  @@index([started_at])
+}
+
+model ClienteContacto {
+  id                    Int      @id @default(autoincrement())
+  cliente_id            Int
+  nombre                String   @db.VarChar(200)
+  email                 String?  @db.VarChar(180)
+  telefono              String?  @db.VarChar(30)
+  cargo                 String?  @db.VarChar(120)
+  es_principal          Boolean  @default(false)
+  recibe_notificaciones Boolean  @default(false)
+  recibe_comprobantes   Boolean  @default(false)
+  whatsapp              Boolean  @default(false)
+  created_at            DateTime @default(now())
+  updated_at            DateTime @updatedAt
+  cliente               Cliente  @relation(fields: [cliente_id], references: [id], onDelete: Cascade)
+
+  @@index([cliente_id])
+}
+
+model ClienteFacturacion {
+  id                       Int      @id @default(autoincrement())
+  cliente_id               Int
+  rut_facturacion          String   @db.VarChar(20)
+  razon_social_facturacion String   @db.VarChar(200)
+  giro_facturacion         String?  @db.VarChar(200)
+  direccion_facturacion    String?  @db.VarChar(255)
+  comuna                   String?  @db.VarChar(120)
+  ciudad                   String?  @db.VarChar(120)
+  region                   String?  @db.VarChar(120)
+  email_facturacion        String?  @db.VarChar(180)
+  tipo_documento_preferido String?  @db.VarChar(80)
+  requiere_oc              Boolean  @default(false)
+  condicion_pago           String?  @db.VarChar(80)
+  created_at               DateTime @default(now())
+  updated_at               DateTime @updatedAt
+  cliente                  Cliente  @relation(fields: [cliente_id], references: [id], onDelete: Cascade)
+
+  @@unique([cliente_id, rut_facturacion])
+  @@index([cliente_id])
+}
+
+model ClientImportBatch {
+  id             Int                     @id @default(autoincrement())
+  filename       String                  @db.VarChar(255)
+  status         ImportBatchStatus       @default(PREVIEW_READY)
+  total_clients  Int                     @default(0)
+  ready_clients  Int                     @default(0)
+  review_clients Int                     @default(0)
+  error_clients  Int                     @default(0)
+  created_by     Int
+  created_at     DateTime                @default(now())
+  confirmed_at   DateTime?
+  creator        Usuario                 @relation(fields: [created_by], references: [id])
+  client_items   ClientImportItem[]
+  contract_items ContractImportItem[]
+  cuota_items    InstallmentImportItem[]
+
+  @@index([status])
+  @@index([created_by])
+}
+
+model ClientImportItem {
+  id                  Int               @id @default(autoincrement())
+  batch_id            Int
+  row_number          Int
+  source_sheet        String            @db.VarChar(80)
+  rut                 String?           @db.VarChar(20)
+  nombre_razon_social String?           @db.VarChar(200)
+  tipo_persona        String?           @db.VarChar(60)
+  estado_cliente      String?           @db.VarChar(60)
+  fecha_ingreso       DateTime?         @db.Date
+  raw_data            Json
+  normalized_data     Json?
+  status              String            @default("READY") @db.VarChar(40)
+  errors              Json?
+  created_cliente_id  Int?
+  created_at          DateTime          @default(now())
+  batch               ClientImportBatch @relation(fields: [batch_id], references: [id], onDelete: Cascade)
+  created_cliente     Cliente?          @relation(fields: [created_cliente_id], references: [id])
+
+  @@index([batch_id, status])
+  @@index([rut])
+}
+
+model ContractImportItem {
+  id                  Int               @id @default(autoincrement())
+  batch_id            Int
+  row_number          Int
+  cliente_rut         String?           @db.VarChar(20)
+  servicio            String?           @db.VarChar(200)
+  area                String?           @db.VarChar(120)
+  monto_total         Decimal?          @db.Decimal(14, 2)
+  cantidad_cuotas     Int?
+  fecha_inicio        DateTime?         @db.Date
+  estado_contrato     String?           @db.VarChar(60)
+  raw_data            Json
+  normalized_data     Json?
+  status              String            @default("READY") @db.VarChar(40)
+  errors              Json?
+  created_contrato_id Int?
+  created_at          DateTime          @default(now())
+  batch               ClientImportBatch @relation(fields: [batch_id], references: [id], onDelete: Cascade)
+  created_contrato    Contrato?         @relation(fields: [created_contrato_id], references: [id])
+
+  @@index([batch_id, status])
+  @@index([cliente_rut])
+}
+
+model InstallmentImportItem {
+  id                Int               @id @default(autoincrement())
+  batch_id          Int
+  row_number        Int
+  contrato_ref      String?           @db.VarChar(120)
+  numero_cuota      Int?
+  monto             Decimal?          @db.Decimal(14, 2)
+  fecha_vencimiento DateTime?         @db.Date
+  estado_cuota      String?           @db.VarChar(60)
+  raw_data          Json
+  normalized_data   Json?
+  status            String            @default("READY") @db.VarChar(40)
+  errors            Json?
+  created_cuota_id  Int?
+  created_at        DateTime          @default(now())
+  batch             ClientImportBatch @relation(fields: [batch_id], references: [id], onDelete: Cascade)
+  created_cuota     Cuota?            @relation(fields: [created_cuota_id], references: [id])
+
+  @@index([batch_id, status])
+  @@index([contrato_ref])
+}
+
+enum RolUsuario {
+  ADMIN
+  CONTADOR
+}
+
+enum TipoCliente {
+  PERSONA
+  EMPRESA
+}
+
+enum EstadoCliente {
+  ACTIVO
+  AL_DIA
+  MOROSO
+  FINALIZADO
+  ANULADO
+}
+
+enum EstadoContrato {
+  PENDING_INITIAL_PAYMENT
+  ACTIVO
+  PAGADO
+  EN_MORA
+  REPACTADO
+  TERMINADO
+  ANULADO
+}
+
+enum EstadoCuota {
+  PENDIENTE
+  PAGADA
+  PARCIAL
+  VENCIDA
+  REPROGRAMADA
+  REEMPLAZADA
+  ANULADA
+  CONDONADA
+}
+
+enum TipoModificacion {
+  CAMBIO_FECHA
+  REPACTACION
+  CAMBIO_MONTO
+  ANULACION
+  CONDONACION
+  EDICION_PAGO
+}
+
+enum ExternalEntityType {
+  CLIENTE
+  CONTRATO
+  CASO_LEGAL
+  CUOTA
+  PAGO
+}
+
+enum IntegrationEventStatus {
+  PENDING
+  PROCESSED
+  FAILED
+}
+
+enum ExternalSyncStatus {
+  STARTED
+  SUCCESS
+  PARTIAL
+  FAILED
+}
+
+enum EstadoPago {
+  REGISTRADO
+  CONFIRMADO
+  RECHAZADO
+  REVERSADO
+}
+
+enum CuotaWarningLevel {
+  WARNING_10
+  WARNING_20
+  WARNING_30
+}
+
+model CuotaWarning {
+  id                     Int               @id @default(autoincrement())
+  cuota_id               Int
+  contrato_id            Int
+  cliente_id             Int
+  level                  CuotaWarningLevel
+  dias_atraso_at_send    Int
+  channel                String            @db.VarChar(20)
+  delivery_status        String            @db.VarChar(20)
+  delivery_error         String?
+  downstream_response    String?
+  downstream_dispatched  Boolean           @default(false)
+  sent_at                DateTime?
+  created_at             DateTime          @default(now())
+  cliente                Cliente           @relation(fields: [cliente_id], references: [id])
+  contrato               Contrato          @relation(fields: [contrato_id], references: [id])
+  cuota                  Cuota             @relation(fields: [cuota_id], references: [id])
+
+  @@unique([cuota_id, level])
+  @@index([contrato_id])
+  @@index([cliente_id])
+}
+
+enum ImportBatchStatus {
+  PREVIEW_READY
+  PROCESSING
+  CONFIRMED
+  FAILED
+}

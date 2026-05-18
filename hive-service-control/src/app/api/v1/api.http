@@ -1,0 +1,64 @@
+### Test Suite para API v1 (REST Client)
+### Requiere la extensión "REST Client" en VS Code
+
+@baseUrl = http://localhost:3000/api/v1
+@apiKey = REEMPLAZAR_CON_CLAVE_SEGURA_32_BYTES
+
+### 1. GET /clientes - incluye rut y datos financieros
+GET {{baseUrl}}/clientes
+Authorization: Bearer {{apiKey}}
+
+### 1b. GET /clientes con filtros
+GET {{baseUrl}}/clientes?stage=WAITING_CUOTAS
+Authorization: Bearer {{apiKey}}
+
+### 2. GET /plan-pagos - retorna cliente, caso, contrato y cuotas
+GET {{baseUrl}}/plan-pagos
+Authorization: Bearer {{apiKey}}
+
+### 3. GET /plan-pagos?solo_pendientes=true - retorna solo cuotas UNPAID y OVERDUE
+GET {{baseUrl}}/plan-pagos?solo_pendientes=true
+Authorization: Bearer {{apiKey}}
+
+### 4. GET /cobranza - mantiene compatibilidad e incluye campos nuevos
+GET {{baseUrl}}/cobranza
+Authorization: Bearer {{apiKey}}
+
+### 5. POST /pagos - con payment_event_id marca cuota como PAID
+POST {{baseUrl}}/pagos
+Authorization: Bearer {{apiKey}}
+Content-Type: application/json
+
+{
+  "caso_id": "00000000-0000-0000-0000-000000000000",
+  "estado": "PAID",
+  "monto": 100000,
+  "payment_event_id": "11111111-1111-1111-1111-111111111111",
+  "fecha_pago": "2026-05-04T12:00:00Z",
+  "monto_pagado": 100000
+}
+
+### 6. POST /pagos - con caso_id + numero_cuota marca cuota como PAID
+POST {{baseUrl}}/pagos
+Authorization: Bearer {{apiKey}}
+Content-Type: application/json
+
+{
+  "caso_id": "00000000-0000-0000-0000-000000000000",
+  "estado": "PAID",
+  "monto": 100000,
+  "numero_cuota": 1,
+  "fecha_pago": "2026-05-04T12:00:00Z",
+  "monto_pagado": 100000
+}
+
+### 7. POST /pagos - con token inválido responde 401
+POST {{baseUrl}}/pagos
+Authorization: Bearer token_invalido_123
+Content-Type: application/json
+
+{
+  "caso_id": "00000000-0000-0000-0000-000000000000",
+  "estado": "PAID",
+  "monto": 100000
+}

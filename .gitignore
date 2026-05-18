@@ -1,0 +1,53 @@
+# Dependencies
+node_modules/
+.npm-cache/
+.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# Build outputs
+.next/
+out/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+next-env.d.ts
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Local databases and runtime data
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+uploads/
+!uploads/.gitkeep
+
+# Local/generated artifacts
+*.log
+*.pem
+*.exe
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.eggs/
+.vercel/
+.claude/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
