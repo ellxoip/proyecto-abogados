@@ -1,0 +1,495 @@
+// AT INFORMA v3.0 — Legal Operating System
+// Schema strictly per the v3.0 unified spec.
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ── Enums ────────────────────────────────────────────────────────────────
+
+// ── Models ───────────────────────────────────────────────────────────────
+
+model Category {
+  id            String         @id @default(uuid())
+  name          String         @unique
+  cases         Case[]
+  slaDefinition SlaDefinition?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("categories")
+}
+
+model User {
+  id           String  @id @default(uuid())
+  role         String
+  fullName     String
+  email        String  @unique
+  phone        String
+  passwordHash String
+  active       Boolean @default(true)
+  rut          String? @unique
+  paymentLink  String?
+  credentialsSentAt DateTime?
+  /// True cuando el cliente debe cambiar su contraseña en el primer
+  /// login. Se setea en true cuando hive-financial-control nos manda
+  /// las credenciales generadas para PagaCuotas (mismas que sirven
+  /// para este portal). El cliente debe rotarlas al primer ingreso.
+  mustChangePassword Boolean @default(false)
+  secondary_code String? // For PIN or OTP verification
+  lastSeenAt   DateTime? // Updated on each page load for presence indicator
+
+  managedById  String?
+
+  managedBy    User?   @relation("UserHierarchy", fields: [managedById], references: [id], onDelete: SetNull)
+  subordinates User[]  @relation("UserHierarchy")
+
+  casesAsClient   Case[] @relation("CaseClient")
+  casesAsJefeMesa Case[] @relation("CaseJefeMesa")
+  casesAsLawyer   Case[] @relation("CaseLawyers")
+
+  leadsAssigned   Lead[] @relation("LeadAssignedAbogado")
+  leadsScheduled  Lead[] @relation("LeadScheduledBy")
+  googleCalendarConnections GoogleCalendarConnection[]
+
+
+  comments Comment[]
+
+  timeEntries           TimeEntry[]            @relation("LawyerTimeEntries")
+  timerSessions         TimerSession[]         @relation("LawyerTimerSessions")
+  notifications         Notification[]         @relation("UserNotifications")
+  slaDefinitionsCreated SlaDefinition[]        @relation("SlaCreatedBy")
+  productivitySnapshots ProductivitySnapshot[] @relation("LawyerSnapshots")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([role])
+  @@index([managedById])
+  @@map("users")
+}
+
+model Case {
+  id              String    @id @default(uuid())
+  code            String    @unique
+  client_id       String
+  client          User      @relation("CaseClient", fields: [client_id], references: [id], onDelete: Restrict)
+  jefe_mesa_id    String?
+  jefeMesa        User?     @relation("CaseJefeMesa", fields: [jefe_mesa_id], references: [id], onDelete: SetNull)
+  
+  abogados        User[]    @relation("CaseLawyers")
+
+  stage           String @default("OPEN")
+
+  is_paid         Boolean   @default(false)
+  initial_invoice String?
+  categoryId           String?
+  categoria            Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  is_delicate          Boolean   @default(false)
+  halted_at            DateTime?
+
+
+  halted_reason        String?
+  last_health_check_at DateTime?
+  resolvedAt           DateTime?
+  deadlineAt           DateTime?
+  satisfaction         String?
+  unpaid_months        Int       @default(0)
+
+  // Financial info for payment plans
+  ccto                 Decimal?
+  pago_inicial         Decimal?
+  saldo_financiado     Decimal?
+  cantidad_cuotas      Int?
+  fecha_primera_cuota  DateTime?
+  dia_pago             Int?
+
+
+
+  metadata             String?
+  internalNotes        String? // Notas confidenciales (solo SuperAdmin/Jefe)
+  updates  Update[]
+
+  comments    Comment[]
+  payments    PaymentEvent[]
+  timeEntries TimeEntry[]
+  timerSessions TimerSession[]
+  aiAnalyses  AiCaseAnalysis[]
+  warnings    CaseWarning[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([client_id])
+  @@index([jefe_mesa_id])
+  @@index([stage])
+  @@index([is_paid])
+  @@index([categoryId])
+  @@index([stage, halted_at])
+
+  @@map("cases")
+}
+
+/// Bitácora idempotente de avisos automáticos de morosidad ejecutados sobre un
+/// Caso (a diferencia de hive-financial-control que los traquea por Cuota,
+/// aquí trackeamos a nivel de expediente porque no siempre existe un Cuota
+/// asociado en financial-control). Cron diario en /api/cron/case-warnings.
+model CaseWarning {
+  id                    String   @id @default(uuid())
+  caseId                String
+  case                  Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  /// "WARNING_10" | "WARNING_20" | "WARNING_30"
+  level                 String
+  dias_halted_at_send   Int
+  /// "EMAIL" | "WHATSAPP" | "BOTH"
+  channel               String   @default("BOTH")
+  /// "PENDING" | "SENT" | "FAILED"
+  delivery_status       String   @default("PENDING")
+  delivery_error        String?
+  /// Para WARNING_30: si ya se ejecutaron las acciones de corte (user.active=false, etc).
+  side_effects_applied  Boolean  @default(false)
+  sent_at               DateTime?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@unique([caseId, level])
+  @@index([caseId])
+  @@index([level])
+  @@index([delivery_status])
+  @@index([createdAt])
+  @@map("case_warnings")
+}
+
+
+model Comment {
+  id        String      @id @default(uuid())
+  caseId    String
+  case      Case        @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User        @relation(fields: [authorId], references: [id], onDelete: Restrict)
+  body      String
+  type      String
+  createdAt DateTime    @default(now())
+
+  @@index([caseId])
+  @@index([authorId])
+  @@index([type])
+  @@map("comments")
+}
+
+model Update {
+  id            String   @id @default(uuid())
+  caseId        String
+  case          Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  description   String
+  document_url  String?
+  sent_whatsapp Boolean  @default(false)
+  sent_email    Boolean  @default(false)
+  createdAt     DateTime @default(now())
+
+  @@index([caseId])
+  @@map("updates")
+}
+
+model PaymentEvent {
+  id          String        @id @default(uuid())
+  caseId      String
+  case        Case          @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  status      String
+  amount      Decimal
+  monto_pagado Decimal?
+  receipt_url String?
+  numero_cuota Int?
+  fecha_vencimiento DateTime?
+  pagado_en   DateTime?
+  createdAt   DateTime      @default(now())
+
+  @@index([caseId])
+  @@index([status])
+  @@map("payment_events")
+}
+
+model AuditLog {
+  id        String      @id @default(uuid())
+  action    String
+  caseId    String?
+  actorId   String?
+  channel   String?     // "whatsapp" | "email" | "system"
+  template  String?     // job kind / template name
+  status    String?     // "ok" | "failed"
+  message   String?
+  metadata  String?
+  createdAt DateTime    @default(now())
+
+  @@index([action])
+  @@index([caseId])
+  @@index([actorId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ── Productividad & Control de Gestión ──────────────────────────────────────
+
+model TimeEntry {
+  id              String           @id @default(uuid())
+  caseId          String
+  case            Case             @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  lawyerId        String
+  lawyer          User             @relation("LawyerTimeEntries", fields: [lawyerId], references: [id], onDelete: Restrict)
+  date            DateTime
+  durationMinutes Int
+  category        String
+  description     String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([caseId])
+  @@index([lawyerId])
+  @@index([date])
+  @@map("time_entries")
+}
+
+/// Sesiones automáticas de conteo de tiempo (cronómetro).
+/// Estados: ACTIVE · PAUSED · PENDING_CLOSE · COMPLETED · FLAGGED · DISCARDED
+///
+/// - El servidor es la única fuente de verdad para el cómputo de duración.
+/// - `accumulatedMs` guarda el tiempo activo acumulado (sin pausas).
+/// - Cuando la sesión está ACTIVE, la duración instantánea = accumulatedMs + (now - lastResumedAt).
+/// - Al cerrar, el `accumulatedMs` final + descripción/categoría se materializan
+///   como un TimeEntry usando el mismo pipeline antifraude.
+model TimerSession {
+  id              String    @id @default(uuid())
+  lawyerId        String
+  lawyer          User      @relation("LawyerTimerSessions", fields: [lawyerId], references: [id], onDelete: Restrict)
+  caseId          String
+  case            Case      @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  status          String    @default("ACTIVE")
+  startedAt       DateTime  @default(now())
+  endedAt         DateTime?
+  lastResumedAt   DateTime?
+  lastHeartbeatAt DateTime?
+  accumulatedMs   Int       @default(0)
+
+  // Auto-policy markers — once tripped we don't fire the same warning twice.
+  warned4h        Boolean   @default(false)
+  warned8h        Boolean   @default(false)
+  warned10h       Boolean   @default(false)
+  autoPausedAt    DateTime?
+
+  // Closure outcomes
+  resultingTimeEntryId String?
+  closeReason          String?  // user_stop | auto_cap_12h | abandoned | admin_force | discarded_by_user
+  riskScore            Int?
+  riskBand             String?  // LOW | MEDIUM | HIGH
+
+  // JSON-stringified array of TimerEvent { kind, at, ...details }
+  eventsJson      String?
+
+  // Origin metadata
+  startIp         String?
+  startUserAgent  String?
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([lawyerId, status])
+  @@index([caseId])
+  @@index([status, createdAt])
+  @@map("timer_sessions")
+}
+
+model SlaDefinition {
+  id          String   @id @default(uuid())
+  categoryId  String   @unique
+  category    Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  maxDays     Int
+  active      Boolean  @default(true)
+  createdById String
+  createdBy   User     @relation("SlaCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("sla_definitions")
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  user      User             @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  title     String
+  body      String
+  caseId    String?
+  leadId    String?
+  read      Boolean          @default(false)
+  createdAt DateTime         @default(now())
+  expiresAt DateTime?
+
+  @@index([userId, read])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+// ── Leads ───────────────────────────────────────────────────────────────
+// Posibles clientes ingresados desde el CRM (agendadoras) o manualmente.
+// Una agendadora elige al abogado en su panel y un POST a /api/crm/leads
+// crea el Lead, dispara una notificación al abogado y aparece en su Agenda.
+model Lead {
+  id              String     @id @default(uuid())
+  fullName        String
+  email           String?
+  phone           String
+  source          String @default("CRM")
+  status          String @default("PENDING")
+
+  // Datos del cliente recibidos desde el CRM.
+  rut             String?
+  rutEmpresa      String?
+  empresa         String?
+  ciudad          String?
+
+  // Abogado asignado por la agendadora.
+  assignedAbogadoId String
+  assignedAbogado   User     @relation("LeadAssignedAbogado", fields: [assignedAbogadoId], references: [id], onDelete: Restrict)
+
+  // Quién registró el lead dentro de AT INFORMA (opcional, normalmente se crea
+  // vía API y queda null).
+  scheduledById   String?
+  scheduledBy     User?      @relation("LeadScheduledBy", fields: [scheduledById], references: [id], onDelete: SetNull)
+
+  meetingAt       DateTime
+  meetingDuration Int        @default(30) // minutos
+  category        String?    // "Área" en el CRM (ej. "Deuda Ejecutiva")
+  notes           String?
+
+  // Pipeline comercial proveniente del CRM.
+  priority        String @default("NORMAL")
+  vendedor        String?
+  agendadora      String?
+  honorarios      Decimal?
+  cuotaInicial    Decimal?
+  numCuotas       Int?
+  montoCuota      Decimal?
+  descripcion     String?
+  notasInternas   String?
+
+  // Trazabilidad
+  externalId      String?    // id del CRM original (Dante u otro)
+  metadata        String?      // payload bruto del CRM por si se necesita
+
+  // Auditoría / actividad
+  contactedAt          DateTime?
+  confirmationSentAt   DateTime?
+  reminderSentAt       DateTime?
+  reassignedAt         DateTime?
+  previousAbogadoId    String?
+  stuckNotifiedAt      DateTime?
+  convertedCaseId      String?    @unique
+  googleCalendarEvents LeadGoogleCalendarEvent[]
+
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  @@index([assignedAbogadoId, meetingAt])
+  @@index([status])
+  @@index([meetingAt])
+  @@index([reminderSentAt])
+  @@index([confirmationSentAt])
+  @@index([rut])
+  @@index([empresa])
+  @@map("leads")
+}
+
+model GoogleCalendarConnection {
+  id                 String   @id @default(uuid())
+  userId             String
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  googleAccountId    String
+  email              String
+  name               String?
+  picture            String?
+  accessToken        String
+  refreshToken       String?
+  accessTokenExpires DateTime
+  scope              String?
+  active             Boolean  @default(true)
+  lastSyncedAt       DateTime?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  events LeadGoogleCalendarEvent[]
+
+  @@unique([userId, googleAccountId])
+  @@index([userId, active])
+  @@map("google_calendar_connections")
+}
+
+model LeadGoogleCalendarEvent {
+  id           String   @id @default(uuid())
+  leadId       String
+  lead         Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  connectionId String
+  connection   GoogleCalendarConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  calendarId   String   @default("primary")
+  eventId      String
+  htmlLink     String?
+  syncedAt     DateTime @default(now())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([leadId, connectionId, calendarId])
+  @@index([connectionId])
+  @@index([leadId])
+  @@map("lead_google_calendar_events")
+}
+
+model AiCaseAnalysis {
+  id              String    @id @default(uuid())
+  caseId          String
+  case            Case      @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  healthScore     Int
+  riskLevel       String
+  estimatedDays   Int?
+  minDays         Int?
+  maxDays         Int?
+  stagnant        Boolean   @default(false)
+  explanation     String
+  recommendations String?
+  analyzedAt      DateTime  @default(now())
+
+  @@index([caseId])
+  @@index([analyzedAt])
+  @@map("ai_case_analyses")
+}
+
+model ProductivitySnapshot {
+  id               String   @id @default(uuid())
+  lawyerId         String
+  lawyer           User     @relation("LawyerSnapshots", fields: [lawyerId], references: [id], onDelete: Cascade)
+  periodStart      DateTime
+  periodEnd        DateTime
+  casesAssigned    Int      @default(0)
+  casesFinished    Int      @default(0)
+  totalMinutes     Int      @default(0)
+  avgMinutesPerCase Float   @default(0)
+  slaCompliancePct Float    @default(0)
+  avgDaysToFinish  Float    @default(0)
+  successRate      Float    @default(0)
+  compositeScore   Float    @default(0)
+  createdAt        DateTime @default(now())
+
+  @@index([lawyerId])
+  @@index([periodStart])
+  @@map("productivity_snapshots")
+}

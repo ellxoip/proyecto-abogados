@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+**/node_modules/
+venv/
+**/venv/
+
+# Environment / secrets
+.env
+.env.*
+**/.env
+**/.env.*
+
+# Local databases and runtime state
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.log
+uploads/
+**/uploads/
+*.exe
+
+# Build outputs and caches
+dist/
+**/dist/
+.next/
+**/.next/
+.pytest_cache/
+**/.pytest_cache/
+__pycache__/
+**/__pycache__/
+.turbo/
+.vite/
+.npm-cache/
+**/.npm-cache/
+coverage/
+**/coverage/
+.push-staging-*/
+
+# Local agent/editor state
+.agents/
+.claude/
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+.DS_Store

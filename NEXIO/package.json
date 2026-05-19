@@ -1,0 +1,15 @@
+{
+  "name": "crm",
+  "version": "1.0.0",
+  "description": "CRM Abogados Tributarios - Unified Script",
+  "scripts": {
+    "build": "cd frontend && npm install --legacy-peer-deps && npm run build",
+    "start": "concurrently -n backend,frontend -c blue,green \"npm:start:backend\" \"npm:start:frontend\"",
+    "start:backend": "set PYTHONIOENCODING=utf-8&& cd backend && venv\\Scripts\\uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload",
+    "start:frontend": "cd frontend && npm run dev",
+    "setup:backend": "cd backend && py -3.12 -m venv venv && venv\\Scripts\\pip install -r requirements.txt"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/case-warnings",
+      "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/processing/health-sweep",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/processing/executioner",
+      "schedule": "0 * * * *"
+    }
+  ]
+}
