@@ -15,6 +15,7 @@ export interface Group {
   name: string
   description: string | null
   tipo: string
+  negocio_id: number | null
   created_at: string
 }
 
@@ -49,6 +50,7 @@ export interface Contact {
   city: string | null
   group_id: number | null
   notes: string | null
+  avatar_url: string | null
   created_at: string
 }
 
@@ -78,9 +80,6 @@ export interface Lead {
   legal_finance_contrato_id: number | null
   pagacuotas_cliente_id: string | null
   pagacuotas_status: string | null
-  pagacuotas_link: string | null
-  hive_service_case_id: string | null
-  hive_service_status: string | null
   ai_agent_id: number | null
   contact: Contact | null
   agendadora: { id: number; name: string; role: string; group_id: number | null } | null

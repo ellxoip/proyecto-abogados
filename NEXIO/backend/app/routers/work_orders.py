@@ -203,6 +203,7 @@ class WorkOrderCreate(BaseModel):
 class WorkOrderUpdate(BaseModel):
     fields_json: dict
     status:      Optional[str] = None
+    notify_agendadora: bool = False
 
 class WorkOrderOut(BaseModel):
     id:          int
@@ -341,18 +342,6 @@ def create_work_order(
     db.refresh(original)
     db.refresh(copy)
 
-    # Notify agendadora that vendedor created an OT
-    if lead.agendadora_id and lead.agendadora_id != current_user.id:
-        contact_name = lead.contact.name if lead.contact else "cliente"
-        ot_label = OT_TYPES.get(data.ot_type, {}).get("label", data.ot_type)
-        create_notification(
-            db, lead.agendadora_id,
-            "OT lista para Pago Comprometido",
-            f"{current_user.name} generó la OT '{ot_label}' para {contact_name}. Está lista para mover a Pago Comprometido.",
-            lead_id=lead.id,
-            notification_type="etapa"
-        )
-
     return WorkOrderCreateOut(original=_wo_to_out(original), copia=_wo_to_out(copy))
 
 
@@ -364,7 +353,7 @@ def update_work_order(
     current_user: models.User = Depends(get_current_user),
 ):
     wo = db.query(models.WorkOrder).options(
-        joinedload(models.WorkOrder.lead)
+        joinedload(models.WorkOrder.lead).joinedload(models.Lead.contact)
     ).filter(models.WorkOrder.id == wo_id).first()
     if not wo:
         raise HTTPException(404)
@@ -390,6 +379,24 @@ def update_work_order(
                 lead.monto_cuota = float(existing['monto_cuota'] or 0)
         except (ValueError, TypeError):
             pass
+
+        if data.notify_agendadora and lead.agendadora_id and lead.agendadora_id != current_user.id:
+            title = "OT cargada — lista para avanzar"
+            already_notified = db.query(models.Notification).filter(
+                models.Notification.user_id == lead.agendadora_id,
+                models.Notification.lead_id == lead.id,
+                models.Notification.title == title,
+            ).first()
+            if not already_notified:
+                contact_name = lead.contact.name if lead.contact else "cliente"
+                ot_label = OT_TYPES.get(wo.ot_type, {}).get("label", wo.ot_type)
+                create_notification(
+                    db, lead.agendadora_id,
+                    title,
+                    f"{current_user.name} cargó la OT '{ot_label}' para {contact_name}. El lead está listo para avanzar.",
+                    lead_id=lead.id,
+                    notification_type="etapa"
+                )
 
     db.commit()
     db.refresh(wo)

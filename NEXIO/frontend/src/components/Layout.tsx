@@ -1,11 +1,13 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Users, UserCheck, GitBranch, Calendar,
-  LogOut, Bell, Menu, CreditCard, Shield, ChevronRight, Wrench, Search, X, Smartphone, MessageSquare, Bot,
+  LogOut, Bell, Menu, CreditCard, Shield, ChevronRight, Wrench, Search, X, Smartphone, MessageSquare, Bot, Building2, QrCode, Building, GitBranch as GitBranchIcon,
 } from 'lucide-react'
 import { useAuthStore } from '../store/auth'
 import { getNotificationCount, getAgentQueue, getLeadsCount } from '../api'
+import { playMessageSound, playNewLeadSound, playNotificationSound } from '../hooks/useNotificationSound'
+import { canDo } from '../utils/plans'
 import InstallPWA from './InstallPWA'
 import GlobalSearch from './GlobalSearch'
 import NotificationPanel from './NotificationPanel'
@@ -30,9 +32,21 @@ const NAV_SECTIONS = [
   {
     label: 'Gestión',
     items: [
-      { path: '/pagos',   icon: CreditCard, label: 'Verificar Pagos', sublabel: 'Confirmar cobros', roles: ['verificador'] },
-      { path: '/admin',   icon: Shield,     label: 'Administración',  sublabel: 'Config sistema',   roles: ['superadmin','subadmin'] },
-      { path: '/tecnico', icon: Wrench,     label: 'Panel Técnico',   sublabel: 'Herramientas',     roles: ['tecnico'] },
+      { path: '/pagos',   icon: CreditCard,      label: 'Verificar Pagos',  sublabel: 'Confirmar cobros',  roles: ['verificador'] },
+      { path: '/admin',   tab: 'users',          icon: Users,              label: 'Usuarios',             sublabel: 'Gestión accesos',   roles: ['superadmin','subadmin'] },
+      { path: '/admin',   tab: 'groups',         icon: Building,           label: 'Grupos & Áreas',       sublabel: 'Organización',      roles: ['superadmin','subadmin'] },
+      { path: '/admin',   tab: 'pipeline',       icon: GitBranchIcon,      label: 'Etapas',               sublabel: 'Configurar embudo', roles: ['superadmin','subadmin'] },
+      { path: '/admin',   tab: 'whatsapp_sessions', icon: Smartphone,      label: 'WhatsApp',             sublabel: 'Sesiones QR',       roles: ['superadmin','subadmin'] },
+      { path: '/admin',   tab: 'ai_agents',      icon: Bot,                label: 'Agentes IA',           sublabel: 'Mis agentes',       roles: ['superadmin','subadmin'] },
+      { path: '/admin',   tab: 'security',       icon: Shield,             label: 'Seguridad',            sublabel: 'Auditoría ISO 27001', roles: ['superadmin'] },
+      { path: '/tecnico', tab: 'negocios',    icon: Building2,          label: 'Negocios',             sublabel: 'Clientes CRM',      roles: ['tecnico'] },
+      { path: '/tecnico', tab: 'overview',    icon: Wrench,             label: 'Resumen',              sublabel: 'Estado sistema',    roles: ['tecnico'] },
+      { path: '/tecnico', tab: 'whatsapp',    icon: MessageSquare,      label: 'WhatsApp Meta',        sublabel: 'API oficial',       roles: ['tecnico'] },
+      { path: '/tecnico', tab: 'whatsapp_qr', icon: QrCode,             label: 'WhatsApp QR',          sublabel: 'Escaneo QR',        roles: ['tecnico'] },
+      { path: '/tecnico', tab: 'google',      icon: Calendar,           label: 'Google OAuth',         sublabel: 'Credenciales',      roles: ['tecnico'] },
+      { path: '/tecnico', tab: 'users',       icon: Users,              label: 'Usuarios',             sublabel: 'Gestión accesos',   roles: ['tecnico'] },
+      { path: '/tecnico', tab: 'ai_agents',   icon: Bot,                label: 'Agentes IA',           sublabel: 'Config agentes',    roles: ['tecnico'] },
+      { path: '/tecnico', tab: 'security',    icon: Shield,             label: 'Seguridad',            sublabel: 'Auditoría global',   roles: ['tecnico'] },
     ],
   },
 ]
@@ -52,6 +66,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const [showSearch, setShowSearch] = useState(false)
   const [showNotifPanel, setShowNotifPanel] = useState(false)
 
+  // Sound state — skip first load to avoid playing on page open
+  const prevUnread     = useRef<number | null>(null)
+  const prevLeadCount  = useRef<number | null>(null)
+
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 768px)')
     const handler = (e: MediaQueryListEvent) => { if (e.matches) setOpen(false) }
@@ -63,10 +81,20 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const isAgendadora = user?.role === 'agendadora' || user?.role === 'superadmin' || user?.role === 'subadmin'
     const fetchCounts = () => {
-      getNotificationCount().then((d: any) => setUnread(d.unread)).catch(() => {})
+      getNotificationCount().then((d: any) => {
+        const next = d.unread as number
+        if (prevUnread.current !== null && next > prevUnread.current) playNotificationSound()
+        prevUnread.current = next
+        setUnread(next)
+      }).catch(() => {})
       if (isAgendadora) {
         getAgentQueue().then((d: any) => setAgentCount(d.count ?? 0)).catch(() => {})
-        getLeadsCount({ stage: 'lead', exclude_ai: true }).then((d: any) => setLeadsCount(d.total ?? 0)).catch(() => {})
+        getLeadsCount({ stage: 'lead', exclude_ai: true }).then((d: any) => {
+          const next = d.total as number
+          if (prevLeadCount.current !== null && next > prevLeadCount.current) playNewLeadSound()
+          prevLeadCount.current = next
+          setLeadsCount(next)
+        }).catch(() => {})
       }
     }
     fetchCounts()
@@ -90,12 +118,24 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
   const handleLogout = () => { logout(); navigate('/login') }
 
-  const pageTitle = NAV_SECTIONS
-    .flatMap(s => s.items)
-    .find(n => n.path === location.pathname || (n.path !== '/' && location.pathname.startsWith(n.path)))
-    ?.label ?? 'CRM'
+  const allItems = NAV_SECTIONS.flatMap(s => s.items)
+  const pathItems = allItems.filter((n: any) => location.pathname === n.path || (n.path !== '/' && location.pathname.startsWith(n.path)))
+  const pageTitle = (
+    pathItems.find((n: any) => n.tab && location.search.includes(`tab=${n.tab}`))?.label
+    ?? pathItems.find((n: any) => !n.tab)?.label
+    ?? pathItems.find((n: any) => n.tab)?.label
+    ?? 'CRM'
+  )
 
-  const userNavItems = ALL_NAV_ITEMS.filter(n => user && n.roles.includes(user.role))
+  const plan = user?.negocio_plan ?? 'basico'
+  const isAiItem = (n: any) => n.path === '/agente-ia' || n.tab === 'ai_agents'
+  const userNavItems = ALL_NAV_ITEMS.filter(n => {
+    if (!user || !n.roles.includes(user.role)) return false
+    // El técnico siempre ve Agentes IA (crea agentes para los negocios)
+    if (isAiItem(n) && user.role !== 'tecnico' && !canDo(plan, 'max_ai_agents')) return false
+    if (n.path === '/seguimiento' && !canDo(plan, 'seguimiento')) return false
+    return true
+  })
   const bottomNavItems = userNavItems.slice(0, 4)
 
   const SidebarContent = ({ expanded = open }: { expanded?: boolean }) => (
@@ -137,13 +177,23 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 </p>
               )}
               <div className="space-y-0.5">
-                {visible.map(({ path, icon: Icon, label, sublabel }) => {
-                  const active = location.pathname === path || (path !== '/' && location.pathname.startsWith(path))
+                {visible.filter((n: any) => {
+            // El técnico siempre ve Agentes IA
+            if (isAiItem(n) && user?.role !== 'tecnico' && !canDo(plan, 'max_ai_agents')) return false
+            if (n.path === '/seguimiento' && !canDo(plan, 'seguimiento')) return false
+            return true
+          }).map(({ path, icon: Icon, label, sublabel, tab: navTab }: any) => {
+                  const DEFAULT_TABS: Record<string, string> = { '/tecnico': 'negocios', '/admin': 'users' }
+                  const searchTab = new URLSearchParams(location.search).get('tab')
+                  const active = navTab
+                    ? location.pathname === path && (searchTab === navTab || (!location.search && DEFAULT_TABS[path] === navTab))
+                    : location.pathname === path || (path !== '/' && location.pathname.startsWith(path))
                   const badge = path === '/agente-ia' ? agentCount : path === '/leads' ? leadsCount : 0
+                  const to = navTab ? `${path}?tab=${navTab}` : path
                   return (
                     <Link
-                      key={path}
-                      to={path}
+                      key={navTab ? `${path}-${navTab}` : path}
+                      to={to}
                       title={!expanded ? label : undefined}
                       onClick={() => setMobile(false)}
                       className="flex items-center gap-3 px-2.5 py-2 rounded-xl text-sm font-medium transition-all duration-150 group"

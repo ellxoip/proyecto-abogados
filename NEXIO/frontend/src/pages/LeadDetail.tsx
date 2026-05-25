@@ -2,14 +2,15 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   getLead, getLeadHistory, downloadLeadPdf,
-  updateLead,
+  updateLead, moveLeadStage,
 } from '../api'
 import type { Lead, LeadHistory } from '../types'
 import { STAGE_LABELS, STAGE_COLORS, STAGE_DOT } from '../types'
 import {
   ArrowLeft,
-  Download, User, Briefcase, DollarSign, X, FileText, StickyNote, Phone, Mail, ClipboardList, Pencil,
+  Download, User, Briefcase, DollarSign, X, FileText, StickyNote, Phone, Mail, ClipboardList, Pencil, ArrowRight,
 } from 'lucide-react'
+import { MoveLeadModal } from '../components/MoveLeadModal'
 import toast from 'react-hot-toast'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
@@ -46,6 +47,7 @@ export function LeadDetailView({ leadId, onClose }: LeadDetailViewProps) {
   const [savingNotes, setSavingNotes] = useState(false)
   const [showOTModal, setShowOTModal] = useState(false)
   const [showEditContact, setShowEditContact] = useState(false)
+  const [showMoveModal, setShowMoveModal] = useState(false)
 
   const loadAll = async () => {
     setLoading(true)
@@ -78,6 +80,17 @@ export function LeadDetailView({ leadId, onClose }: LeadDetailViewProps) {
     if (onClose) onClose()
     else navigate(-1)
   }
+
+  const handleMove = async (stage: string) => {
+    if (!lead) return
+    const updated = await moveLeadStage(lead.id, { stage })
+    setLead(updated)
+    await loadAll()
+    setShowMoveModal(false)
+  }
+
+  const canConfirmPago = user?.role === 'admin' || user?.role === 'superadmin' || user?.role === 'vendedor'
+  const canMove        = user?.role !== 'verificador'
 
   if (loading) return (
     <div className="flex items-center justify-center h-64">
@@ -115,7 +128,7 @@ export function LeadDetailView({ leadId, onClose }: LeadDetailViewProps) {
           </div>
         </div>
 
-        <button onClick={() => setShowOTModal(true)}
+<button onClick={() => setShowOTModal(true)}
           className="btn-secondary text-xs py-1.5 px-3 gap-1.5 flex-shrink-0">
           <ClipboardList size={13} /> OT
         </button>
@@ -162,7 +175,7 @@ export function LeadDetailView({ leadId, onClose }: LeadDetailViewProps) {
           <dl>
             <InfoRow label="Área Legal"  value={lead.area?.name} />
             <InfoRow label="Vendedor"    value={lead.vendedor?.name} />
-            <InfoRow label="Agendadora"  value={lead.agendadora?.name} />
+            <InfoRow label="Agendador/a"  value={lead.agendadora?.name} />
             <InfoRow label="Fuente"      value={lead.source ? lead.source.charAt(0).toUpperCase() + lead.source.slice(1) : null} />
             <InfoRow label="Prioridad"   value={lead.priority === 'high' ? 'Alta' : lead.priority === 'low' ? 'Baja' : 'Normal'} />
           </dl>
@@ -260,6 +273,7 @@ export function LeadDetailView({ leadId, onClose }: LeadDetailViewProps) {
         </div>
         {showOTModal && <WorkOrderModal leadId={leadId} onClose={() => setShowOTModal(false)} autoOpen />}
         {showEditContact && lead?.contact && <EditContactModal contact={lead.contact} onClose={() => setShowEditContact(false)} onSuccess={c => { setLead(l => l ? { ...l, contact: c } : l); setShowEditContact(false) }} />}
+        {showMoveModal && lead && <MoveLeadModal lead={lead} targetStage="" labels={STAGE_LABELS} canConfirmPago={canConfirmPago} userRole={user?.role} onConfirm={handleMove} onClose={() => setShowMoveModal(false)} />}
       </div>
     )
   }
@@ -269,6 +283,7 @@ export function LeadDetailView({ leadId, onClose }: LeadDetailViewProps) {
       {content}
       {showOTModal && <WorkOrderModal leadId={leadId} onClose={() => setShowOTModal(false)} autoOpen />}
       {showEditContact && lead?.contact && <EditContactModal contact={lead.contact} onClose={() => setShowEditContact(false)} onSuccess={c => { setLead(l => l ? { ...l, contact: c } : l); setShowEditContact(false) }} />}
+      {showMoveModal && lead && <MoveLeadModal lead={lead} targetStage="" labels={STAGE_LABELS} canConfirmPago={canConfirmPago} userRole={user?.role} onConfirm={handleMove} onClose={() => setShowMoveModal(false)} />}
     </div>
   )
 }

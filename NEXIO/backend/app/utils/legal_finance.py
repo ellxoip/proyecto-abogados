@@ -8,7 +8,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-LEGAL_FINANCE_URL = os.getenv("LEGAL_FINANCE_URL", "http://localhost:3000").rstrip("/")
+LEGAL_FINANCE_URL    = os.getenv("LEGAL_FINANCE_URL", "http://localhost:4000")
 LEGAL_FINANCE_API_KEY = os.getenv("LEGAL_FINANCE_API_KEY", "")
 
 

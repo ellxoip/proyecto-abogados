@@ -43,6 +43,7 @@ model CrmClientProfile {
   magic_token          String   @unique
   magic_token_revoked  Boolean  @default(false)
   last_login_at        DateTime?
+  password_changed_at  DateTime?
   // Timestamps
   created_at           DateTime @default(now())
   updated_at           DateTime @updatedAt

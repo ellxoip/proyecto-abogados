@@ -16,6 +16,27 @@ type PaymentLinkClient = {
   paymentLink: string | null;
 };
 
+export function normalizePagaCuotasPortalLink(paymentLink: string | null): string | null {
+  if (!paymentLink) return null;
+
+  try {
+    const url = new URL(paymentLink);
+
+    if (url.pathname === "/client/payment") {
+      url.pathname = "/client/portal";
+      url.search = "";
+    }
+
+    if (url.pathname === "/client/auto-login") {
+      url.searchParams.delete("pay");
+    }
+
+    return url.toString();
+  } catch {
+    return paymentLink;
+  }
+}
+
 export async function ensurePagaCuotasPaymentLink(client: PaymentLinkClient): Promise<string | null> {
-  return client.paymentLink ?? null;
+  return normalizePagaCuotasPortalLink(client.paymentLink);
 }

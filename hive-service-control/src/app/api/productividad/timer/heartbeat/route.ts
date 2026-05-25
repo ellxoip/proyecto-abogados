@@ -7,6 +7,7 @@ import {
   TIMER_HARD_CAP_MS,
 } from "@/lib/productividad/timer-policy";
 import {
+  abandonmentCutoffAt,
   appendEvent,
   computeCurrentDurationMs,
   pendingWarnings,
@@ -53,6 +54,63 @@ export async function POST() {
         kind: "ok" as const,
         session: updated,
         currentDurationMs: current,
+        firedWarnings: [] as string[],
+      };
+    }
+
+    const abandonedAt = abandonmentCutoffAt(
+      {
+        status: open.status,
+        lastHeartbeatAt: open.lastHeartbeatAt ?? null,
+        lastResumedAt: open.lastResumedAt ?? null,
+      },
+      now,
+    );
+    if (abandonedAt) {
+      const cappedAccumulatedMs = computeCurrentDurationMs(
+        {
+          status: open.status,
+          accumulatedMs: open.accumulatedMs,
+          lastResumedAt: open.lastResumedAt ?? null,
+        },
+        abandonedAt,
+      );
+      const eventsJson = appendEvent(open.eventsJson, {
+        kind: "abandoned",
+        at: abandonedAt.toISOString(),
+        detail: { reason: "heartbeat_timeout", accumulatedMs: cappedAccumulatedMs },
+      });
+      const updated = await tx.timerSession.update({
+        where: { id: open.id },
+        data: {
+          status: "PENDING_CLOSE",
+          accumulatedMs: cappedAccumulatedMs,
+          lastResumedAt: null,
+          lastHeartbeatAt: now,
+          autoPausedAt: abandonedAt,
+          eventsJson,
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          action: "TIMER_AUTO_PAUSED",
+          caseId: open.caseId,
+          actorId: session.user.id,
+          channel: "system",
+          template: "timer-session",
+          status: "flagged",
+          message: "Cronometro detenido automaticamente por falta de actividad/heartbeat.",
+          metadata: JSON.stringify({
+            timerSessionId: open.id,
+            accumulatedMs: cappedAccumulatedMs,
+            reason: "heartbeat_timeout",
+          }),
+        },
+      });
+      return {
+        kind: "ok" as const,
+        session: updated,
+        currentDurationMs: cappedAccumulatedMs,
         firedWarnings: [] as string[],
       };
     }

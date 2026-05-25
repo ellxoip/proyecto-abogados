@@ -5,6 +5,7 @@ import { auth } from "@/lib/auth";
 import { withSystemRls } from "@/lib/rls";
 import { logAudit } from "@/lib/audit";
 import { hashPassword } from "@/lib/services/credentials";
+import { syncClientPasswordToFinancial } from "@/lib/services/financial-password-sync";
 
 export type ChangePasswordResult =
   | { ok: true }
@@ -49,7 +50,7 @@ export async function changeOwnPassword(input: {
     const result = await withSystemRls(async (tx) => {
       const user = await tx.user.findUnique({
         where: { id: session.user.id },
-        select: { id: true, passwordHash: true, active: true },
+        select: { id: true, rut: true, passwordHash: true, active: true, role: true },
       });
       if (!user || !user.active) return { ok: false as const, error: "Usuario no válido." };
 
@@ -69,13 +70,24 @@ export async function changeOwnPassword(input: {
         tx,
         action: "PASSWORD_CHANGED",
         actorId: user.id,
-        message: "Cliente rotó su contraseña inicial. Acceso normalizado.",
+        message: "Cliente cambió su contraseña desde el portal.",
       });
 
-      return { ok: true as const };
+      return { ok: true as const, rut: user.rut, role: user.role };
     });
 
-    return result;
+    if (!result.ok) return result;
+
+    if (result.role === "CLIENTE" && result.rut) {
+      await syncClientPasswordToFinancial({
+        rut: result.rut,
+        currentPassword: current,
+        newPassword: next,
+        source: "service-control",
+      });
+    }
+
+    return { ok: true };
   } catch (err) {
     const message = err instanceof Error ? err.message : "Error interno";
     return { ok: false, error: message };

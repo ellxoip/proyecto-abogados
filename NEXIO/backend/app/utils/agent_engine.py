@@ -25,7 +25,6 @@ from ..models import area_phone_numbers
 logger = logging.getLogger(__name__)
 
 QR_SERVICE_URL = "http://localhost:3001"
-_SYSTEM_USER_ID = 14  # tecnico — used as created_by for agent-created records
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -56,7 +55,8 @@ def _get_or_create_state(db: Session, agent_id: int, contact_id: int) -> models.
     return state
 
 
-async def _send_via_qr(config_id: int, phone: str, message: str, retries: int = 3) -> bool:
+async def _send_via_qr(config_id: int, phone: str, message: str, retries: int = 3) -> str | None:
+    """Send message via QR service. Returns message_id on success, None on failure."""
     for attempt in range(retries):
         try:
             async with httpx.AsyncClient(timeout=15) as client:
@@ -65,13 +65,14 @@ async def _send_via_qr(config_id: int, phone: str, message: str, retries: int = 
                     json={"to": phone, "message": message},
                 )
                 if resp.status_code < 300:
-                    return True
+                    data = resp.json()
+                    return data.get("message_id") or ""
                 logger.warning("QR send %d/%d failed — %d: %s", attempt + 1, retries, resp.status_code, resp.text[:200])
         except Exception as exc:
             logger.warning("QR send %d/%d error: %s", attempt + 1, retries, exc)
         if attempt < retries - 1:
             await asyncio.sleep(1.5 * (attempt + 1))
-    return False
+    return None
 
 
 def _split_reply(text: str) -> list[str]:
@@ -96,7 +97,8 @@ def _split_reply(text: str) -> list[str]:
 
 
 def _save_outbound(db: Session, contact: models.Contact, lead: models.Lead | None,
-                   config_id: int, text: str, agent_id: int) -> models.WhatsAppMessage:
+                   config_id: int, text: str, agent_id: int,
+                   message_id: str | None = None) -> models.WhatsAppMessage:
     msg = models.WhatsAppMessage(
         contact_id=contact.id,
         lead_id=lead.id if lead else None,
@@ -106,6 +108,7 @@ def _save_outbound(db: Session, contact: models.Contact, lead: models.Lead | Non
         content=text,
         status="sent",
         is_read=True,
+        message_id=message_id or None,
     )
     db.add(msg)
     return msg
@@ -127,6 +130,16 @@ def _find_area_for_config(db: Session, config_id: int) -> models.Area | None:
         .first()
     )
     return area
+
+
+def _get_system_user_id(db: Session) -> int:
+    user = (
+        db.query(models.User)
+        .filter(models.User.role.in_(["tecnico", "superadmin"]))
+        .order_by(models.User.id)
+        .first()
+    )
+    return user.id if user else 1
 
 
 def _ensure_lead(db: Session, contact: models.Contact, agent: models.AIAgent,
@@ -184,7 +197,7 @@ def _ensure_lead(db: Session, contact: models.Contact, agent: models.AIAgent,
         from_stage=None,
         to_stage="lead",
         notes="Lead nuevo — ingresó vía WhatsApp fuera de horario (agente IA)",
-        created_by=_SYSTEM_USER_ID,
+        created_by=_get_system_user_id(db),
     ))
     db.flush()
     logger.info("Agent %s auto-created lead %s for contact %s", agent.id, lead.id, contact.id)
@@ -313,11 +326,7 @@ async def maybe_run_agent(
     now_str = datetime.now().strftime("%A %d/%m/%Y %H:%M")
     system_content = (
         f"{agent.system_prompt}\n\n"
-        f"Fecha y hora actual: {now_str}.\n\n"
-        "REGLA DE FORMATO OBLIGATORIA: Cada oración o idea debe ir en un mensaje separado. "
-        "Separa cada mensaje con una línea en blanco (\\n\\n). "
-        "Nunca juntes varias ideas en un solo bloque de texto. "
-        "No uses guiones, asteriscos ni numeración."
+        f"Fecha y hora actual: {now_str}."
     )
     openai_messages: list[dict] = [{"role": "system", "content": system_content}]
 
@@ -429,7 +438,7 @@ async def maybe_run_agent(
 
     # 9. Send reply
     chunks = _split_reply(reply_text)
-    sent_chunks: list[str] = []
+    sent_chunks: list[tuple[str, str | None]] = []
 
     for i, chunk in enumerate(chunks):
         if i > 0:
@@ -439,8 +448,9 @@ async def maybe_run_agent(
             delay += random.uniform(-0.3, 0.5)
             delay = max(delay, 1.0)
             await asyncio.sleep(delay)
-        if await _send_via_qr(config_id, contact.phone, chunk):
-            sent_chunks.append(chunk)
+        mid = await _send_via_qr(config_id, contact.phone, chunk)
+        if mid is not None:
+            sent_chunks.append((chunk, mid))
         else:
             error_text = f"Delivery failed chunk {i+1}/{len(chunks)}"
             logger.error("Agent %s failed chunk %d/%d to %s", agent.id, i + 1, len(chunks), contact.phone)
@@ -459,8 +469,8 @@ async def maybe_run_agent(
     # 10. Persist messages
     from ..broadcaster import wa_broadcaster
     out_msgs: list[models.WhatsAppMessage] = []
-    for chunk in sent_chunks:
-        out_msgs.append(_save_outbound(db, contact, lead, config_id, chunk, agent.id))
+    for chunk, mid in sent_chunks:
+        out_msgs.append(_save_outbound(db, contact, lead, config_id, chunk, agent.id, message_id=mid or None))
 
     if needs_escalation:
         state.state = "handed_off"
@@ -470,7 +480,7 @@ async def maybe_run_agent(
     db.add(models.AIAgentLog(
         agent_id=agent.id, contact_id=contact.id,
         lead_id=lead.id if lead else None,
-        input_message=user_text, output_message="\n\n".join(sent_chunks),
+        input_message=user_text, output_message="\n\n".join(c for c, _ in sent_chunks),
         tokens_used=tokens_used, model_used=agent.openai_model,
         latency_ms=latency_ms, error=error_text,
     ))

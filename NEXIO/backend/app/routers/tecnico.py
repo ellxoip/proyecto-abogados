@@ -9,6 +9,7 @@ from pydantic import BaseModel, EmailStr
 from ..database import get_db
 from .. import models
 from ..auth import require_tecnico, hash_password
+from ..plans import PLAN_LIMITS, get_limits
 
 router = APIRouter(prefix="/api/tecnico", tags=["tecnico"])
 
@@ -322,11 +323,15 @@ def list_negocios(
         wa_count     = db.query(models.WhatsAppConfig).filter(models.WhatsAppConfig.group_id.in_(all_group_ids)).count()
         ai_count     = db.query(models.AIAgent).filter(models.AIAgent.group_id.in_(all_group_ids)).count()
 
+        plan = g.plan or "basico"
         result.append({
             "id": g.id,
             "name": g.name,
             "description": g.description,
             "tipo": g.tipo or "abogados",
+            "plan": plan,
+            "plan_limits": get_limits(plan),
+            "plan_expires_at": g.plan_expires_at.isoformat() if g.plan_expires_at else None,
             "admin": {
                 "id": superadmin.id,
                 "name": superadmin.name,
@@ -337,6 +342,7 @@ def list_negocios(
             "wa_count": wa_count,
             "ai_agent_count": ai_count,
             "sub_group_count": len(all_group_ids) - 1,
+            "all_group_ids": all_group_ids,
         })
     return result
 
@@ -374,6 +380,9 @@ def create_negocio(
         "name": group.name,
         "description": group.description,
         "tipo": group.tipo,
+        "plan": group.plan or "basico",
+        "plan_limits": get_limits(group.plan or "basico"),
+        "plan_expires_at": None,
         "admin": {
             "id": user.id,
             "name": user.name,
@@ -383,6 +392,7 @@ def create_negocio(
         "member_count": 1,
         "wa_count": 0,
         "ai_agent_count": 0,
+        "sub_group_count": 0,
     }
 
 
@@ -465,3 +475,39 @@ def patch_negocio_admin(
         admin.is_active = data.is_active
     db.commit()
     return {"id": admin.id, "name": admin.name, "email": admin.email, "is_active": admin.is_active}
+
+
+class NegocioPlanPatch(BaseModel):
+    plan: Literal["basico", "pro", "enterprise"]
+    plan_expires_at: Optional[str] = None  # ISO date string, None = no expiry
+
+
+@router.patch("/negocios/{negocio_id}/plan")
+def patch_negocio_plan(
+    negocio_id: int,
+    data: NegocioPlanPatch,
+    db: Session = Depends(get_db),
+    _: models.User = Depends(require_tecnico),
+):
+    from datetime import datetime
+    group = db.query(models.Group).filter(
+        models.Group.id == negocio_id,
+        models.Group.negocio_id == None,
+    ).first()
+    if not group:
+        raise HTTPException(status_code=404, detail="Negocio no encontrado")
+    group.plan = data.plan
+    if data.plan_expires_at:
+        try:
+            group.plan_expires_at = datetime.fromisoformat(data.plan_expires_at)
+        except ValueError:
+            raise HTTPException(status_code=422, detail="Fecha de expiración inválida")
+    else:
+        group.plan_expires_at = None
+    db.commit()
+    return {
+        "id": group.id,
+        "plan": group.plan,
+        "plan_limits": get_limits(group.plan),
+        "plan_expires_at": group.plan_expires_at.isoformat() if group.plan_expires_at else None,
+    }

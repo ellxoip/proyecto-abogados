@@ -1,5 +1,8 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
-import { getAllWhatsAppConfigs, getWhatsAppMessages, sendWhatsAppMessage, sendWhatsAppMedia, getConversations, markMessagesRead, updateContact, deleteWhatsAppMessage, editWhatsAppMessage, syncWhatsAppChats } from '../api'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
+import { getAllWhatsAppConfigs, getWhatsAppMessages, sendWhatsAppMessage, sendWhatsAppMedia, getConversations, markMessagesRead, updateContact, deleteWhatsAppMessage, editWhatsAppMessage, syncWhatsAppChats, syncFullHistory, sendTypingPresence, retryWhatsAppMessage } from '../api'
+import { apiUrl } from '../api/client'
+import { playMessageSound } from '../hooks/useNotificationSound'
+import { useAuthStore } from '../store/auth'
 import { MessageSquare, Send, RefreshCw, ExternalLink, Plus, Search, Clock, Clipboard, X, Paperclip, Mic, Square, FileText, Check, CheckCheck, Trash2, Pencil, Info } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { format, isToday, isYesterday, isSameDay } from 'date-fns'
@@ -7,7 +10,7 @@ import { es } from 'date-fns/locale'
 import { Link, useSearchParams } from 'react-router-dom'
 
 interface Conversation {
-  contact: { id: number; name: string; phone: string }
+  contact: { id: number; name: string; phone: string; avatar_url?: string | null }
   last_message: string
   last_message_at: string | null
   last_direction: 'in' | 'out'
@@ -17,6 +20,7 @@ interface Conversation {
 }
 
 import { parseDate as parseAsUTC } from '../utils/dates'
+import { rutOnChange } from '../utils/rut'
 
 function formatConvTime(iso: string | null) {
   if (!iso) return ''
@@ -37,6 +41,35 @@ function formatRecSecs(s: number) {
   const m = Math.floor(s / 60)
   const sec = s % 60
   return `${m}:${sec.toString().padStart(2, '0')}`
+}
+
+// Linkifica URLs http/https en texto plano. Preserva resto del texto.
+const URL_REGEX = /(https?:\/\/[^\s<>"'`]+[^\s<>"'`.,;:!?)\]])/g
+function renderLinkified(text: string): React.ReactNode[] {
+  if (!text) return []
+  const parts: React.ReactNode[] = []
+  let lastIndex = 0
+  let match: RegExpExecArray | null
+  URL_REGEX.lastIndex = 0
+  while ((match = URL_REGEX.exec(text)) !== null) {
+    if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index))
+    const href = match[0]
+    parts.push(
+      <a
+        key={`url-${match.index}`}
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+        className="underline underline-offset-2 text-sky-300 hover:text-sky-200"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {href}
+      </a>,
+    )
+    lastIndex = match.index + href.length
+  }
+  if (lastIndex < text.length) parts.push(text.slice(lastIndex))
+  return parts
 }
 
 function MsgContent({ m }: { m: any }) {
@@ -73,22 +106,17 @@ function MsgContent({ m }: { m: any }) {
       </a>
     )
   }
-  return <p className="leading-relaxed whitespace-pre-wrap text-sm">{m.content}</p>
+  return <p className="leading-relaxed whitespace-pre-wrap text-sm">{renderLinkified(m.content)}</p>
 }
 
+const WA_TICK_LABEL: Record<string, string> = { logged: 'Pendiente', sent: 'Enviado', delivered: 'Entregado', read: 'Leído', failed: 'Error' }
 function WaTicks({ status }: { status: string }) {
-  // WhatsApp-style ticks:
-  // failed  → ! rojo
-  // logged  → reloj (no enviado aún)
-  // sent    → ✓ simple gris (un tick)
-  // delivered → ✓✓ doble gris
-  // read    → ✓✓ doble azul
-  if (status === 'failed')    return <span style={{color:'#ef4444', fontSize:13, fontWeight:'bold', lineHeight:1}}>!</span>
-  if (status === 'logged')    return <Clock size={12} color="rgba(255,255,255,0.45)" />
-  if (status === 'read')      return <CheckCheck size={16} color="#53bdeb" strokeWidth={2.5} />
-  if (status === 'delivered') return <CheckCheck size={16} color="rgba(255,255,255,0.55)" strokeWidth={2.5} />
-  // sent (default)
-  return <Check size={16} color="rgba(255,255,255,0.55)" strokeWidth={2.5} />
+  const label = WA_TICK_LABEL[status] ?? 'Enviado'
+  if (status === 'failed')    return <span title={label} style={{color:'#ef4444', fontSize:13, fontWeight:'bold', lineHeight:1}}>!</span>
+  if (status === 'logged')    return <span title={label}><Clock size={13} color="rgba(255,255,255,0.55)" /></span>
+  if (status === 'read')      return <span title={label}><CheckCheck size={16} color="#53bdeb" strokeWidth={2.5} /></span>
+  if (status === 'delivered') return <span title={label}><CheckCheck size={16} color="rgba(255,255,255,0.75)" strokeWidth={2.5} /></span>
+  return <span title={label}><Check size={16} color="rgba(255,255,255,0.75)" strokeWidth={2.5} /></span>
 }
 
 /* ── Message context menu ──────────────────────────────────── */
@@ -98,10 +126,12 @@ interface MsgMenuProps {
   onClose: () => void
   onDelete: (id: number) => void
   onEdit: (msg: any) => void
+  onRetry: (msg: any) => void
 }
-function MsgMenu({ x, y, msg, onClose, onDelete, onEdit }: MsgMenuProps) {
+function MsgMenu({ x, y, msg, onClose, onDelete, onEdit, onRetry }: MsgMenuProps) {
   const isOut = msg.direction === 'out'
-  const canEdit = isOut && msg.message_type === 'text'
+  const canEdit = isOut && msg.message_type === 'text' && msg.status !== 'logged'
+  const canRetry = isOut && msg.status === 'logged' && msg.message_type === 'text'
   return (
     <>
       <div className="fixed inset-0 z-40" onClick={onClose} />
@@ -113,6 +143,17 @@ function MsgMenu({ x, y, msg, onClose, onDelete, onEdit }: MsgMenuProps) {
           boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
           minWidth: 160,
         }}>
+        {canRetry && (
+          <button
+            onClick={() => { onRetry(msg); onClose() }}
+            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left transition-colors"
+            style={{color:'#d97706'}}
+            onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--surface-2)'}
+            onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = ''}>
+            <RefreshCw size={15} color="#d97706" />
+            Reintentar envío
+          </button>
+        )}
         {canEdit && (
           <button
             onClick={() => { onEdit(msg); onClose() }}
@@ -247,11 +288,11 @@ function WaFillContactModal({ messages, conv, onClose }: {
               </div>
               <div>
                 <label className="input-label">RUT Persona</label>
-                <input className="input" value={form.rut_persona} onChange={e => setForm(f => ({ ...f, rut_persona: e.target.value }))} placeholder="12.345.678-9" />
+                <input className="input" value={form.rut_persona} onChange={e => setForm(f => ({ ...f, rut_persona: rutOnChange(e.target.value) }))} placeholder="12.345.678-9" />
               </div>
               <div>
                 <label className="input-label">RUT Empresa</label>
-                <input className="input" value={form.rut_empresa} onChange={e => setForm(f => ({ ...f, rut_empresa: e.target.value }))} placeholder="76.000.000-0" />
+                <input className="input" value={form.rut_empresa} onChange={e => setForm(f => ({ ...f, rut_empresa: rutOnChange(e.target.value) }))} placeholder="76.000.000-0" />
               </div>
               <div className="col-span-2">
                 <label className="input-label">Razón Social</label>
@@ -273,6 +314,8 @@ function WaFillContactModal({ messages, conv, onClose }: {
 }
 
 export default function WhatsApp() {
+  const { user } = useAuthStore()
+  const isAgendadora = user?.role === 'agendadora'
   const [searchParams] = useSearchParams()
   const autoSelectRef  = useRef(false)
 
@@ -301,6 +344,7 @@ export default function WhatsApp() {
 
   const messagesEndRef    = useRef<HTMLDivElement>(null)
   const fallbackPollRef   = useRef<ReturnType<typeof setInterval> | null>(null)
+  const typingTimerRef    = useRef<ReturnType<typeof setTimeout> | null>(null)
   const fileInputRef      = useRef<HTMLInputElement>(null)
   const mediaRecorderRef  = useRef<MediaRecorder | null>(null)
   const audioChunksRef    = useRef<Blob[]>([])
@@ -308,6 +352,7 @@ export default function WhatsApp() {
   const prevUnreadRef     = useRef<Record<number, number>>({})
   const sseRef            = useRef<EventSource | null>(null)
   const sseReconnectRef   = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const sseWatchdogRef    = useRef<ReturnType<typeof setTimeout> | null>(null)
   const selectedConvRef   = useRef<Conversation | null>(null)
   // Ref to always-current loadConversations so SSE callback doesn't go stale
   const loadConvsRef      = useRef<() => Promise<void>>(() => Promise.resolve())
@@ -328,32 +373,6 @@ export default function WhatsApp() {
     }
   }, [conversations, searchParams])
 
-  // Professional CRM notification sound via Web Audio API
-  const playNotificationSound = () => {
-    try {
-      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
-      const now = ctx.currentTime
-
-      const playTone = (freq: number, start: number, duration: number, gainVal: number) => {
-        const osc  = ctx.createOscillator()
-        const gain = ctx.createGain()
-        osc.connect(gain)
-        gain.connect(ctx.destination)
-        osc.type = 'sine'
-        osc.frequency.setValueAtTime(freq, start)
-        gain.gain.setValueAtTime(0, start)
-        gain.gain.linearRampToValueAtTime(gainVal, start + 0.01)
-        gain.gain.exponentialRampToValueAtTime(0.001, start + duration)
-        osc.start(start)
-        osc.stop(start + duration + 0.05)
-      }
-
-      playTone(880,  now,        0.12, 0.35)
-      playTone(1100, now + 0.14, 0.15, 0.28)
-
-      setTimeout(() => ctx.close(), 800)
-    } catch { /* silenciar si el navegador no lo soporta */ }
-  }
 
   // SSE connection — real-time push from backend
   const connectSSE = useCallback(() => {
@@ -369,11 +388,26 @@ export default function WhatsApp() {
       sseReconnectRef.current = null
     }
 
-    const url = `/api/whatsapp/stream?token=${encodeURIComponent(token)}`
+    const url = apiUrl(`/api/whatsapp/stream?token=${encodeURIComponent(token)}`)
     const es = new EventSource(url)
     sseRef.current = es
 
+    // Watchdog: if no event/keepalive for 25s, reconnect and reload data
+    const resetWatchdog = () => {
+      if (sseWatchdogRef.current) clearTimeout(sseWatchdogRef.current)
+      sseWatchdogRef.current = setTimeout(() => {
+        es.close()
+        sseRef.current = null
+        loadConvsRef.current()
+        const conv = selectedConvRef.current
+        if (conv) loadMsgsRef.current(conv.contact.id)
+        sseReconnectRef.current = setTimeout(connectSSE, 200)
+      }, 25000)
+    }
+    resetWatchdog()
+
     es.onmessage = (e) => {
+      resetWatchdog()
       let evt: any
       try { evt = JSON.parse(e.data) } catch { return }
 
@@ -390,7 +424,7 @@ export default function WhatsApp() {
           })
         } else {
           // New message in another conversation — play sound notification
-          playNotificationSound()
+          playMessageSound()
         }
         // Always refresh conversations list to update last message & unread count
         loadConvsRef.current()
@@ -415,10 +449,13 @@ export default function WhatsApp() {
     }
 
     es.onerror = () => {
+      if (sseWatchdogRef.current) clearTimeout(sseWatchdogRef.current)
       es.close()
       sseRef.current = null
-      // Reconnect after 3 seconds
-      sseReconnectRef.current = setTimeout(connectSSE, 3000)
+      loadConvsRef.current()
+      const conv = selectedConvRef.current
+      if (conv) loadMsgsRef.current(conv.contact.id)
+      sseReconnectRef.current = setTimeout(connectSSE, 1000)
     }
   }, [])
 
@@ -440,6 +477,7 @@ export default function WhatsApp() {
     return () => {
       if (sseRef.current) sseRef.current.close()
       if (sseReconnectRef.current) clearTimeout(sseReconnectRef.current)
+      if (sseWatchdogRef.current) clearTimeout(sseWatchdogRef.current)
       if (fallbackPollRef.current) clearInterval(fallbackPollRef.current)
     }
   }, [connectSSE])
@@ -468,7 +506,7 @@ export default function WhatsApp() {
         prev[conv.contact.id] = conv.unread_count
       }
       prevUnreadRef.current = prev
-      if (hasNew) playNotificationSound()
+      if (hasNew) playMessageSound()
 
       setConversations(data)
       const cur = selectedConvRef.current
@@ -576,6 +614,26 @@ export default function WhatsApp() {
       return
     }
 
+    // Stop typing indicator immediately on send
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current)
+    if (selectedConv && selectedConfig) {
+      sendTypingPresence(parseInt(selectedConfig), selectedConv.contact.id, false).catch(() => {})
+    }
+
+    // Optimistic insert — show message instantly before API responds
+    const optimisticText = hasMedia ? '' : msgText.trim()
+    const optimisticId = Date.now() * -1  // negative temp id
+    if (!hasMedia && optimisticText) {
+      const optimistic = {
+        id: optimisticId, contact_id: selectedConv.contact.id,
+        direction: 'out', message_type: 'text', content: optimisticText,
+        status: 'logged', created_at: new Date().toISOString(),
+        whatsapp_config_id: parseInt(selectedConfig),
+      }
+      setMessages(prev => [...prev, optimistic])
+      setMsgText('')
+    }
+
     setSending(true)
     try {
       if (hasMedia) {
@@ -593,11 +651,16 @@ export default function WhatsApp() {
         const result = await sendWhatsAppMessage({
           contact_id: selectedConv.contact.id,
           whatsapp_config_id: parseInt(selectedConfig),
-          message: msgText,
+          message: optimisticText,
           lead_id: selectedConv.lead_id ?? undefined,
         })
         if (result?.status === 'logged') toast.error('WhatsApp no conectado — mensaje guardado sin enviar')
-        setMsgText('')
+        // Replace optimistic with real message from API
+        if (result?.id) {
+          setMessages(prev => prev.map(m => m.id === optimisticId ? { ...result, direction: 'out' } : m))
+        } else {
+          setMessages(prev => prev.filter(m => m.id !== optimisticId))
+        }
       }
       await loadMessages(selectedConv.contact.id)
       await loadConversations()
@@ -612,11 +675,20 @@ export default function WhatsApp() {
     if (!selectedConfig) return
     setSyncing(true)
     try {
-      await syncWhatsAppChats(parseInt(selectedConfig))
+      const result = await syncFullHistory(parseInt(selectedConfig))
       await loadConversations()
-      toast.success('Chats sincronizados')
+      const msgs = result?.messages_pushed ?? 0
+      const contacts = result?.contacts_pushed ?? 0
+      toast.success(`Sincronizado: ${contacts} contactos, ${msgs} mensajes importados`)
     } catch {
-      toast.error('Error al sincronizar chats')
+      // Fallback to basic sync if full history not available
+      try {
+        await syncWhatsAppChats(parseInt(selectedConfig))
+        await loadConversations()
+        toast.success('Chats sincronizados')
+      } catch {
+        toast.error('Error al sincronizar chats')
+      }
     } finally {
       setSyncing(false)
     }
@@ -637,6 +709,23 @@ export default function WhatsApp() {
       setEditingMsg(null)
       setEditText('')
     } catch { toast.error('Error al editar') }
+  }
+
+  const handleRetryMsg = async (msg: any) => {
+    // Optimistically mark as 'sent' so the user sees it's being retried
+    setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, status: 'sent' } : m))
+    try {
+      const updated = await retryWhatsAppMessage(msg.id)
+      setMessages(prev => prev.map(m => m.id === msg.id ? updated : m))
+      if (updated.status === 'logged') {
+        // Still couldn't send — revert optimistic
+        setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, status: 'logged' } : m))
+        toast.error('WhatsApp no conectado — reintenta más tarde')
+      }
+    } catch {
+      setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, status: 'logged' } : m))
+      toast.error('Error al reenviar')
+    }
   }
 
   const filtered = conversations.filter(c =>
@@ -678,7 +767,7 @@ export default function WhatsApp() {
           )}
         </div>
         <div className="flex items-center gap-3">
-          {configs.length > 0 && (
+          {configs.length > 1 && !isAgendadora && (
             <div className="relative">
               <select className="input h-9 pl-3 pr-8 text-sm appearance-none w-52"
                 value={selectedConfig} onChange={e => setSelectedConfig(e.target.value)}>
@@ -770,8 +859,22 @@ export default function WhatsApp() {
                     <div className="flex items-center gap-3 px-4 py-3">
                       {/* Avatar */}
                       <div className="relative flex-shrink-0">
+                        {conv.contact.avatar_url ? (
+                          <img
+                            src={conv.contact.avatar_url}
+                            alt={conv.contact.name}
+                            className="w-12 h-12 rounded-full object-cover"
+                            onError={e => {
+                              (e.currentTarget as HTMLImageElement).style.display = 'none';
+                              (e.currentTarget.nextElementSibling as HTMLElement).style.display = 'flex'
+                            }}
+                          />
+                        ) : null}
                         <div className="w-12 h-12 rounded-full flex items-center justify-center font-bold text-lg"
-                          style={{backgroundColor:'var(--primary-dim)', color:'var(--primary)'}}>
+                          style={{
+                            backgroundColor:'var(--primary-dim)', color:'var(--primary)',
+                            display: conv.contact.avatar_url ? 'none' : 'flex'
+                          }}>
                           {conv.contact.name.charAt(0).toUpperCase()}
                         </div>
                       </div>
@@ -825,8 +928,19 @@ export default function WhatsApp() {
             <div className="flex items-center justify-between px-4 py-2.5 flex-shrink-0 border-b"
               style={{backgroundColor:'var(--surface)', borderColor:'var(--border)'}}>
               <div className="flex items-center gap-3">
+                {selectedConv.contact.avatar_url ? (
+                  <img
+                    src={selectedConv.contact.avatar_url}
+                    alt={selectedConv.contact.name}
+                    className="w-10 h-10 rounded-full object-cover flex-shrink-0"
+                    onError={e => {
+                      (e.currentTarget as HTMLImageElement).style.display = 'none';
+                      (e.currentTarget.nextElementSibling as HTMLElement).style.display = 'flex'
+                    }}
+                  />
+                ) : null}
                 <div className="w-10 h-10 rounded-full flex items-center justify-center"
-                  style={{backgroundColor:'var(--primary-dim)'}}>
+                  style={{backgroundColor:'var(--primary-dim)', display: selectedConv.contact.avatar_url ? 'none' : 'flex'}}>
                   <span className="font-bold text-sm" style={{color:'var(--primary)'}}>
                     {selectedConv.contact.name.charAt(0).toUpperCase()}
                   </span>
@@ -915,6 +1029,16 @@ export default function WhatsApp() {
                                 }}>
                                 <MsgContent m={m} />
                                 <div className="flex items-center justify-end gap-1 mt-1" style={{minHeight:16}}>
+                                  {isOut && m.status === 'logged' && (
+                                    <button
+                                      onClick={() => handleRetryMsg(m)}
+                                      title="No enviado — haz clic para reintentar"
+                                      style={{fontSize:10, color:'#fbbf24', cursor:'pointer', opacity:0.9}}
+                                      onMouseEnter={e => (e.currentTarget as HTMLElement).style.opacity='1'}
+                                      onMouseLeave={e => (e.currentTarget as HTMLElement).style.opacity='0.9'}>
+                                      ↺ No enviado
+                                    </button>
+                                  )}
                                   <span style={{color: isOut ? 'rgba(255,255,255,0.70)' : 'rgba(26,32,53,0.40)', fontSize:11, whiteSpace:'nowrap'}}>
                                     {format(parseAsUTC(m.created_at), "HH:mm")}
                                   </span>
@@ -1015,6 +1139,14 @@ export default function WhatsApp() {
                   setMsgText(e.target.value)
                   e.target.style.height = 'auto'
                   e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px'
+                  // Typing presence — debounced, stops after 3s idle
+                  if (selectedConv && selectedConfig) {
+                    if (typingTimerRef.current) clearTimeout(typingTimerRef.current)
+                    sendTypingPresence(parseInt(selectedConfig), selectedConv.contact.id, true).catch(() => {})
+                    typingTimerRef.current = setTimeout(() => {
+                      sendTypingPresence(parseInt(selectedConfig), selectedConv.contact.id, false).catch(() => {})
+                    }, 3000)
+                  }
                 }}
                 placeholder={mediaFile ? 'Añade un pie de foto (opcional)...' : 'Escribe un mensaje aquí'}
                 onKeyDown={e => {
@@ -1065,6 +1197,7 @@ export default function WhatsApp() {
           onClose={() => setCtxMenu(null)}
           onDelete={handleDeleteMsg}
           onEdit={msg => { setEditingMsg(msg); setEditText(msg.content) }}
+          onRetry={handleRetryMsg}
         />
       )}
 

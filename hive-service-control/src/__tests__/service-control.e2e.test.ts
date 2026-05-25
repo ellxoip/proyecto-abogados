@@ -70,7 +70,8 @@ describe("E2E service-control — ciclo de vida completo", () => {
 
     // ── 1. financial-control empuja el enlace de PagaCuotas + password
     //       generada. service-control crea el ghost user con credenciales
-    //       hasheadas y mustChangePassword=true.
+    //       hasheadas. mustChangePassword se queda en false porque el
+    //       cliente ya conoce la clave desde PagaCuotas.
     const resLink = await paymentLinkPOST(
       authedPost(PAYMENT_LINK_URL, {
         rut: RUT_FORMATEADO,
@@ -90,7 +91,7 @@ describe("E2E service-control — ciclo de vida completo", () => {
     });
     expect(userAfterLink).not.toBeNull();
     expect(userAfterLink!.role).toBe("CLIENTE");
-    expect(userAfterLink!.mustChangePassword).toBe(true);
+    expect(userAfterLink!.mustChangePassword).toBe(false);
     expect(userAfterLink!.active).toBe(true);
     expect(userAfterLink!.paymentLink).toBe(PAY_LINK);
     expect(await bcrypt.compare(PASSWORD_INICIAL, userAfterLink!.passwordHash)).toBe(true);

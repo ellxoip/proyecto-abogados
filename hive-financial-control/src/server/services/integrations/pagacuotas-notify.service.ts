@@ -5,6 +5,7 @@ import { AtInformaClient } from "./at-informa.client";
 import { CrmClient } from "./crm.client";
 import { IntegrationEventService } from "./integration-event.service";
 import { PaymentPortalService } from "./payment-portal.service";
+import { normalizePagaCuotasPortalLink } from "./pagacuotas-links";
 
 const PAGACUOTAS_API_URL =
   process.env.PAGACUOTAS_API_URL || "http://localhost:4000";
@@ -170,27 +171,31 @@ export class PagaCuotasNotifyService {
     if (!errorMessage) {
       const data = body as { autoLoginUrl?: string | null };
       const portalUrl = this.buildPortalLoginUrl(payload.rut);
-      const paymentLink = data?.autoLoginUrl ?? portalUrl;
+      const autoLoginUrl = normalizePagaCuotasPortalLink(data?.autoLoginUrl);
+      const paymentLink = autoLoginUrl ?? portalUrl;
       let passwordPlain: string | null = null;
       let nexioCallbackWarning: string | null = null;
 
-      // 1. Credenciales y sync con service-control: SIEMPRE.
-      //    Sin esto, el portal del cliente en SC nunca tiene paymentLink y
-      //    PagaCuotas no acepta la clave. Antes esto estaba metido dentro del
-      //    `if (crmLeadId)`, lo que dejaba a los clientes manuales sin sync.
+      // 1. Credenciales y sync con service-control.
+      //    `ensurePortalCredentials` es idempotente: si el cliente ya tiene
+      //    portal_password_hash, devuelve { password: null } y nos saltamos
+      //    el sync (no podemos reenviar plaintext que ya no tenemos, y un
+      //    retry no debe invalidar la clave en uso).
       try {
         const credentials = await this.paymentPortalService.ensurePortalCredentials(payload.clienteId);
         passwordPlain = credentials.password;
-        await this.getAtInformaClient().syncPaymentLink({
-          rut: payload.rut,
-          nombre: payload.nombre,
-          email: payload.email,
-          telefono: payload.telefono,
-          payment_link: paymentLink,
-          password_plain: credentials.password,
-          crm_lead_id: payload.crmLeadId ?? null,
-          correlation_id: payload.correlationId ?? null,
-        });
+        if (credentials.password) {
+          await this.getAtInformaClient().syncPaymentLink({
+            rut: payload.rut,
+            nombre: payload.nombre,
+            email: payload.email,
+            telefono: payload.telefono,
+            payment_link: paymentLink,
+            password_plain: credentials.password,
+            crm_lead_id: payload.crmLeadId ?? null,
+            correlation_id: payload.correlationId ?? null,
+          });
+        }
       } catch (err) {
         errorMessage = err instanceof Error ? err.message : String(err);
       }
@@ -199,7 +204,7 @@ export class PagaCuotasNotifyService {
       //    Falla acá es soft-warning: el paymentLink ya quedó pusheado a SC y
       //    el cliente puede pagar — solo el CRM no se enteró. retry-sweep
       //    reintentará el callback. NO debe romper el flujo de pago.
-      if (!errorMessage && payload.crmLeadId) {
+      if (!errorMessage && payload.crmLeadId && passwordPlain) {
         if (!this.crmClient.configured) {
           nexioCallbackWarning = "CRM callback no configurado. paymentLink listo en SC, falta notificar a NEXIO.";
         } else {
@@ -211,8 +216,8 @@ export class PagaCuotasNotifyService {
               identifier: payload.rut,
               portalUrl,
               paymentLink,
-              autoLoginUrl: data?.autoLoginUrl ?? null,
-              password: passwordPlain ?? "",
+              autoLoginUrl,
+              password: passwordPlain,
               correlationId: payload.correlationId ?? null,
             });
           } catch (err) {
@@ -227,7 +232,7 @@ export class PagaCuotasNotifyService {
       if (nexioCallbackWarning && !errorMessage) {
         await this.eventService.markProcessed(eventId, {
           attempts,
-          autoLoginUrl: data?.autoLoginUrl ?? null,
+          autoLoginUrl,
           portalUrl,
           paymentLink,
           passwordPlain,
@@ -238,7 +243,7 @@ export class PagaCuotasNotifyService {
         return {
           ok: true,
           status: "created",
-          autoLoginUrl: data?.autoLoginUrl ?? null,
+          autoLoginUrl,
           portalUrl,
           paymentLink,
           integrationEventId: eventId,
@@ -258,7 +263,7 @@ export class PagaCuotasNotifyService {
               status: IntegrationEventStatus.PENDING,
               result_payload: {
                 attempts,
-                autoLoginUrl: data?.autoLoginUrl ?? null,
+                autoLoginUrl,
                 portalUrl,
                 paymentLink,
                 passwordPlain,
@@ -281,7 +286,7 @@ export class PagaCuotasNotifyService {
 
       await this.eventService.markProcessed(eventId, {
         attempts,
-        autoLoginUrl: data?.autoLoginUrl ?? null,
+        autoLoginUrl,
         portalUrl,
         paymentLink,
         passwordPlain,
@@ -291,7 +296,7 @@ export class PagaCuotasNotifyService {
       return {
         ok: true,
         status: "created",
-        autoLoginUrl: data?.autoLoginUrl ?? null,
+        autoLoginUrl,
         portalUrl,
         paymentLink,
         integrationEventId: eventId,

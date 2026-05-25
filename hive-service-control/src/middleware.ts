@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 const PUBLIC_PATHS = [
   "/login",
   "/registro",
+  "/auth/",
   "/api/auth",
   "/api/casos",
   "/api/webhooks/",
@@ -68,17 +69,17 @@ export default async function middleware(req: NextRequest) {
     return NextResponse.redirect(new URL("/admin/casos", req.url));
   }
 
-  // Cliente con password temporal: forzar rotación antes de cualquier otra
-  // ruta del portal. La página /portal/cambiar-password está exenta (es la
-  // única forma de bajar el flag).
-  if (
-    role === "CLIENTE" &&
-    token.mustChangePassword === true &&
-    pathname.startsWith("/portal") &&
-    !pathname.startsWith("/portal/cambiar-password")
-  ) {
-    return NextResponse.redirect(new URL("/portal/cambiar-password", req.url));
+  // Command Center (/admin) restringido a SUPER_ADMIN. ABOGADO y JEFE_DE_MESA
+  // van directo a su bandeja sin pasar por la vista ejecutiva.
+  if (pathname === "/admin" && role !== "SUPER_ADMIN") {
+    return NextResponse.redirect(new URL("/admin/bandeja", req.url));
   }
+
+  // Nota: anteriormente forzábamos rotación de contraseña al primer
+  // login (mustChangePassword=true). Hoy el cliente ya conoce su
+  // clave desde PagaCuotas, así que el cambio es voluntario desde
+  // `/portal/cambiar-password`. El flag se conserva solo para
+  // compatibilidad con datos legados — no bloquea el portal.
 
   return NextResponse.next();
 }

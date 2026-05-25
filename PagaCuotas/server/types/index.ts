@@ -147,6 +147,7 @@ export interface PaymentConfirmedPayload {
   cuota_ids: string[];
   monto_pagado: number;
   fecha_pago: string;
+  comprobante_url?: string | null;
   metadata?: Record<string, any>;
 }
 

@@ -50,3 +50,15 @@ DATABASE_URL=postgresql://usuario:password@localhost/crm_abogados
 ```
 
 Y reemplazar SQLite connect_args en `database.py`.
+
+## Deploy en Vercel
+
+Este repo está preparado para desplegar el **frontend** en Vercel desde la raíz del proyecto:
+
+- Build command: `npm run build`
+- Output directory: `frontend/dist`
+- Variable de entorno: `VITE_API_BASE_URL=https://tu-backend-publico.com`
+
+El backend FastAPI y el servicio `whatsapp-qr-service` necesitan un host con procesos persistentes
+(VPS, Render, Railway, Fly.io, DigitalOcean, etc.). Vercel servirá la app React y el frontend llamará
+al backend configurado en `VITE_API_BASE_URL`.

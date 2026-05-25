@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth, signOut } from "@/lib/auth";
 import Link from "next/link";
-import { CreditCard } from "lucide-react";
+import { CreditCard, KeyRound } from "lucide-react";
 import { BrandMark } from "@/components/BrandMark";
 import { withRls } from "@/lib/rls";
 import { ensurePagaCuotasPaymentLink } from "@/lib/pagacuotas";
@@ -42,7 +42,7 @@ export default async function PortalLayout({ children }: { children: React.React
                 href={paymentLink}
                 target="_blank"
                 rel="noreferrer"
-                aria-label="Pagar cuotas pendientes"
+                aria-label="Abrir Portal PagaCuotas"
                 className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-[10px] sm:text-xs font-bold uppercase tracking-widest transition-all hover:brightness-110"
                 style={{
                   background: "linear-gradient(180deg, var(--sidebar-bg) 0%, var(--sidebar-deep) 100%)",
@@ -51,7 +51,7 @@ export default async function PortalLayout({ children }: { children: React.React
                 }}
               >
                 <CreditCard className="h-4 w-4" style={{ color: "var(--gold-soft)" }} />
-                <span className="hidden sm:inline">Pagar</span>
+                <span className="hidden sm:inline">PagaCuotas</span>
               </a>
               <span
                 role="tooltip"
@@ -62,10 +62,23 @@ export default async function PortalLayout({ children }: { children: React.React
                   color: "var(--text)",
                 }}
               >
-                Paga tus cuotas pendientes en PagaCuotas. Abre tu enlace seguro en una pestaña nueva.
+                Abre tu Portal PagaCuotas para revisar cuotas, estado del caso y pagos pendientes.
               </span>
             </div>
           )}
+          <Link
+            href="/portal/cambiar-password"
+            aria-label="Cambiar contraseña"
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-[10px] sm:text-xs font-bold uppercase tracking-widest transition-all hover:brightness-110"
+            style={{
+              background: "var(--surface)",
+              border: "1px solid var(--border-subtle)",
+              color: "var(--text-muted)",
+            }}
+          >
+            <KeyRound className="h-4 w-4" style={{ color: "var(--gold-soft)" }} />
+            <span className="hidden sm:inline">Clave</span>
+          </Link>
           <div className="hidden md:block text-sm truncate max-w-[160px]" style={{ color: "var(--text-muted)" }}>
             {session.user.name}
           </div>

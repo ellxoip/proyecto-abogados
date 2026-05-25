@@ -76,7 +76,8 @@ describe("POST /api/internal/integration/cases", () => {
 
       const user = await _prisma.user.findFirst({ where: { rut: "21331955-8" } });
       expect(user).not.toBeNull();
-      expect(user!.mustChangePassword).toBe(true);
+      // El cliente ya conoce su clave desde PagaCuotas; no se fuerza rotación.
+      expect(user!.mustChangePassword).toBe(false);
       expect(await bcrypt.compare("Y732HX", user!.passwordHash)).toBe(true);
 
       const kase = await _prisma.case.findUnique({ where: { code: "AT-2025-001" } });
@@ -140,30 +141,39 @@ describe("POST /api/internal/integration/cases", () => {
       expect(meta.crm_lead_id).toBe(42);
     });
 
-    it("re-syncs hash when client still has temporary password", async () => {
+    it("re-syncs hash on every onboarding call (fc is source of truth)", async () => {
       await POST(buildRequest(validPayload));
       await POST(buildRequest({ ...validPayload, password_plain: "OTRA9999" }));
 
       const user = await _prisma.user.findFirst({ where: { rut: "21331955-8" } });
       expect(await bcrypt.compare("OTRA9999", user!.passwordHash)).toBe(true);
-      expect(user!.mustChangePassword).toBe(true);
+      expect(user!.mustChangePassword).toBe(false);
     });
 
-    it("preserves rotated password (mustChangePassword=false → hash never touched)", async () => {
-      await POST(buildRequest(validPayload));
-      const ownHash = await bcrypt.hash("MiClaveSegura1", 12);
-      await _prisma.user.update({
-        where: { rut: "21331955-8" },
-        data: { passwordHash: ownHash, mustChangePassword: false },
+    it("overwrites identity (fullName/email/phone) when re-onboarding a reused RUT", async () => {
+      // Caso real: usuario demo/seed pre-existe con mismo RUT. El segundo
+      // POST debe pisar los datos viejos con la identidad real del CRM.
+      await _prisma.user.create({
+        data: {
+          fullName: "Demo Viejo",
+          email: "demo.viejo@hivecontrol.cl",
+          phone: "+56900000000",
+          role: "CLIENTE",
+          passwordHash: await bcrypt.hash("demoseed", 12),
+          rut: "21331955-8",
+          mustChangePassword: false,
+          active: true,
+        },
       });
 
-      const res = await POST(buildRequest({ ...validPayload, password_plain: "INTENTO99" }));
-      expect(res.status).toBe(200);
+      const res = await POST(buildRequest(validPayload));
+      expect(res.status).toBe(201);
 
       const user = await _prisma.user.findFirst({ where: { rut: "21331955-8" } });
-      expect(user!.passwordHash).toBe(ownHash);
-      expect(user!.mustChangePassword).toBe(false);
-      expect(await bcrypt.compare("MiClaveSegura1", user!.passwordHash)).toBe(true);
+      expect(user!.fullName).toBe("Matias Villalobos");
+      expect(user!.email).toBe("matias.villalobos@hashtagcl.com");
+      expect(user!.phone).toBe("+56986173914");
+      expect(await bcrypt.compare("Y732HX", user!.passwordHash)).toBe(true);
     });
   });
 

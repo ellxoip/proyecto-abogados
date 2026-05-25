@@ -31,7 +31,7 @@ export default function ClientLoginPage() {
     setLoading(false);
 
     if (res?.error) {
-      setError("Credenciales inválidas. Verifica tu email y contraseña.");
+      setError("Credenciales inválidas. Verifica tu RUT o correo y tu contraseña.");
       return;
     }
 
@@ -198,24 +198,27 @@ export default function ClientLoginPage() {
             </div>
 
             <div className="mt-8 space-y-5">
-              {/* Email */}
+              {/* RUT or Email */}
               <div className="space-y-2">
                 <label className="block text-[10px] font-semibold uppercase tracking-[0.28em]" style={{ color: "var(--gold-deep)" }}>
-                  Correo Electrónico
+                  RUT o Correo Electrónico
                 </label>
                 <div className="relative">
                   <Mail aria-hidden className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2" style={{ color: "var(--gold-deep)" }} />
                   <input
-                    type="email"
+                    type="text"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="tu@correo.com"
+                    placeholder="12345678-9 o tu@correo.com"
                     required
-                    autoComplete="email"
+                    autoComplete="username"
                     className="w-full rounded-xl border bg-white px-4 py-3 pl-11 text-sm transition-all outline-none focus:border-[var(--gold)] focus:shadow-[var(--ring-focus)]"
                     style={{ borderColor: "#D9CFB1", color: "#1A1A1F" }}
                   />
                 </div>
+                <p className="text-[10px]" style={{ color: "#7A6E45" }}>
+                  Los clientes ingresan con su RUT y la clave que recibieron por WhatsApp.
+                </p>
               </div>
 
               {/* Password */}

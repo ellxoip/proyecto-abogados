@@ -191,4 +191,33 @@ describe("PaymentPortalService", () => {
     expect(result.cuotas_pagadas).toBe(1);
     expect(result.monto_vencido).toBe(1000);
   });
+
+  it("permite fijar clave desde auto-login sin clave actual", async () => {
+    const updates: Array<{ where: { id: number }; data: { portal_password_hash?: string } }> = [];
+    const db = {
+      cliente: {
+        findUnique: async ({ where }: { where: { rut?: string; id?: number } }) => {
+          if (where.rut === "12345678-9") {
+            return { id: 7, rut: "12345678-9", nombre: "Cliente Demo" };
+          }
+          return null;
+        },
+        update: async (input: { where: { id: number }; data: { portal_password_hash?: string } }) => {
+          updates.push(input);
+          return { id: input.where.id };
+        },
+      },
+      externalReference: {
+        findFirst: async () => null,
+      },
+    };
+
+    const service = new PaymentPortalService(db as never);
+    const result = await service.setPortalPasswordFromAutoLogin("12345678-9", "ABC123");
+
+    expect(result).toEqual({ ok: true });
+    expect(updates).toHaveLength(1);
+    expect(updates[0].where.id).toBe(7);
+    expect(updates[0].data.portal_password_hash).toBeTruthy();
+  });
 });

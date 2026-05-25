@@ -19,9 +19,9 @@ import { normalizeRut, normalizeEmail, normalizePhone } from "@/lib/identity";
  *  - financial-control genera UNA password al crear el enlace de
  *    PagaCuotas y la envía al cliente vía nexio (WhatsApp + Email).
  *  - Esa MISMA password sirve para iniciar sesión en este portal.
- *  - El cliente está obligado a cambiarla en el primer login: setemos
- *    `User.mustChangePassword = true` y el portal redirige a
- *    `/portal/cambiar-password` hasta que se rote.
+ *  - El cliente ya conoce la clave (la usó en PagaCuotas), por lo
+ *    tanto no se le exige rotarla al primer login en sc. Puede
+ *    cambiarla cuando quiera desde `/portal/cambiar-password`.
  *  - service-control NO envía credenciales (nexio ya lo hizo). Solo
  *    sincroniza el hash recibido.
  *
@@ -29,9 +29,14 @@ import { normalizeRut, normalizeEmail, normalizePhone } from "@/lib/identity";
  * ------------
  *  - Caso: por `case_code` (Case.code @unique). Una segunda llamada
  *    actualiza metadatos sin duplicar.
- *  - Password: solo actualizamos el hash si el cliente aún no rotó su
- *    password (mustChangePassword == true). Si ya la cambió, dejamos
- *    intacto el hash para no romper su sesión.
+ *  - Password: financial-control es la fuente de verdad del onboarding
+ *    y mantiene su hash en sincronía bidireccional con sc vía
+ *    `/api/internal/integration/clients/password-sync`. Cuando este
+ *    endpoint recibe una nueva clave, la aplicamos siempre: si el
+ *    cliente había rotado en sc, fc ya tiene esa rotación; si está
+ *    re-onboardeando con clave nueva, esta es la vigente. Identidad
+ *    (fullName/email/phone) también se sobrescribe — evita que demo
+ *    users con mismo RUT secuestren la identidad real.
  *
  * Auth: `x-api-key` o `Authorization: Bearer …` = INTEGRATION_INTERNAL_API_KEY.
  */
@@ -159,25 +164,39 @@ export async function POST(req: Request) {
             passwordHash,
             rut: normalizedRut,
             paymentLink: payment_link ?? null,
-            mustChangePassword: true,
+            mustChangePassword: false,
             active: true,
           },
         });
         wasClientCreated = true;
       } else {
-        // Solo sincronizamos el hash de financial si el cliente todavía
-        // no rotó su password. Si ya la cambió (mustChangePassword=false),
-        // dejamos intacto el hash — el cliente es soberano de sus
-        // credenciales desde ese momento.
-        const shouldSyncHash = client.mustChangePassword === true;
+        // `password_plain` que recibimos puede ser la clave ORIGINAL del
+        // onboarding (snapshot guardado en fc IntegrationEvent o callback
+        // de NEXIO), no necesariamente la vigente. Si el cliente ya rotó
+        // su clave en algún portal, la sync bidireccional dejó el hash
+        // correcto vía `/clients/password-sync`. NO debemos pisarlo con
+        // el plaintext snapshot. Identidad (fullName/email/phone) sí se
+        // actualiza siempre para que demos/seeds con mismo RUT cedan al
+        // cliente real.
+        const rotated = await tx.auditLog.findFirst({
+          where: { actorId: client.id, action: "PASSWORD_CHANGED" },
+          select: { id: true },
+        });
+        const updateData: Record<string, unknown> = {
+          fullName: nombre,
+          email: normalizedEmail,
+          phone: normalizedPhone,
+          rut: client.rut ?? normalizedRut,
+          paymentLink: payment_link ?? client.paymentLink,
+          mustChangePassword: false,
+          active: true,
+        };
+        if (!rotated) {
+          updateData.passwordHash = passwordHash;
+        }
         client = await tx.user.update({
           where: { id: client.id },
-          data: {
-            ...(shouldSyncHash ? { passwordHash } : {}),
-            rut: client.rut ?? normalizedRut,
-            paymentLink: payment_link ?? client.paymentLink,
-            active: true,
-          },
+          data: updateData,
         });
       }
 
@@ -280,7 +299,7 @@ export async function POST(req: Request) {
         action: "PAYMENT_RECORDED",
         caseId: kase.id,
         message: wasCaseCreated
-          ? `Caso creado desde ${source ?? "NEXIO"}. Pago inicial confirmado. Cliente debe rotar password al primer login.${work_order ? ` OT ${work_order.type ?? ""} adjuntada.` : ""}`
+          ? `Caso creado desde ${source ?? "NEXIO"}. Pago inicial confirmado. Cliente reutiliza credenciales de PagaCuotas — rotación opcional.${work_order ? ` OT ${work_order.type ?? ""} adjuntada.` : ""}`
           : `Caso actualizado desde ${source ?? "NEXIO"}.${work_order ? ` OT ${work_order.type ?? ""} sincronizada.` : ""}`,
       });
 

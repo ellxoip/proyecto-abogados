@@ -9,6 +9,7 @@ import {
 import toast from 'react-hot-toast'
 import { useAuthStore } from '../store/auth'
 import ContactModal from '../components/ContactModal'
+import { rutOnChange } from '../utils/rut'
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <div><label className="block text-xs font-semibold text-white/62 mb-1">{label}</label>{children}</div>
@@ -76,10 +77,10 @@ function EditContactModal({ contact, onClose, onSuccess }: { contact: Contact; o
               <input className="input" value={form.city} onChange={e => set('city', e.target.value)} />
             </Field>
             <Field label="RUT Persona">
-              <input className="input" value={form.rut_persona} onChange={e => set('rut_persona', e.target.value)} placeholder="12.345.678-9" />
+              <input className="input" value={form.rut_persona} onChange={e => set('rut_persona', rutOnChange(e.target.value))} placeholder="12.345.678-9" />
             </Field>
             <Field label="RUT Empresa">
-              <input className="input" value={form.rut_empresa} onChange={e => set('rut_empresa', e.target.value)} placeholder="76.000.000-0" />
+              <input className="input" value={form.rut_empresa} onChange={e => set('rut_empresa', rutOnChange(e.target.value))} placeholder="76.000.000-0" />
             </Field>
             <div className="col-span-2">
               <Field label="Razón Social">
@@ -423,6 +424,7 @@ export default function Contactos() {
           {canEdit && (
             <button
               onClick={async () => {
+                if (!user?.negocio_plan_limits?.export_csv) { toast.error('Exportar CSV requiere plan Pro o superior'); return }
                 setExporting(true)
                 try {
                   await exportContacts(groupFilter ? { group_id: parseInt(groupFilter) } : undefined)
@@ -433,8 +435,9 @@ export default function Contactos() {
                 }
               }}
               disabled={exporting}
+              title={!user?.negocio_plan_limits?.export_csv ? 'Plan Pro requerido' : 'Exportar CSV'}
               className="flex items-center gap-1.5 text-sm font-semibold px-3 py-2.5 rounded-xl transition-colors disabled:opacity-50"
-              style={{ background: '#ffffff', border: '1px solid rgba(26,32,53,0.12)', color: 'rgba(26,32,53,0.70)', boxShadow: '0 1px 3px rgba(26,32,53,0.06)' }}>
+              style={{ background: '#ffffff', border: '1px solid rgba(26,32,53,0.12)', color: 'rgba(26,32,53,0.70)', boxShadow: '0 1px 3px rgba(26,32,53,0.06)', opacity: user?.negocio_plan_limits?.export_csv ? 1 : 0.4 }}>
               <Download size={14} className={exporting ? 'animate-spin' : ''} /> Exportar
             </button>
           )}

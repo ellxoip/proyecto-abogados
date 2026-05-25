@@ -3,10 +3,8 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Loader2, Shield, AlertTriangle } from 'lucide-react';
 import { getApiBaseUrl } from '../../lib/env';
 import {
-  fetchContractInstallments,
   saveClientToken,
   saveClientSession,
-  saveSelectedPayment,
   type SisContableDebtResponse,
 } from '../../lib/clientPortal';
 
@@ -15,6 +13,7 @@ type AutoLoginResponse = {
   token?: string;
   cliente?: { id: string; rut: string; nombre: string; email: string };
   debts?: SisContableDebtResponse;
+  mustChangePassword?: boolean;
   message?: string;
   code?: string;
 };
@@ -27,7 +26,6 @@ export default function AutoLogin() {
 
   useEffect(() => {
     const token = searchParams.get('token') || '';
-    const payNow = searchParams.get('pay') === '1';
     if (!token) {
       setStatus('error');
       setErrorMessage('El enlace no contiene un token válido.');
@@ -62,30 +60,9 @@ export default function AutoLogin() {
           identifier: data.cliente?.rut || '',
           debts: data.debts,
           selectedContractId,
+          passwordChangeRequired: Boolean(data.mustChangePassword),
+          payAfterPasswordChange: false,
         });
-
-        if (payNow && selectedContractId) {
-          const installments = await fetchContractInstallments(selectedContractId);
-          const nextInstallment = installments.cuotas
-            .filter((installment) => installment.pagable || ['PENDIENTE', 'VENCIDA', 'POR_VENCER', 'PAGO_PENDIENTE'].includes(installment.estado))
-            .sort((a, b) => new Date(a.fecha_vencimiento).getTime() - new Date(b.fecha_vencimiento).getTime())[0];
-
-          if (nextInstallment) {
-            const contract = data.debts.contratos.find((item) => item.id === selectedContractId);
-            saveSelectedPayment({
-              identifier: data.cliente?.rut || '',
-              cliente_contable_id: data.cliente?.id || installments.cliente_id,
-              contrato_contable_id: selectedContractId,
-              cuota_ids: [nextInstallment.id],
-              amount: nextInstallment.saldo || nextInstallment.monto,
-              description: `${contract?.servicio || `Contrato ${selectedContractId}`} - Cuota ${nextInstallment.numero}/${installments.resumen.total_cuotas}`,
-              installmentNumber: nextInstallment.numero,
-              totalInstallments: installments.resumen.total_cuotas,
-            });
-            navigate('/client/payment', { replace: true });
-            return;
-          }
-        }
 
         navigate('/client/portal', { replace: true });
       } catch (err: any) {

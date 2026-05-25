@@ -74,6 +74,31 @@ export class AtInformaClient {
     );
   }
 
+  async pushPaymentReceipt(payload: Record<string, unknown>) {
+    return this.request<{ ok: boolean; caseId?: string; updateId?: string; created?: boolean }>(
+      "/api/internal/integration/payment-receipt",
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+    );
+  }
+
+  async syncClientPassword(payload: {
+    rut: string;
+    password_plain: string;
+    correlation_id?: string;
+    source?: string;
+  }) {
+    return this.request<{ ok: boolean; clientId?: string }>(
+      "/api/internal/integration/clients/password-sync",
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+    );
+  }
+
   private async request<T>(path: string, init?: RequestInit): Promise<T> {
     const response = await this.fetchFn(`${this.baseUrl}${path}`, {
       ...init,

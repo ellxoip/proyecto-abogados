@@ -43,6 +43,8 @@ class UserOut(BaseModel):
     whatsapp_number: Optional[str]
     at_informa_user_id: Optional[str] = None
     created_at: datetime
+    negocio_plan: Optional[str] = "basico"
+    negocio_plan_limits: Optional[dict] = None
     class Config:
         from_attributes = True
 
@@ -68,6 +70,7 @@ class GroupOut(BaseModel):
     name: str
     description: Optional[str]
     tipo: str = "abogados"
+    negocio_id: Optional[int] = None
     created_at: datetime
     class Config:
         from_attributes = True
@@ -186,6 +189,7 @@ class ContactOut(BaseModel):
     city: Optional[str]
     group_id: Optional[int]
     notes: Optional[str]
+    avatar_url: Optional[str] = None
     created_at: datetime
     class Config:
         from_attributes = True

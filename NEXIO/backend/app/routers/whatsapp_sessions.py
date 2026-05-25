@@ -10,13 +10,14 @@ import os
 from ..database import get_db
 from .. import models
 from ..auth import get_current_user
+from ..plans import enforce_limit, _get_negocio
 
 QR_SERVICE_URL = os.getenv("QR_SERVICE_URL", "http://localhost:3001")
 QR_TIMEOUT = 10
 
 router = APIRouter(prefix="/api/whatsapp-sessions", tags=["whatsapp-sessions"])
 
-MAX_SESSIONS_PER_USER = 3
+
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -87,21 +88,20 @@ async def create_my_session(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    """Create a new QR session owned by the current agendadora (max 3)."""
+    """Create a new QR session for the current user, respecting the negocio plan limit."""
     if current_user.role not in ("agendadora", "superadmin", "subadmin", "tecnico"):
         raise HTTPException(status_code=403, detail="Sin acceso")
 
-    # Enforce 3-session limit for agendadoras
-    if current_user.role == "agendadora":
-        existing = db.query(models.WhatsAppConfig).filter(
-            models.WhatsAppConfig.api_provider == "qr",
-            models.WhatsAppConfig.owner_user_id == current_user.id,
+    # Enforce plan-level negocio WA limit for ALL roles
+    negocio = _get_negocio(db, current_user.group_id)
+    if negocio:
+        all_group_ids_q = db.query(models.Group.id).filter(
+            (models.Group.id == negocio.id) | (models.Group.negocio_id == negocio.id)
+        ).subquery()
+        wa_count = db.query(models.WhatsAppConfig).filter(
+            models.WhatsAppConfig.group_id.in_(all_group_ids_q),
         ).count()
-        if existing >= MAX_SESSIONS_PER_USER:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Límite de {MAX_SESSIONS_PER_USER} números WhatsApp alcanzado. Elimina uno antes de agregar otro."
-            )
+        enforce_limit(db, current_user.group_id, "max_wa_numbers", wa_count)
 
     cfg = models.WhatsAppConfig(
         name=f"WhatsApp de {current_user.name.split()[0]}",

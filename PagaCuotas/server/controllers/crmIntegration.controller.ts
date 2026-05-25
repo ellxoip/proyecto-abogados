@@ -8,6 +8,7 @@ import {
   findProfileByMagicToken,
   markMagicTokenUsed,
   buildAutoLoginUrl,
+  hasPasswordChanged,
 } from '../services/crmIntegration.service.js';
 
 const fromCrmSchema = z.object({
@@ -114,10 +115,14 @@ export class CrmIntegrationController {
       }
 
       const email = debts.cliente.email || profile.email || '';
+      const passwordChanged = await hasPasswordChanged(profile.identifier);
+      const mustChangePassword = !passwordChanged;
       const sessionToken = createClientToken({
         identifier: profile.identifier,
         cliente_contable_id: debts.cliente.id,
         email,
+        auth_method: 'magic_link',
+        password_change_grant: mustChangePassword,
       });
 
       await markMagicTokenUsed(profile.id, debts.cliente.id);
@@ -131,10 +136,12 @@ export class CrmIntegrationController {
           nombre: debts.cliente.nombre,
           email,
         },
+        mustChangePassword,
         debts,
         profile: {
           identifier: profile.identifier,
           nombre: profile.nombre,
+          passwordChanged,
         },
       });
     } catch (error: any) {
@@ -159,9 +166,12 @@ export class CrmIntegrationController {
       // Reuse normalizeIdentifier via service: look up by raw RUT after upsert/find
       const { default: prisma } = await import('../lib/prisma.js');
       const { normalizeIdentifier } = await import('../lib/clientAuth.js');
-      const profile = await prisma.crmClientProfile.findUnique({
-        where: { identifier: normalizeIdentifier(identifier) },
-      });
+      const profile = await prisma.$queryRaw<Array<{ magic_token: string; magic_token_revoked: boolean }>>`
+        SELECT "magic_token", "magic_token_revoked"
+        FROM "CrmClientProfile"
+        WHERE "identifier" = ${normalizeIdentifier(identifier)}
+        LIMIT 1
+      `.then((rows) => rows[0] ?? null);
       if (!profile) {
         res.status(404).json({ ok: false, code: 'PROFILE_NOT_FOUND', message: 'No existe perfil para ese identificador.' });
         return;

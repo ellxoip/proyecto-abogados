@@ -13,6 +13,7 @@ type MessageSummary = {
   type: CommentType;
   createdAt: string;
   isMine: boolean;
+  isUnread: boolean;
 };
 
 export async function GET() {
@@ -41,29 +42,42 @@ export async function GET() {
     if (caseIds.length === 0) return { unreadCount: 0, messages: [] as MessageSummary[] };
 
     const since = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
-    const recent = await tx.comment.findMany({
-      where: {
-        caseId: { in: caseIds },
-        createdAt: { gte: since },
-      },
-      orderBy: { createdAt: "desc" },
-      take: 120,
-      include: {
-        case: {
-          select: {
-            id: true,
-            code: true,
-            client: { select: { fullName: true } },
-          },
+    const [recent, reads] = await Promise.all([
+      tx.comment.findMany({
+        where: {
+          caseId: { in: caseIds },
+          createdAt: { gte: since },
         },
-        author: { select: { fullName: true } },
-      },
-    });
+        orderBy: { createdAt: "desc" },
+        take: 120,
+        include: {
+          case: {
+            select: {
+              id: true,
+              code: true,
+              client: { select: { fullName: true } },
+            },
+          },
+          author: { select: { fullName: true } },
+        },
+      }),
+      tx.conversationRead.findMany({
+        where: { userId: session.user.id, caseId: { in: caseIds } },
+        select: { caseId: true, type: true, lastReadAt: true },
+      }),
+    ]);
+
+    const readMap = new Map<string, Date>();
+    for (const r of reads) readMap.set(`${r.caseId}:${r.type}`, r.lastReadAt);
 
     const grouped = new Map<string, MessageSummary>();
     for (const c of recent) {
       const key = `${c.caseId}:${c.type}`;
       if (grouped.has(key)) continue;
+      const isMine = c.authorId === session.user.id;
+      const lastRead = readMap.get(key);
+      const isUnread =
+        !isMine && (!lastRead || c.createdAt.getTime() > lastRead.getTime());
       grouped.set(key, {
         caseId: c.case.id,
         caseCode: c.case.code,
@@ -73,14 +87,15 @@ export async function GET() {
         authorId: c.authorId,
         type: c.type,
         createdAt: c.createdAt.toISOString(),
-        isMine: c.authorId === session.user.id,
+        isMine,
+        isUnread,
       });
     }
 
     const messages = Array.from(grouped.values()).sort(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
     );
-    const unreadCount = messages.filter((m) => !m.isMine).length;
+    const unreadCount = messages.filter((m) => m.isUnread).length;
 
     return { unreadCount, messages };
   });

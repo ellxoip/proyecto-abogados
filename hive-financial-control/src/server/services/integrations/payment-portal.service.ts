@@ -8,6 +8,7 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { EXTERNAL_SYSTEM_CODES } from "./integration.constants";
 import { ExternalReferenceService } from "./external-reference.service";
+import { AtInformaClient } from "./at-informa.client";
 
 type DbLike = PrismaClient;
 
@@ -187,9 +188,34 @@ export class PaymentPortalService {
     };
   }
 
-  async ensurePortalCredentials(clienteId: number) {
+  async ensurePortalCredentials(clienteId: number, opts: { force?: boolean } = {}) {
     const cliente = await this.db.cliente.findUnique({ where: { id: clienteId } });
     if (!cliente) throw new Error("Cliente no encontrado.");
+
+    // Idempotent unless `force=true`. Previous behavior regenerated the
+    // password on every call, which caused two bugs:
+    //   1. Retry-sweep firings invalidated already-delivered credentials
+    //      (cliente received WhatsApp clave X, retry-sweep then rotated to
+    //      Y, every login with X failed).
+    //   2. When the cliente had already rotated his password from the
+    //      portal, a later retry-sweep stomped his chosen password back to
+    //      a system-generated one.
+    // Now: if a hash already exists we reuse it and return `password = null`
+    // so callers know they cannot resend the clave (it's hashed, no
+    // plaintext available). The downstream WhatsApp/email sync is skipped
+    // upstream when passwordPlain is falsy.
+    if (cliente.portal_password_hash && !opts.force) {
+      return {
+        password: null as string | null,
+        cliente: {
+          id: cliente.id,
+          rut: cliente.rut,
+          nombre: cliente.nombre,
+          email: cliente.email,
+          telefono: cliente.telefono,
+        },
+      };
+    }
 
     const password = generatePortalPassword();
     const passwordHash = await bcrypt.hash(password, 10);
@@ -251,7 +277,72 @@ export class PaymentPortalService {
       },
     });
 
+    await this.syncPasswordToServiceControl(cliente.rut, newPassword, "PagaCuotas");
+
     return { ok: true };
+  }
+
+  async setPortalPasswordFromAutoLogin(identifier: string, newPassword: string) {
+    const cliente = await this.findClienteByIdentifierOrId(identifier);
+    if (!cliente) return null;
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await this.db.cliente.update({
+      where: { id: cliente.id },
+      data: {
+        portal_password_hash: passwordHash,
+        portal_password_updated_at: new Date(),
+      },
+    });
+
+    await this.syncPasswordToServiceControl(cliente.rut, newPassword, "PagaCuotas (auto-login)");
+
+    return { ok: true };
+  }
+
+  /**
+   * Propaga el cambio de contraseña hacia hive-service-control para que
+   * el cliente pueda autenticarse en ambos portales con la misma clave.
+   *
+   * Falla suave: si sc no responde o el cliente aún no existe ahí (caso
+   * no creado), registramos el incidente sin romper el flujo del cliente
+   * en PagaCuotas. Una pasada posterior de `cases` POST o un cambio
+   * futuro reintentará la sincronización.
+   */
+  private async syncPasswordToServiceControl(
+    rut: string | null,
+    passwordPlain: string,
+    source: string,
+  ): Promise<void> {
+    if (!rut) {
+      console.warn("[payment-portal] cliente sin RUT, omitiendo sync a service-control.");
+      return;
+    }
+    if (!process.env.HIVE_SERVICE_URL || !process.env.HIVE_SERVICE_API_KEY) {
+      console.warn(
+        "[payment-portal] HIVE_SERVICE_URL/HIVE_SERVICE_API_KEY no configurados; cambio de clave no propagado a service-control.",
+        { rut },
+      );
+      return;
+    }
+
+    try {
+      const client = new AtInformaClient({
+        baseUrl: process.env.HIVE_SERVICE_URL,
+        token: process.env.HIVE_SERVICE_API_KEY,
+      });
+      await client.syncClientPassword({ rut, password_plain: passwordPlain, source });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.includes("404")) {
+        console.warn(
+          "[payment-portal] cliente aún no existe en service-control; se sincronizará al crear el caso.",
+          { rut },
+        );
+      } else {
+        console.error("[payment-portal] sync a service-control falló.", { rut, error: message });
+      }
+    }
   }
 
   async getInternalDeudaSummary(identifier: string) {

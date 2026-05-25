@@ -127,7 +127,7 @@ export class SisContableClient {
 
   async updateClientPassword(identifier: string, currentPassword: string, newPassword: string): Promise<void> {
     if (SIS_CONTABLE_LOCAL_FIXTURES) {
-      if (updateLocalClientPassword(identifier, currentPassword) && newPassword.length >= 8) return;
+      if (updateLocalClientPassword(identifier, currentPassword) && /^[a-zA-Z0-9]{6}$/.test(newPassword)) return;
       throw {
         message: 'Credenciales invalidas.',
         status: 401,
@@ -140,6 +140,24 @@ export class SisContableClient {
       '/api/integrations/pagacuotas/client-login',
       { identifier, currentPassword, newPassword },
       'client_password_update'
+    );
+  }
+
+  async setClientPasswordFromAutoLogin(identifier: string, newPassword: string): Promise<void> {
+    if (SIS_CONTABLE_LOCAL_FIXTURES) {
+      if (findLocalDebt(identifier) && /^[a-zA-Z0-9]{6}$/.test(newPassword)) return;
+      throw {
+        message: 'Credenciales invalidas.',
+        status: 401,
+        code: 'CLIENT_INVALID_CREDENTIALS',
+      } as IntegrationError;
+    }
+
+    await this.requestWithLog<any>(
+      'PATCH',
+      '/api/integrations/pagacuotas/client-login',
+      { identifier, newPassword, autoLoginPasswordChange: true },
+      'client_password_update_auto_login'
     );
   }
 
@@ -247,7 +265,9 @@ export class SisContableClient {
     try {
       const response = method === 'GET'
         ? await this.client.get<T>(endpoint)
-        : await this.client.post<T>(endpoint, payload);
+        : method === 'PATCH'
+          ? await this.client.patch<T>(endpoint, payload)
+          : await this.client.post<T>(endpoint, payload);
 
       const duration = Date.now() - startTime;
 

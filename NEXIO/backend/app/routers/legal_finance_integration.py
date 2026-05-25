@@ -5,6 +5,8 @@ POST /api/webhooks/legal_finance  → receives callbacks FROM Legal Finance
                                     (payment_confirmed)
 """
 import os
+import json
+import asyncio
 import logging
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Header
@@ -12,6 +14,9 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from .. import models
+from ..utils import hive_service as hs
+from ..utils.pagacuotas_links import normalize_pagacuotas_portal_link
+from .work_orders import sign_ot_pdf_token
 from .at_informa_integration import _notify_team
 
 logger = logging.getLogger(__name__)
@@ -53,10 +58,10 @@ def legal_finance_webhook(
 
     if event == "payment_confirmed":
         _handle_payment_confirmed(db, lead, contrato_id)
-    elif event == "pagacuotas_ready":
-        _handle_pagacuotas_ready(db, lead, payload)
     elif event == "service_started":
         _handle_service_started(db, lead, contrato_id, payload)
+    elif event in ("portal_credentials_ready", "pagacuotas_ready"):
+        _handle_portal_credentials_ready(db, lead, payload)
     else:
         logger.warning("Unknown Legal Finance event: %s", event)
         raise HTTPException(status_code=400, detail=f"Evento desconocido: {event}")
@@ -108,61 +113,131 @@ def _handle_payment_confirmed(db: Session, lead: models.Lead, contrato_id):
     )
 
 
-def _handle_pagacuotas_ready(db: Session, lead: models.Lead, payload: dict):
+def _handle_portal_credentials_ready(db: Session, lead: models.Lead, payload: dict):
     """
-    Called when SIS.CONTABLE already created the financial contract, prepared
-    PagaCuotas and generated temporary portal credentials. NEXIO owns client
-    messaging, so the WhatsApp is sent from here, not from SIS.CONTABLE.
+    Recibe credenciales del portal PagaCuotas generadas en SIS.CONTABLE.
+    Actualiza pagacuotas_link y envía WhatsApp al cliente con RUT + clave + link de pago.
+
+    Mismo RUT + clave sirven para Hive Service Control (portal del caso legal)
+    una vez que se confirma el pago inicial. El cliente entra a ambos sistemas
+    con la misma credencial.
     """
-    contrato_id = payload.get("contratoId")
-    cliente_id = payload.get("clienteId")
-    identifier = str(payload.get("identifier") or "")
-    password = str(payload.get("password") or "")
-    payment_link = str(payload.get("paymentLink") or payload.get("portalUrl") or "")
+    # `identifier` es el nombre canónico del campo en el callback de
+    # legal-finance (CrmClient.notifyPagaCuotasReady en hive-financial-control).
+    # Aceptamos `rut` como alias por compatibilidad histórica.
+    rut          = payload.get("identifier") or payload.get("rut") or ""
+    password     = payload.get("password", "")
+    payment_link = normalize_pagacuotas_portal_link(
+        payload.get("paymentLink") or payload.get("autoLoginUrl") or ""
+    )
 
-    if not payment_link or not password:
-        raise HTTPException(status_code=400, detail="Faltan paymentLink/portalUrl o password")
-
-    if contrato_id:
-        lead.legal_finance_contrato_id = int(contrato_id)
-    if cliente_id:
-        lead.pagacuotas_cliente_id = str(cliente_id)
-    lead.pagacuotas_status = "created"
-    lead.pagacuotas_link = payment_link
-
-    db.add(models.LeadHistory(
-        lead_id=lead.id,
-        from_stage=lead.current_stage,
-        to_stage=lead.current_stage,
-        result="success",
-        notes="[Legal Finance] PagaCuotas listo. Link y credenciales devueltos a NEXIO.",
-        created_by=lead.vendedor_id or lead.agendadora_id,
-    ))
+    if payment_link:
+        lead.pagacuotas_link = payment_link
 
     contact = lead.contact
-    first_name = (contact.name.split()[0] if contact and contact.name else "cliente")
+    if not contact or not contact.phone:
+        logger.warning("Lead %s sin teléfono — no se envió WhatsApp de credenciales", lead.id)
+        return
+
+    hive_portal_url = os.getenv("HIVE_SERVICE_PUBLIC_URL", "http://localhost:3001").rstrip("/")
+
+    nombre = contact.name.split()[0] if contact.name else "cliente"
     message = (
-        f"Hola {first_name}, tu acuerdo de pago fue registrado correctamente.\n\n"
-        f"Portal de pago PagaCuotas:\n{payment_link}\n\n"
-        f"RUT: {identifier}\n"
-        f"Clave temporal: {password}\n\n"
-        "Con estos datos podras revisar y pagar tus cuotas. "
-        "Al ingresar podras cambiar tu clave."
+        f"Hola {nombre}, aquí están tus credenciales:\n\n"
+        f"👤 RUT: {rut}\n"
+        f"🔑 Clave: {password}\n\n"
+        f"🔗 Portal PagaCuotas:\n{payment_link}\n\n"
+        f"🛡️ Portal del caso legal (una vez confirmado el pago):\n{hive_portal_url}/login\n"
+        f"   → ingresa con tu RUT (o correo) y la misma clave.\n\n"
+        f"Puedes cambiar tu clave cuando quieras desde cualquiera de los dos portales."
     )
 
     try:
         from .leads import _dispatch_payment_link_wa
-
         _dispatch_payment_link_wa(lead, contact, payment_link, db, custom_message=message)
     except Exception as exc:
-        logger.warning("No se pudo enviar link PagaCuotas por WhatsApp para lead %s: %s", lead.id, exc)
+        logger.warning("No se pudo enviar WhatsApp de credenciales al lead %s: %s", lead.id, exc)
 
-    contact_name = contact.name if contact else "cliente"
-    _notify_team(
-        db, lead,
-        f"PagaCuotas listo - {contact_name}",
-        f"NEXIO ya recibio el link y credenciales de pago de {contact_name}.",
+    # ── Empuje a hive-service-control con OT ─────────────────────────────
+    # Ahora que tenemos `password` desde fc/PagaCuotas, podemos crear el
+    # caso + sembrar la OT en sc. Antes este push se intentaba al pasar
+    # Pago Comprometido sin password y fallaba con 422.
+    if rut and password:
+        contrato_id = payload.get("contratoId")
+        _push_case_with_ot_to_service_control(db, lead, rut, password, payment_link, contrato_id)
+
+
+def _push_case_with_ot_to_service_control(
+    db: Session,
+    lead: models.Lead,
+    rut: str,
+    password: str,
+    payment_link: str,
+    contrato_id: int | None,
+) -> None:
+    contact = lead.contact
+    area_name = lead.area.name if lead.area else "TRIBUTARIO"
+    vendedor = lead.vendedor.name if lead.vendedor else None
+    agendadora = lead.agendadora.name if lead.agendadora else None
+
+    latest_ot = (
+        db.query(models.WorkOrder)
+        .filter(models.WorkOrder.lead_id == lead.id)
+        .order_by(models.WorkOrder.created_at.desc())
+        .first()
     )
+    work_order_payload = None
+    if latest_ot:
+        try:
+            fields = json.loads(latest_ot.fields_json or "{}")
+        except Exception:
+            fields = {}
+        nexio_public_url = os.getenv("NEXIO_PUBLIC_URL", "http://localhost:8000").rstrip("/")
+        ot_token = sign_ot_pdf_token(latest_ot.id)
+        work_order_payload = {
+            "id": latest_ot.id,
+            "type": latest_ot.ot_type,
+            "status": latest_ot.status,
+            "is_copy": bool(latest_ot.is_copy),
+            "created_at": latest_ot.created_at.isoformat() if latest_ot.created_at else None,
+            "document_url": f"{nexio_public_url}/api/work-orders/public/{latest_ot.id}/pdf?token={ot_token}",
+            "fields": fields,
+        }
+
+    try:
+        result = asyncio.run(hs.push_pago_comprometido(
+            crm_lead_id=lead.id,
+            rut=rut,
+            nombre=contact.name if contact else "Cliente",
+            email=contact.email if contact else None,
+            telefono=contact.phone if contact else None,
+            password_plain=password,
+            # Alineamos con la convención de fc (`SIS-{contratoId}`) para
+            # que ambos lados upserten el mismo Case. Fallback al lead-id
+            # si fc no envió contratoId en el webhook.
+            case_code=f"SIS-{contrato_id}" if contrato_id else f"NEXIO-{lead.id}",
+            service_category=area_name,
+            honorarios=float(lead.honorarios or 0),
+            cuota_inicial=float(lead.cuota_inicial or 0),
+            num_cuotas=int(lead.num_cuotas or 1),
+            monto_cuota=float(lead.monto_cuota or 0),
+            vendedor=vendedor,
+            agendadora=agendadora,
+            work_order=work_order_payload,
+            payment_link=payment_link,
+        ))
+        if result:
+            lead.hive_service_case_id = result.get("caseId")
+            lead.hive_service_status = "created"
+            db.commit()
+        logger.info("Hive Service notified (con OT): lead %s -> case %s", lead.id, result.get("caseId"))
+    except Exception as exc:
+        logger.warning("Hive Service push failed (non-critical) for lead %s: %s", lead.id, exc)
+        try:
+            lead.hive_service_status = "failed"
+            db.commit()
+        except Exception:
+            pass
 
 
 def _handle_service_started(db: Session, lead: models.Lead, contrato_id, payload: dict | None = None):
@@ -179,6 +254,7 @@ def _handle_service_started(db: Session, lead: models.Lead, contrato_id, payload
 
     if contrato_id:
         lead.legal_finance_contrato_id = int(contrato_id)
+
     service_case_id = (payload or {}).get("serviceCaseId") or (payload or {}).get("caseId")
     if service_case_id:
         lead.hive_service_case_id = str(service_case_id)

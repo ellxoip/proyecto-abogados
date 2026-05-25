@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import toast, { Toaster } from 'react-hot-toast'
+import { apiUrl } from '../api/client'
 
 interface Pago {
   id: number
@@ -33,8 +34,6 @@ interface ClienteData {
   created_at: string
   pagos: Pago[]
 }
-
-const API = import.meta.env.VITE_API_URL || ''
 
 const fmt = (n: number) =>
   '$' + Math.round(n).toLocaleString('es-CL')
@@ -79,7 +78,7 @@ export default function PagarCuota() {
 
   const load = async () => {
     try {
-      const res = await fetch(`${API}/api/pagar/${token}`)
+      const res = await fetch(apiUrl(`/api/pagar/${token}`))
       if (!res.ok) throw new Error('Enlace no válido')
       setData(await res.json())
     } catch {
@@ -99,7 +98,7 @@ export default function PagarCuota() {
     }
     setSubmitting(true)
     try {
-      const res = await fetch(`${API}/api/pagar/${token}/pagar`, {
+      const res = await fetch(apiUrl(`/api/pagar/${token}/pagar`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

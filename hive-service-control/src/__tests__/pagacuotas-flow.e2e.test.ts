@@ -49,7 +49,8 @@ describe("E2E PagaCuotas — punta a punta", () => {
 
     let user = await _prisma.user.findFirst({ where: { rut: "21331955-8" } });
     expect(user).not.toBeNull();
-    expect(user!.mustChangePassword).toBe(true);
+    // Cliente ya conoce su clave desde PagaCuotas; no se fuerza rotación.
+    expect(user!.mustChangePassword).toBe(false);
     expect(user!.paymentLink).toBe(PAY_LINK_V1);
     expect(await bcrypt.compare(Y732HX, user!.passwordHash)).toBe(true);
 
@@ -101,7 +102,7 @@ describe("E2E PagaCuotas — punta a punta", () => {
 
     // Hash sigue siendo válido para Y732HX (sync no rompió nada).
     user = await _prisma.user.findFirst({ where: { rut: "21331955-8" } });
-    expect(user!.mustChangePassword).toBe(true);
+    expect(user!.mustChangePassword).toBe(false);
     expect(await bcrypt.compare(Y732HX, user!.passwordHash)).toBe(true);
 
     // ── 4. Cliente abre /login con Y732HX → simulamos la verificación
@@ -157,7 +158,8 @@ describe("E2E PagaCuotas — punta a punta", () => {
   it("escenario alternativo: financial llama /cases directo sin pasar por /payment-link previo", async () => {
     // Algunas integraciones podrían omitir el push del link y solo enviar
     // el evento de pago confirmado. Service-control debe crear el cliente
-    // de cero, incluyendo paymentLink y mustChangePassword=true.
+    // de cero, incluyendo paymentLink. mustChangePassword se queda en false
+    // porque la clave ya la conoce el cliente desde PagaCuotas.
     const Y732HX = "Z9X8K2";
     const PAY_LINK = "https://pagacuotas.cl/c/directo";
 
@@ -178,7 +180,7 @@ describe("E2E PagaCuotas — punta a punta", () => {
 
     const user = await _prisma.user.findFirst({ where: { rut: "12345678-9" } });
     expect(user).not.toBeNull();
-    expect(user!.mustChangePassword).toBe(true);
+    expect(user!.mustChangePassword).toBe(false);
     expect(user!.paymentLink).toBe(PAY_LINK);
     expect(await bcrypt.compare(Y732HX, user!.passwordHash)).toBe(true);
 

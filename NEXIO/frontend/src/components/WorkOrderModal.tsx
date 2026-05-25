@@ -4,6 +4,7 @@ import {
   ChevronLeft, FileText, CheckCircle, Plus, Minus, Eye,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { rutOnChange } from '../utils/rut'
 import {
   getOTTypes, createWorkOrder, updateWorkOrder, deleteWorkOrder,
   aiFillWorkOrder, listWorkOrders,
@@ -31,9 +32,9 @@ function Blank({ fieldKey, value, onChange, style }: {
   )
 }
 
-function BlankLine({ fieldKey, value, onChange, label, short }: {
+function BlankLine({ fieldKey, value, onChange, label, short, transform }: {
   fieldKey: string; value: string; onChange: (k: string, v: string) => void
-  label: string; short?: boolean
+  label: string; short?: boolean; transform?: (v: string) => string
 }) {
   return (
     <div className="flex items-end gap-1 mb-[6px]">
@@ -42,7 +43,7 @@ function BlankLine({ fieldKey, value, onChange, label, short }: {
         className="border-b-2 border-gray-400 bg-transparent text-gray-900 text-[13px] font-bold outline-none px-1 align-bottom"
         style={{ width: short ? 180 : undefined, flex: short ? undefined : 1, minWidth: 80 }}
         value={value || ''}
-        onChange={e => onChange(fieldKey, e.target.value)}
+        onChange={e => onChange(fieldKey, transform ? transform(e.target.value) : e.target.value)}
       />
     </div>
   )
@@ -135,7 +136,7 @@ function ClientSection({ f, ch }: { f: Record<string, any>; ch: (k: string, v: s
     <>
       <SectionTitle>I. INDIVIDUALIZACIÓN DEL CLIENTE</SectionTitle>
       <BlankLine label="Nombre o Razón Social:" fieldKey="nombre_razon_social" value={f.nombre_razon_social} onChange={ch} />
-      <BlankLine label="RUT:" fieldKey="rut" value={f.rut} onChange={ch} short />
+      <BlankLine label="RUT:" fieldKey="rut" value={f.rut} onChange={ch} short transform={rutOnChange} />
       <BlankLine label="Domicilio:" fieldKey="domicilio" value={f.domicilio} onChange={ch} />
       <div className="flex flex-wrap gap-x-6">
         <BlankLine label="Comuna:" fieldKey="comuna" value={f.comuna} onChange={ch} short />
@@ -277,9 +278,9 @@ function LiquidacionJuridica({ f, ch }: { f: Record<string, any>; ch: (k: string
     <>
       <SectionTitle>I. IDENTIFICACIÓN DEL CLIENTE Y ANTECEDENTES</SectionTitle>
       <BlankLine label="Representante Legal:" fieldKey="representante_legal" value={f.representante_legal} onChange={ch} />
-      <BlankLine label="RUT Representante:" fieldKey="rut_representante" value={f.rut_representante} onChange={ch} short />
+      <BlankLine label="RUT Representante:" fieldKey="rut_representante" value={f.rut_representante} onChange={ch} short transform={rutOnChange} />
       <BlankLine label="Razón Social:" fieldKey="razon_social" value={f.razon_social} onChange={ch} />
-      <BlankLine label="RUT Empresa:" fieldKey="rut_empresa" value={f.rut_empresa} onChange={ch} short />
+      <BlankLine label="RUT Empresa:" fieldKey="rut_empresa" value={f.rut_empresa} onChange={ch} short transform={rutOnChange} />
       <BlankLine label="Email de Contacto:" fieldKey="email" value={f.email} onChange={ch} />
       <p className="text-[13px] font-bold text-gray-900 mt-1">Perfil: Persona Jurídica (Empresa Deudora).</p>
       <SectionTitle>DIAGNÓSTICO FINANCIERO Y JUDICIAL <AIBadge /></SectionTitle>
@@ -310,7 +311,7 @@ function LiquidacionNatural({ f, ch }: { f: Record<string, any>; ch: (k: string,
     <>
       <SectionTitle>I. IDENTIFICACIÓN DEL CLIENTE Y ANTECEDENTES</SectionTitle>
       <BlankLine label="Titular:" fieldKey="nombre_razon_social" value={f.nombre_razon_social} onChange={ch} />
-      <BlankLine label="RUT:" fieldKey="rut" value={f.rut} onChange={ch} short />
+      <BlankLine label="RUT:" fieldKey="rut" value={f.rut} onChange={ch} short transform={rutOnChange} />
       <BlankLine label="Email:" fieldKey="email" value={f.email} onChange={ch} />
       <BlankLine label="Perfil:" fieldKey="perfil_deudor" value={f.perfil_deudor} onChange={ch} />
       <SectionTitle>DIAGNÓSTICO FINANCIERO <AIBadge /></SectionTitle>
@@ -397,7 +398,7 @@ function DefensaEjecutiva({ f, ch }: { f: Record<string, any>; ch: (k: string, v
     <>
       <SectionTitle>I. IDENTIFICACIÓN DEL CLIENTE Y ANTECEDENTES</SectionTitle>
       <BlankLine label="Titular:" fieldKey="nombre_razon_social" value={f.nombre_razon_social} onChange={ch} />
-      <BlankLine label="RUT:" fieldKey="rut" value={f.rut} onChange={ch} short />
+      <BlankLine label="RUT:" fieldKey="rut" value={f.rut} onChange={ch} short transform={rutOnChange} />
       <BlankLine label="Email:" fieldKey="email" value={f.email} onChange={ch} />
       <BlankLine label="Perfil:" fieldKey="perfil_deudor" value={f.perfil_deudor} onChange={ch} />
       <SectionTitle>DIAGNÓSTICO JUDICIAL Y FINANCIERO <AIBadge /></SectionTitle>
@@ -435,7 +436,7 @@ function ProteccionPatrimonial({ f, ch }: { f: Record<string, any>; ch: (k: stri
     <>
       <SectionTitle>I. IDENTIFICACIÓN DEL CLIENTE</SectionTitle>
       <BlankLine label="Titular:" fieldKey="nombre_razon_social" value={f.nombre_razon_social} onChange={ch} />
-      <BlankLine label="RUT:" fieldKey="rut" value={f.rut} onChange={ch} short />
+      <BlankLine label="RUT:" fieldKey="rut" value={f.rut} onChange={ch} short transform={rutOnChange} />
       <BlankLine label="Email:" fieldKey="email" value={f.email} onChange={ch} />
       <BlankLine label="Perfil del Deudor:" fieldKey="perfil_deudor" value={f.perfil_deudor} onChange={ch} />
       <SectionTitle>DIAGNÓSTICO FINANCIERO <AIBadge /></SectionTitle>
@@ -470,7 +471,7 @@ function Renegociacion({ f, ch }: { f: Record<string, any>; ch: (k: string, v: s
     <>
       <SectionTitle>I. IDENTIFICACIÓN DEL CLIENTE</SectionTitle>
       <BlankLine label="Titular:" fieldKey="nombre_razon_social" value={f.nombre_razon_social} onChange={ch} />
-      <BlankLine label="RUT:" fieldKey="rut" value={f.rut} onChange={ch} short />
+      <BlankLine label="RUT:" fieldKey="rut" value={f.rut} onChange={ch} short transform={rutOnChange} />
       <BlankLine label="Email:" fieldKey="email" value={f.email} onChange={ch} />
       <BlankLine label="Perfil del Deudor:" fieldKey="perfil_deudor" value={f.perfil_deudor} onChange={ch} />
       <SectionTitle>DIAGNÓSTICO FINANCIERO <AIBadge /></SectionTitle>
@@ -501,7 +502,7 @@ function Alzamiento({ f, ch }: { f: Record<string, any>; ch: (k: string, v: stri
     <>
       <SectionTitle>I. IDENTIFICACIÓN DEL CLIENTE Y ANTECEDENTES</SectionTitle>
       <BlankLine label="Titular:" fieldKey="nombre_razon_social" value={f.nombre_razon_social} onChange={ch} />
-      <BlankLine label="RUT:" fieldKey="rut" value={f.rut} onChange={ch} short />
+      <BlankLine label="RUT:" fieldKey="rut" value={f.rut} onChange={ch} short transform={rutOnChange} />
       <BlankLine label="Email:" fieldKey="email" value={f.email} onChange={ch} />
       <BlankLine label="Causa / Rol:" fieldKey="causa_referencia" value={f.causa_referencia} onChange={ch} short />
       <BlankLine label="Tribunal:" fieldKey="tribunal" value={f.tribunal} onChange={ch} />
@@ -765,7 +766,7 @@ export function WorkOrderModal({ leadId, onClose, onSaved, autoOpen }: Props) {
     if (!currentWO) return
     setSaving(true)
     try {
-      const updated: WorkOrder = await updateWorkOrder(currentWO.id, { fields_json: fields, status: status || currentWO.status })
+      const updated: WorkOrder = await updateWorkOrder(currentWO.id, { fields_json: fields, status: status || currentWO.status, notify_agendadora: true })
       setCurrentWO(updated); setFields(updated.fields_json)
       setIsNewUnsaved(false); setNewOtIds([])
       toast.success('OT guardada'); loadList(); onSaved?.()

@@ -2,8 +2,6 @@
 PagaCuotas — sistema interno de gestión de cuotas.
 Rutas admin (autenticadas) + rutas públicas para clientes.
 """
-import logging
-
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
@@ -11,13 +9,7 @@ from typing import List
 from ..database import get_db
 from .. import models, schemas
 from ..auth import get_current_user
-from ..utils.pagacuotas import (
-    crear_cliente,
-    PAGACUOTAS_PORTAL_URL,
-    PagaCuotasUnavailable,
-)
-
-logger = logging.getLogger(__name__)
+from ..utils.pagacuotas import crear_cliente, PAGACUOTAS_PORTAL_URL
 
 router = APIRouter(prefix="/api/pagacuotas", tags=["pagacuotas"])
 public_router = APIRouter(prefix="/api/pagar", tags=["pagacuotas-publico"])
@@ -62,41 +54,22 @@ def create_cliente_admin(
     """Create or return existing PagaCuotas client (admin use)."""
     if current_user.role not in ("superadmin", "subadmin", "tecnico"):
         raise HTTPException(status_code=403, detail="Sin permiso")
-    try:
-        result = crear_cliente(
-            db=db,
-            crm_lead_id=data.crm_lead_id or 0,
-            rut=data.rut or "",
-            nombre=data.nombre,
-            razon_social=data.razon_social,
-            email=data.email,
-            phone=data.phone,
-            honorarios=data.honorarios,
-            cuota_inicial=data.cuota_inicial,
-            num_cuotas=data.num_cuotas,
-            monto_cuota=data.monto_cuota,
-            tipo_servicio=data.tipo_servicio or "Tributario",
-            area_name=data.area_name,
-            vendedor_name=data.vendedor_name,
-        )
-    except PagaCuotasUnavailable as exc:
-        logger.error(
-            "PagaCuotas unavailable for admin create (crm_lead_id=%s): %s (action=enqueue_retry)",
-            data.crm_lead_id, exc,
-            extra={
-                "event": "pagacuotas_unavailable",
-                "crm_lead_id": data.crm_lead_id,
-                "error": str(exc),
-                "action": "enqueue_retry",
-            },
-        )
-        raise HTTPException(
-            status_code=503,
-            detail=(
-                "Servicio de pagos temporalmente no disponible. "
-                "El proceso se reintentará automáticamente."
-            ),
-        ) from exc
+    result = crear_cliente(
+        db=db,
+        crm_lead_id=data.crm_lead_id or 0,
+        rut=data.rut or "",
+        nombre=data.nombre,
+        razon_social=data.razon_social,
+        email=data.email,
+        phone=data.phone,
+        honorarios=data.honorarios,
+        cuota_inicial=data.cuota_inicial,
+        num_cuotas=data.num_cuotas,
+        monto_cuota=data.monto_cuota,
+        tipo_servicio=data.tipo_servicio or "Tributario",
+        area_name=data.area_name,
+        vendedor_name=data.vendedor_name,
+    )
     db.commit()
     return db.query(models.PagaCuotasCliente).filter(
         models.PagaCuotasCliente.id == result["id"]

@@ -369,11 +369,27 @@ export function MessengerCenter({ conversations, teamMembers, onlineCount }: Pro
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [thread.length]);
 
-  // Mark conversation read when thread loads
+  // Mark conversation read when thread loads (local UI + server-side badge).
   useEffect(() => {
     if (!active || thread.length === 0) return;
     const last = thread[thread.length - 1];
     markRead(`${active.caseId}:${active.type}`, last.createdAt);
+
+    let cancelled = false;
+    fetch("/api/admin/mensajeria/read", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ caseId: active.caseId, type: active.type }),
+    })
+      .then(() => {
+        if (cancelled) return;
+        // Refrescar el badge global inmediatamente.
+        window.dispatchEvent(new CustomEvent("messenger:unread-changed"));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [thread, activeCaseId, activeType, active]);
 
@@ -1250,16 +1266,25 @@ function ModeButton({
   icon: React.ComponentType<{ className?: string }>;
   onClick: () => void;
 }) {
+  const buttonStyle = active
+    ? {
+        background: "linear-gradient(180deg, var(--sidebar-bg) 0%, var(--sidebar-deep) 100%)",
+        borderColor: "var(--gold-border)",
+        color: "#FFFFFF",
+        boxShadow: "0 10px 22px -14px rgba(38, 35, 92, 0.8)",
+      }
+    : {
+        background: "var(--surface)",
+        borderColor: "var(--card-border)",
+        color: "var(--text)",
+      };
+
   return (
     <button
       type="button"
       onClick={onClick}
-          className={[
-            "inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors",
-            active
-          ? "border-[var(--gold-border)] bg-[linear-gradient(180deg, var(--sidebar-bg) 0%, var(--sidebar-deep) 100%)] text-white"
-          : "border-[var(--card-border)] bg-[var(--surface)] text-[var(--text-muted)] hover:text-[var(--text)]",
-      ].join(" ")}
+      className="inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] transition-all hover:-translate-y-0.5"
+      style={buttonStyle}
     >
       <Icon className="h-3.5 w-3.5" />
       {label}

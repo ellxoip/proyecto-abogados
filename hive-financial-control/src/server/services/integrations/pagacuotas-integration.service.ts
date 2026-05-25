@@ -437,6 +437,9 @@ export class PagaCuotasIntegrationService {
         "provider_transaction_id",
         "numero_transaccion",
       ]) ?? undefined;
+    const comprobanteUrl =
+      pickString(payload, ["comprobante_url", "receipt_url", "comprobante", "ticket_url"]) ??
+      null;
     const cuotaIdsRaw = pickStringArray(payload, ["cuota_ids", "installment_ids"]);
 
     const idempotencyKey = externalPaymentId
@@ -511,6 +514,7 @@ export class PagaCuotasIntegrationService {
           medio_pago: "pagacuotas",
           payment_event_id: externalPaymentId ?? eventId,
           referencia: referencia ?? externalPaymentId ?? eventId,
+          comprobante_url: comprobanteUrl,
           observacion: "Pago confirmado desde PagaCuotas",
         },
       });
@@ -605,9 +609,37 @@ export class PagaCuotasIntegrationService {
         }
       }
 
+      let receiptPushResult: unknown = null;
+      if (comprobanteUrl) {
+        const numerosCuotas = application
+          ? (await this.db.cuota.findMany({
+              where: { id: { in: cuotasDestino } },
+              select: { numero_cuota: true },
+            })).map((c) => c.numero_cuota)
+          : [];
+        try {
+          receiptPushResult = await this.atInformaClient.pushPaymentReceipt({
+            external_payment_id: externalPaymentId ?? `pago-${pago.id}`,
+            contrato_id_sis_contable: contratoId,
+            case_code: `SIS-${contratoId}`,
+            receipt_url: comprobanteUrl,
+            amount: monto,
+            paid_at: paidAt.toISOString(),
+            provider: "pagacuotas",
+            method: pickString(payload, ["method", "medio_pago"]) ?? null,
+            cliente_rut: cliente.rut,
+            cuota_numeros: numerosCuotas,
+            correlation_id: contratoInfo?.correlation_id ?? null,
+          });
+        } catch (err) {
+          receiptPushResult = { error: err instanceof Error ? err.message : "receipt push failed" };
+        }
+      }
+
       await this.integrationEventService.markProcessed(idempotency.event.id, {
         pago_id: pago.id,
         at_informa_response: atResponse,
+        receipt_push: receiptPushResult,
         aplicacion: application,
       } as Prisma.InputJsonValue);
 

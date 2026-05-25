@@ -12,7 +12,7 @@ import AdminLogin from './pages/admin/AdminLogin';
 import Dashboard from './pages/admin/Dashboard';
 import Clients from './pages/admin/Clients';
 import Integrations from './pages/admin/Integrations';
-import Settings from './pages/admin/Settings';
+import AdminSettings from './pages/admin/Settings';
 import Profile from './pages/admin/Profile';
 import SupportInbox from './pages/admin/SupportInbox';
 import AutoLogin from './pages/client/AutoLogin';
@@ -20,13 +20,14 @@ import ClientLogin from './pages/client/ClientLogin';
 import Portal from './pages/client/Portal';
 import Payment from './pages/client/Payment';
 import Support from './pages/client/Support';
+import ClientSettings from './pages/client/Settings';
 
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
         {/* Client entry points: manual login and secure auto-login links. */}
-        <Route path="/" element={<Navigate to="/client/login" replace />} />
+        <Route path="/" element={<Navigate to="/client/portal" replace />} />
 
         {/* Client public routes */}
         <Route path="/client/login" element={<ClientLogin />} />
@@ -44,8 +45,10 @@ export default function App() {
             </RequireClientSession>
           }
         >
+          <Route index element={<Navigate to="/client/portal" replace />} />
           <Route path="portal" element={<Portal />} />
           <Route path="payment" element={<Payment />} />
+          <Route path="settings" element={<ClientSettings />} />
         </Route>
 
         {/* Admin public route */}
@@ -64,7 +67,7 @@ export default function App() {
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="clients" element={<Clients />} />
           <Route path="integrations" element={<Integrations />} />
-          <Route path="settings" element={<Settings />} />
+          <Route path="settings" element={<AdminSettings />} />
           <Route path="profile" element={<Profile />} />
           <Route path="support" element={<SupportInbox />} />
         </Route>

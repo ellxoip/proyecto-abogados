@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { KeyRound, ShieldCheck, AlertCircle, Loader2 } from "lucide-react";
+import { KeyRound, ShieldCheck, AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
 import { changeOwnPassword } from "./actions";
 
 export default function ChangePasswordForm() {
@@ -11,11 +11,14 @@ export default function ChangePasswordForm() {
   const { update } = useSession();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
+    setSuccess(null);
     const form = new FormData(e.currentTarget);
+    const formEl = e.currentTarget;
 
     startTransition(async () => {
       const result = await changeOwnPassword({
@@ -29,9 +32,11 @@ export default function ChangePasswordForm() {
         return;
       }
 
-      // Refresca el JWT para que `mustChangePassword` deje de bloquear el portal.
       await update({ mustChangePassword: false });
-      router.replace("/portal");
+      setSuccess(
+        "Contraseña actualizada. Se sincronizó también con PagaCuotas; usa la nueva clave en ambos portales.",
+      );
+      formEl.reset();
       router.refresh();
     });
   }
@@ -55,10 +60,10 @@ export default function ChangePasswordForm() {
               className="text-xl font-bold"
               style={{ color: "var(--text)", fontFamily: "'Playfair Display', serif" }}
             >
-              Activa tu cuenta
+              Cambiar contraseña
             </h1>
             <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>
-              Cambia la contraseña temporal por una propia
+              Actualiza tu clave personal para PagaCuotas y el Portal Legal
             </p>
           </div>
         </div>
@@ -73,16 +78,16 @@ export default function ChangePasswordForm() {
         >
           <ShieldCheck className="w-4 h-4 mt-0.5 flex-shrink-0" />
           <span>
-            Por seguridad, las credenciales que recibiste por WhatsApp son temporales.
-            Define una contraseña personal para continuar.
+            La nueva contraseña queda activa tanto en este portal como en PagaCuotas.
+            Tu clave anterior dejará de funcionar de inmediato.
           </span>
         </div>
 
         <form onSubmit={onSubmit} className="space-y-4">
           <Field
             name="currentPassword"
-            label="Contraseña actual (temporal)"
-            placeholder="La que recibiste por WhatsApp"
+            label="Contraseña actual"
+            placeholder="Tu clave vigente"
             autoComplete="current-password"
           />
           <Field
@@ -112,6 +117,20 @@ export default function ChangePasswordForm() {
             </div>
           )}
 
+          {success && (
+            <div
+              className="flex items-start gap-2 px-3 py-2 rounded-md text-xs"
+              style={{
+                background: "rgba(52,211,153,0.1)",
+                border: "1px solid rgba(52,211,153,0.25)",
+                color: "#34D399",
+              }}
+            >
+              <CheckCircle2 className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+              <span>{success}</span>
+            </div>
+          )}
+
           <button
             type="submit"
             disabled={isPending}
@@ -127,7 +146,7 @@ export default function ChangePasswordForm() {
                 <Loader2 className="w-4 h-4 animate-spin" /> Guardando…
               </>
             ) : (
-              "Guardar y entrar"
+              "Guardar nueva contraseña"
             )}
           </button>
         </form>

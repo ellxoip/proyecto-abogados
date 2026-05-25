@@ -63,6 +63,8 @@ model User {
 
 
   comments Comment[]
+  conversationReads ConversationRead[]
+  calendarNotes CalendarNote[]
 
   timeEntries           TimeEntry[]            @relation("LawyerTimeEntries")
   timerSessions         TimerSession[]         @relation("LawyerTimerSessions")
@@ -117,7 +119,6 @@ model Case {
 
 
   metadata             String?
-  internalNotes        String? // Notas confidenciales (solo SuperAdmin/Jefe)
   updates  Update[]
 
   comments    Comment[]
@@ -126,6 +127,7 @@ model Case {
   timerSessions TimerSession[]
   aiAnalyses  AiCaseAnalysis[]
   warnings    CaseWarning[]
+  conversationReads ConversationRead[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -185,6 +187,42 @@ model Comment {
   @@index([authorId])
   @@index([type])
   @@map("comments")
+}
+
+/// Notas privadas del staff vinculadas a su calendario personal. Reemplazan
+/// el campo `internalNotes` por-caso eliminado: ahora cada abogado y jefe
+/// guarda sus propias anotaciones en su agenda, sin compartirlas.
+model CalendarNote {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  body      String
+  date      DateTime? // Fecha asociada (opcional); si null la nota es general.
+  pinned    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, date])
+  @@index([userId, createdAt])
+  @@map("calendar_notes")
+}
+
+/// Lastura de lectura por conversación (caso × tipo) por usuario. Permite
+/// que el badge de mensajería se descuente automáticamente al ver el thread,
+/// sin necesidad de marcar manualmente cada mensaje.
+model ConversationRead {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  caseId     String
+  case       Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  type       String   // INTERNAL | PUBLIC
+  lastReadAt DateTime @default(now())
+
+  @@unique([userId, caseId, type])
+  @@index([userId])
+  @@index([caseId])
+  @@map("conversation_reads")
 }
 
 model Update {

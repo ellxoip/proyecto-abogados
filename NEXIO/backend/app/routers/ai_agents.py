@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session, joinedload
 from ..database import get_db
 from .. import models
 from ..auth import get_current_user
+from ..plans import enforce_limit, _get_negocio
 
 logger = logging.getLogger(__name__)
 
@@ -170,6 +171,18 @@ def create_agent(
         cfg = db.query(models.WhatsAppConfig).get(body.whatsapp_config_id)
         if not cfg:
             raise HTTPException(status_code=404, detail="Configuración WhatsApp no encontrada")
+
+    # Plan limit: count agents already assigned to the target negocio
+    if body.group_id:
+        negocio = _get_negocio(db, body.group_id)
+        if negocio:
+            all_group_ids_q = db.query(models.Group.id).filter(
+                (models.Group.id == negocio.id) | (models.Group.negocio_id == negocio.id)
+            ).subquery()
+            agent_count = db.query(models.AIAgent).filter(
+                models.AIAgent.group_id.in_(all_group_ids_q),
+            ).count()
+            enforce_limit(db, body.group_id, "max_ai_agents", agent_count)
 
     agent = models.AIAgent(
         name=body.name,

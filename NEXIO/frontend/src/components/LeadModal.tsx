@@ -5,10 +5,10 @@ const fmtCLP = (v: string) => {
   if (!v || isNaN(n) || n === 0) return ''
   return `$${Math.round(n).toLocaleString('es-CL')}`
 }
-import { createLead, getContacts, getGroups, getGroupAreas, getUsers, getGroupDefaultAssignment } from '../api'
+import { createLead, getContacts, getGroups, getGroupAreas, getUsers, getGroupDefaultAssignment, getLeadsCount } from '../api'
 import { useAuthStore } from '../store/auth'
 import toast from 'react-hot-toast'
-import { X, Plus, Lock } from 'lucide-react'
+import { X, Plus, Lock, AlertTriangle } from 'lucide-react'
 import ContactModal from './ContactModal'
 
 interface Props { onClose: () => void; onSuccess: () => void }
@@ -41,6 +41,7 @@ export default function LeadModal({ onClose, onSuccess }: Props) {
   const [users,    setUsers]      = useState<any[]>([])
   const [showCM,   setShowCM]     = useState(false)
   const [loading,  setLoading]    = useState(false)
+  const [atLeadLimit, setAtLeadLimit] = useState(false)
 
   const isAgendadora  = user?.role === 'agendadora'
   const isVendedor    = user?.role === 'vendedor' || user?.role === 'verificador'
@@ -59,6 +60,12 @@ export default function LeadModal({ onClose, onSuccess }: Props) {
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }))
 
   useEffect(() => {
+    const maxLeads = user?.negocio_plan_limits?.max_leads ?? -1
+    if (maxLeads !== -1) {
+      getLeadsCount().then((d: any) => {
+        if ((d.total ?? 0) >= maxLeads) setAtLeadLimit(true)
+      }).catch(() => {})
+    }
     const fetches: Promise<any>[] = [getContacts(), getUsers()]
     if (!isRestricted) fetches.splice(1, 0, getGroups())
     else fetches.splice(1, 0, Promise.resolve([]))
@@ -82,6 +89,8 @@ export default function LeadModal({ onClose, onSuccess }: Props) {
     }
   }, [form.group_id])
 
+  // Only show sub-groups (negocio_id != null) as lead targets — root groups have no areas
+  const subGroups   = groups.filter((g: any) => g.negocio_id !== null && g.negocio_id !== undefined)
   const gUsers      = users.filter(u => u.is_active && (form.group_id ? u.group_id === parseInt(form.group_id) : false))
   const agendadoras = gUsers.filter(u => u.role === 'agendadora')
   const vendedores  = gUsers.filter(u => ['vendedor', 'verificador', 'subadmin'].includes(u.role))
@@ -127,6 +136,14 @@ export default function LeadModal({ onClose, onSuccess }: Props) {
           </button>
         </div>
 
+        {atLeadLimit && (
+          <div className="mx-6 mt-4 flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl text-sm font-medium"
+            style={{ background: 'rgba(239,35,60,0.08)', border: '1px solid rgba(239,35,60,0.20)', color: '#ef233c' }}>
+            <AlertTriangle size={15} className="flex-shrink-0" />
+            <span>Límite de leads del plan alcanzado. Actualiza el plan para crear más.</span>
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
 
           <Field label="Cliente" required>
@@ -153,7 +170,7 @@ export default function LeadModal({ onClose, onSuccess }: Props) {
                 <select className="input" value={form.group_id}
                   onChange={e => { set('group_id', e.target.value); set('area_id', '') }} required>
                   <option value="">Seleccionar...</option>
-                  {groups.map((g: any) => <option key={g.id} value={g.id}>{g.name}</option>)}
+                  {subGroups.map((g: any) => <option key={g.id} value={g.id}>{g.name}</option>)}
                 </select>
               </Field>
             )}
@@ -167,9 +184,9 @@ export default function LeadModal({ onClose, onSuccess }: Props) {
             </Field>
 
             {isAgendadora ? (
-              <LockedField label="Agendadora" name={user!.name} />
+              <LockedField label="Agendador/a" name={user!.name} />
             ) : (
-              <Field label="Agendadora" required>
+              <Field label="Agendador/a" required>
                 <select className="input" value={form.agendadora_id}
                   onChange={e => set('agendadora_id', e.target.value)} required>
                   <option value="">Seleccionar...</option>
@@ -220,7 +237,7 @@ export default function LeadModal({ onClose, onSuccess }: Props) {
 
         <div className="px-6 py-4 border-t border-white/[0.07] flex items-center justify-end gap-3 flex-shrink-0">
           <button type="button" onClick={onClose} className="btn-secondary">Cancelar</button>
-          <button onClick={handleSubmit} disabled={loading} className="btn-primary">
+          <button onClick={handleSubmit} disabled={loading || atLeadLimit} className="btn-primary">
             {loading ? 'Creando...' : 'Crear Lead'}
           </button>
         </div>

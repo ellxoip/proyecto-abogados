@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+import re
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status
@@ -23,7 +24,7 @@ if not SECRET_KEY:
         stacklevel=2,
     )
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "480"))  # 8h default (ISO 27001 A.9.4.2)
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
@@ -31,6 +32,18 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 def verify_password(plain: str, hashed: str) -> bool:
     return pwd_context.verify(plain, hashed)
+
+
+def validate_password_strength(password: str) -> None:
+    """ISO 27001 A.9.4.3 — enforce minimum password complexity."""
+    if len(password) < 8:
+        raise HTTPException(status_code=400, detail="La contraseña debe tener al menos 8 caracteres")
+    if not re.search(r'[A-Z]', password):
+        raise HTTPException(status_code=400, detail="La contraseña debe incluir al menos una letra mayúscula")
+    if not re.search(r'[a-z]', password):
+        raise HTTPException(status_code=400, detail="La contraseña debe incluir al menos una letra minúscula")
+    if not re.search(r'\d', password):
+        raise HTTPException(status_code=400, detail="La contraseña debe incluir al menos un número")
 
 
 def hash_password(password: str) -> str:

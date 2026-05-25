@@ -8,12 +8,14 @@ load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./crm_abogados.db")
 
-engine = create_engine(
-    DATABASE_URL,
-    connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {}
-)
+_is_sqlite = "sqlite" in DATABASE_URL
 
-if "sqlite" in DATABASE_URL:
+if _is_sqlite:
+    engine = create_engine(
+        DATABASE_URL,
+        connect_args={"check_same_thread": False},
+    )
+
     @sa_event.listens_for(engine, "connect")
     def set_sqlite_pragmas(dbapi_connection, connection_record):
         cursor = dbapi_connection.cursor()
@@ -22,6 +24,14 @@ if "sqlite" in DATABASE_URL:
         cursor.execute("PRAGMA cache_size=10000")
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.close()
+else:
+    engine = create_engine(
+        DATABASE_URL,
+        pool_size=10,
+        max_overflow=20,
+        pool_pre_ping=True,
+        pool_recycle=300,
+    )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()

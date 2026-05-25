@@ -12,6 +12,7 @@ export default async function AdminDashboard() {
   const session = await auth();
   if (!session) redirect("/login");
   if (session.user.role === "CLIENTE") redirect("/portal");
+  if (session.user.role !== "SUPER_ADMIN") redirect("/admin/bandeja");
 
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);

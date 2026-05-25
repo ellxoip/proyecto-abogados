@@ -1,22 +1,25 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   getTecnicoStats, getTecnicoWhatsApp, createTecnicoWhatsApp, updateTecnicoWhatsApp,
   deleteTecnicoWhatsApp, toggleTecnicoWhatsApp, getGoogleOAuthSettings,
   updateGoogleOAuthSettings, getTecnicoUsers, getGroups,
   createQRSession, startQRSession, getQRStatus, getQRImage, deleteQRSession, renameQRSession,
   getAIAgents, createAIAgent, updateAIAgent, toggleAIAgent, deleteAIAgent, getAIAgentLogs,
-  getAllWhatsAppConfigs, getNegocios, createNegocio, patchNegocio, deleteNegocio, patchNegocioAdmin,
+  getAllWhatsAppConfigs, getNegocios, createNegocio, patchNegocio, deleteNegocio, patchNegocioAdmin, patchNegocioPlan,
+  getAuditLog, getSecurityStats, getLockedUsers, unlockUser,
 } from '../api'
+import { PLAN_COLORS, PLAN_LIGHT, PLAN_DARK, PLAN_LIMITS, type PlanKey } from '../utils/plans'
 import toast from 'react-hot-toast'
 import {
   Users, MessageSquare, Wrench, CheckCircle, XCircle, Plus,
   Edit2, Trash2, ToggleLeft, ToggleRight, Save, Eye, EyeOff,
   RefreshCw, Calendar, Info, Smartphone, Wifi, WifiOff, QrCode,
   Link, Unlink, Loader2, Bot, Zap, Clock, ChevronDown, ChevronUp, X,
-  Building2, ShieldCheck, KeyRound,
+  Building2, ShieldCheck, KeyRound, Shield,
 } from 'lucide-react'
 
-type Tab = 'negocios' | 'overview' | 'whatsapp' | 'whatsapp_qr' | 'google' | 'users' | 'ai_agents'
+type Tab = 'negocios' | 'overview' | 'whatsapp' | 'whatsapp_qr' | 'google' | 'users' | 'ai_agents' | 'security'
 
 interface QRConfig {
   id: number
@@ -56,11 +59,14 @@ const emptyWAForm: WAForm = {
 }
 
 export default function Tecnico() {
-  const [tab, setTab] = useState<Tab>('negocios')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const tab: Tab = (searchParams.get('tab') as Tab) || 'negocios'
+  const setTab = (id: Tab) => setSearchParams({ tab: id })
   const [stats, setStats] = useState<any>(null)
   const [waConfigs, setWAConfigs] = useState<WAConfig[]>([])
   const [groups, setGroups] = useState<any[]>([])
   const [users, setUsers] = useState<any[]>([])
+  const [selectedNegocioId, setSelectedNegocioId] = useState<number | null>(null)
 
   // Google settings state
   const [googleSettings, setGoogleSettings] = useState({
@@ -93,10 +99,25 @@ export default function Tecnico() {
 
   const loadAll = async () => {
     try {
-      const [s, g] = await Promise.all([getTecnicoStats(), getGroups()])
+      const [s, g, neg] = await Promise.all([getTecnicoStats(), getGroups(), getNegocios()])
       setStats(s)
       setGroups(g)
+      setNegocios(neg)
     } catch { toast.error('Error cargando datos') }
+  }
+
+  const getNegocioGroupIds = (negocioId: number): Set<number> => {
+    const neg = negocios.find((n: any) => n.id === negocioId)
+    if (!neg) return new Set([negocioId])
+    // all_group_ids viene del backend e incluye el root + todos los subgrupos
+    const ids: number[] = neg.all_group_ids ?? [neg.id]
+    return new Set(ids)
+  }
+
+  const inSelectedNegocio = (groupId: number | null): boolean => {
+    if (!selectedNegocioId) return true
+    if (!groupId) return false
+    return getNegocioGroupIds(selectedNegocioId).has(groupId)
   }
 
   useEffect(() => {
@@ -127,17 +148,19 @@ export default function Tecnico() {
   const [negociosLoading, setNegociosLoading]     = useState(false)
   const [showNegocioModal, setShowNegocioModal]   = useState(false)
   const [negocioSaving, setNegocioSaving]         = useState(false)
-  const defaultNegocioForm = { business_name: '', description: '', tipo: 'abogados', admin_name: '', admin_email: '', admin_password: '' }
+  const defaultNegocioForm = { business_name: '', description: '', tipo: 'abogados', plan: 'basico', admin_name: '', admin_email: '', admin_password: '' }
   const [negocioForm, setNegocioForm]             = useState(defaultNegocioForm)
   const [showAdminPass, setShowAdminPass]         = useState(false)
   const [editingNegocio, setEditingNegocio]       = useState<any>(null)
-  const [editNegocioForm, setEditNegocioForm]     = useState({ name: '', description: '' })
+  const [editNegocioForm, setEditNegocioForm]     = useState({ name: '', description: '', plan: 'basico' })
   const [editNegocioSaving, setEditNegocioSaving] = useState(false)
+  const [editPlanSaving, setEditPlanSaving]       = useState(false)
   const [deletingNegocioId, setDeletingNegocioId] = useState<number | null>(null)
   const [editingAdmin, setEditingAdmin]           = useState<any>(null)  // negocio object
   const [editAdminForm, setEditAdminForm]         = useState({ name: '', email: '', password: '', is_active: true })
   const [editAdminSaving, setEditAdminSaving]     = useState(false)
   const [showAdminPassEdit, setShowAdminPassEdit] = useState(false)
+  const [planSaving, setPlanSaving]               = useState<number | null>(null)
 
   const loadNegocios = useCallback(async () => {
     setNegociosLoading(true)
@@ -157,14 +180,18 @@ export default function Tecnico() {
     if (negocioForm.admin_password.length < 8) { toast.error('La contraseña debe tener al menos 8 caracteres'); return }
     setNegocioSaving(true)
     try {
-      await createNegocio({
+      const created = await createNegocio({
         business_name: negocioForm.business_name.trim(),
         description: negocioForm.description.trim() || null,
         tipo: negocioForm.tipo,
+        plan: negocioForm.plan,
         admin_name: negocioForm.admin_name.trim(),
         admin_email: negocioForm.admin_email.trim(),
         admin_password: negocioForm.admin_password,
       })
+      if (negocioForm.plan !== 'basico') {
+        await patchNegocioPlan(created.id, { plan: negocioForm.plan as any })
+      }
       toast.success(`Negocio "${negocioForm.business_name.trim()}" creado`)
       setShowNegocioModal(false)
       setNegocioForm(defaultNegocioForm)
@@ -180,7 +207,16 @@ export default function Tecnico() {
     setEditNegocioSaving(true)
     try {
       await patchNegocio(editingNegocio.id, { name: editNegocioForm.name.trim(), description: editNegocioForm.description.trim() || null })
-      setNegocios(prev => prev.map((x: any) => x.id === editingNegocio.id ? { ...x, name: editNegocioForm.name.trim(), description: editNegocioForm.description.trim() || null } : x))
+      if (editNegocioForm.plan !== (editingNegocio.plan ?? 'basico')) {
+        await patchNegocioPlan(editingNegocio.id, { plan: editNegocioForm.plan as any })
+      }
+      setNegocios(prev => prev.map((x: any) => x.id === editingNegocio.id ? {
+        ...x,
+        name: editNegocioForm.name.trim(),
+        description: editNegocioForm.description.trim() || null,
+        plan: editNegocioForm.plan,
+        plan_limits: PLAN_LIMITS[editNegocioForm.plan as PlanKey],
+      } : x))
       toast.success('Negocio actualizado')
       setEditingNegocio(null)
     } catch (err: any) {
@@ -467,6 +503,44 @@ Si el cliente tiene una consulta compleja o quiere hablar con una persona, dile 
 
   useEffect(() => { if (tab === 'ai_agents') loadAgents() }, [tab])
 
+  // ── Security audit log state ─────────────────────────────
+  const [auditLog, setAuditLog] = useState<any[]>([])
+  const [auditTotal, setAuditTotal] = useState(0)
+  const [auditPage, setAuditPage] = useState(1)
+  const [auditLoading, setAuditLoading] = useState(false)
+  const [secStats, setSecStats] = useState<any>(null)
+  const [lockedUsers, setLockedUsers] = useState<any[]>([])
+  const [auditAction, setAuditAction] = useState('')
+  const [auditSeverity, setAuditSeverity] = useState('')
+
+  const loadAuditLog = useCallback(async (page = 1) => {
+    setAuditLoading(true)
+    try {
+      const params: any = { page, page_size: 50 }
+      if (auditAction) params.action = auditAction
+      if (auditSeverity) params.severity = auditSeverity
+      const [logData, stats, locked] = await Promise.all([
+        getAuditLog(params), getSecurityStats(), getLockedUsers()
+      ])
+      setAuditLog(logData.items)
+      setAuditTotal(logData.total)
+      setAuditPage(page)
+      setSecStats(stats)
+      setLockedUsers(locked)
+    } catch { toast.error('Error cargando auditoría') }
+    finally { setAuditLoading(false) }
+  }, [auditAction, auditSeverity])
+
+  useEffect(() => { if (tab === 'security') loadAuditLog(1) }, [tab, auditAction, auditSeverity])
+
+  const handleUnlock = async (userId: number, email: string) => {
+    try {
+      await unlockUser(userId)
+      toast.success(`Cuenta desbloqueada: ${email}`)
+      loadAuditLog(auditPage)
+    } catch { toast.error('Error desbloqueando cuenta') }
+  }
+
   const openAgentModal = (agent?: any) => {
     if (agent) {
       setEditAgent(agent)
@@ -498,6 +572,28 @@ Si el cliente tiene una consulta compleja o quiere hablar con una persona, dile 
     if (!agentForm.name.trim()) { toast.error('El nombre es obligatorio'); return }
     if (!agentForm.system_prompt.trim()) { toast.error('El prompt del sistema es obligatorio'); return }
     if (!editAgent && !agentForm.openai_api_key.trim()) { toast.error('La API Key de OpenAI es obligatoria'); return }
+
+    // Preventive plan check for new agents
+    if (!editAgent && agentForm.group_id) {
+      const targetGroupId = parseInt(agentForm.group_id)
+      const negocio = negocios.find((n: any) =>
+        n.id === targetGroupId || (n.sub_groups ?? []).some((sg: any) => sg.id === targetGroupId)
+      )
+      if (negocio) {
+        const limits = PLAN_LIMITS[negocio.plan as PlanKey]
+        const existingCount = agents.filter((a: any) => {
+          const agGroupId = a.group_id
+          return agGroupId === negocio.id || negocios.some((n: any) =>
+            n.id === negocio.id && (n.sub_groups ?? []).some((sg: any) => sg.id === agGroupId)
+          )
+        }).length
+        if (limits.max_ai_agents !== -1 && existingCount >= limits.max_ai_agents) {
+          toast.error(`Plan ${limits.label}: límite de ${limits.max_ai_agents} agentes IA alcanzado. Actualiza el plan para continuar.`)
+          return
+        }
+      }
+    }
+
     setAgentSaving(true)
     try {
       const payload: any = {
@@ -557,45 +653,33 @@ Si el cliente tiene una consulta compleja o quiere hablar con una persona, dile 
     }
   }
 
-  const TABS: { id: Tab; label: string; icon: any }[] = [
-    { id: 'negocios',     label: 'Negocios',      icon: Building2 },
-    { id: 'overview',     label: 'Resumen',        icon: Wrench },
-    { id: 'whatsapp',     label: 'WhatsApp Meta',  icon: MessageSquare },
-    { id: 'whatsapp_qr',  label: 'WhatsApp QR',    icon: QrCode },
-    { id: 'google',       label: 'Google OAuth',   icon: Calendar },
-    { id: 'users',        label: 'Usuarios',       icon: Users },
-    { id: 'ai_agents',    label: 'Agentes IA',     icon: Bot },
-  ]
-
   return (
     <div className="space-y-6">
 
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-          <Wrench size={22} className="text-white/78" />
-          Panel Técnico
-        </h1>
-        <p className="text-white/62 text-sm mt-0.5">Configuración técnica del sistema CRM</p>
-      </div>
-
-      {/* Tabs */}
-      <div className="flex gap-1 bg-surface-2 p-1 rounded-xl w-fit">
-        {TABS.map(({ id, label, icon: Icon }) => (
-          <button
-            key={id}
-            onClick={() => setTab(id)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-              tab === id
-                ? 'bg-surface-1 text-white shadow-sm'
-                : 'text-white/62 hover:text-white/85'
-            }`}
+      {/* ── SELECTOR DE NEGOCIO (visible en todos los tabs excepto negocios y security) ── */}
+      {tab !== 'negocios' && tab !== 'security' && (
+        <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl border border-white/[0.07]"
+          style={{ background: 'rgba(255,255,255,0.03)' }}>
+          <Building2 size={14} className="text-neon flex-shrink-0" />
+          <span className="text-xs text-white/52 font-medium flex-shrink-0">Negocio:</span>
+          <select
+            value={selectedNegocioId ?? ''}
+            onChange={e => setSelectedNegocioId(e.target.value ? parseInt(e.target.value) : null)}
+            className="flex-1 bg-transparent text-sm text-white/90 outline-none cursor-pointer min-w-0"
           >
-            <Icon size={14} />
-            {label}
-          </button>
-        ))}
-      </div>
+            <option value="">Todos los negocios</option>
+            {negocios.map((n: any) => (
+              <option key={n.id} value={n.id}>{n.name}</option>
+            ))}
+          </select>
+          {selectedNegocioId && (
+            <button onClick={() => setSelectedNegocioId(null)}
+              className="flex-shrink-0 text-white/38 hover:text-white/80 transition-colors">
+              <X size={13} />
+            </button>
+          )}
+        </div>
+      )}
 
       {/* ── NEGOCIOS ── */}
       {tab === 'negocios' && (
@@ -631,14 +715,26 @@ Si el cliente tiene una consulta compleja o quiere hablar con una persona, dile 
                       <Building2 size={20} className="text-neon" />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <h3 className="font-semibold text-white/90 truncate">{n.name}</h3>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <h3 className="font-semibold text-white/90 truncate">{n.name}</h3>
+                        {(() => {
+                          const p = (n.plan ?? 'basico') as PlanKey
+                          const c = PLAN_COLORS[p]
+                          return (
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0"
+                              style={{ background: c.bg, color: c.text, border: `1px solid ${c.border}` }}>
+                              {PLAN_LIMITS[p].label}
+                            </span>
+                          )
+                        })()}
+                      </div>
                       {n.description && (
                         <p className="text-xs text-white/42 mt-0.5 truncate">{n.description}</p>
                       )}
                     </div>
                     <div className="flex items-center gap-1 flex-shrink-0">
                       <button
-                        onClick={() => { setEditingNegocio(n); setEditNegocioForm({ name: n.name, description: n.description ?? '' }) }}
+                        onClick={() => { setEditingNegocio(n); setEditNegocioForm({ name: n.name, description: n.description ?? '', plan: n.plan ?? 'basico' }) }}
                         className="p-1.5 rounded-lg text-white/42 hover:text-white hover:bg-white/[0.07] transition-colors"
                         title="Editar negocio"
                       >
@@ -654,27 +750,64 @@ Si el cliente tiene una consulta compleja o quiere hablar con una persona, dile 
                     </div>
                   </div>
 
-                  {/* Tipo selector */}
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-white/35">Tipo</span>
-                    <select
-                      className="flex-1 text-xs font-semibold rounded-lg px-2 py-1.5 border border-white/10 bg-surface-0 text-white focus:outline-none focus:border-lime/40"
-                      value={n.tipo ?? 'abogados'}
-                      onChange={async (e) => {
-                        const newTipo = e.target.value
-                        try {
-                          await patchNegocio(n.id, { tipo: newTipo })
-                          setNegocios(prev => prev.map((x: any) => x.id === n.id ? { ...x, tipo: newTipo } : x))
-                          toast.success('Tipo actualizado')
-                        } catch { toast.error('Error al actualizar') }
-                      }}
-                    >
-                      <option value="abogados">Abogados / Tributario</option>
-                      <option value="inmobiliaria">Inmobiliaria</option>
-                      <option value="clinica">Clínica / Salud</option>
-                      <option value="restaurant">Restaurant / Gastronomía</option>
-                      <option value="otro">Otro</option>
-                    </select>
+                  {/* Tipo + Plan row */}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-white/35 w-8">Tipo</span>
+                      <select
+                        className="flex-1 text-xs font-semibold rounded-lg px-2 py-1.5 border border-white/10 bg-surface-0 text-white focus:outline-none focus:border-lime/40"
+                        value={n.tipo ?? 'abogados'}
+                        onChange={async (e) => {
+                          const newTipo = e.target.value
+                          try {
+                            await patchNegocio(n.id, { tipo: newTipo })
+                            setNegocios(prev => prev.map((x: any) => x.id === n.id ? { ...x, tipo: newTipo } : x))
+                            toast.success('Tipo actualizado')
+                          } catch { toast.error('Error al actualizar') }
+                        }}
+                      >
+                        <option value="abogados">Abogados / Tributario</option>
+                        <option value="inmobiliaria">Inmobiliaria</option>
+                        <option value="clinica">Clínica / Salud</option>
+                        <option value="restaurant">Restaurant / Gastronomía</option>
+                        <option value="otro">Otro</option>
+                      </select>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-white/35 w-8">Plan</span>
+                      <div className="flex gap-1.5 flex-1">
+                        {(['basico', 'pro', 'enterprise'] as PlanKey[]).map(p => {
+                          const colors = PLAN_LIGHT[p]
+                          const active = (n.plan ?? 'basico') === p
+                          return (
+                            <button
+                              key={p}
+                              disabled={planSaving === n.id}
+                              onClick={async () => {
+                                if (active) return
+                                setPlanSaving(n.id)
+                                try {
+                                  await patchNegocioPlan(n.id, { plan: p })
+                                  setNegocios(prev => prev.map((x: any) => x.id === n.id ? { ...x, plan: p, plan_limits: PLAN_LIMITS[p] } : x))
+                                  toast.success(`Plan cambiado a ${PLAN_LIMITS[p].label}`)
+                                } catch { toast.error('Error al cambiar plan') }
+                                finally { setPlanSaving(null) }
+                              }}
+                              className="flex-1 text-[10px] font-bold py-1.5 rounded-lg border transition-all"
+                              style={{
+                                background: active ? colors.bg : 'var(--surface-0)',
+                                color: active ? colors.text : 'var(--text-muted)',
+                                border: active ? `1.5px solid ${colors.border}` : '1px solid var(--border-2)',
+                                boxShadow: active ? `0 2px 8px ${colors.bg}66` : 'none',
+                                cursor: active ? 'default' : 'pointer',
+                              }}
+                            >
+                              {PLAN_LIMITS[p].label}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
                   </div>
 
                   {/* Admin info */}
@@ -715,6 +848,43 @@ Si el cliente tiene una consulta compleja o quiere hablar con una persona, dile 
                       </div>
                     ))}
                   </div>
+
+                  {/* Botón rápido crear agente — solo planes pro/enterprise */}
+                  {PLAN_LIMITS[(n.plan ?? 'basico') as PlanKey].max_ai_agents !== 0 && (
+                    <button
+                      onClick={async () => {
+                        if (agents.length === 0 && !agentsLoading) await loadAgents()
+                        setEditAgent(null)
+                        setAgentForm(f => ({
+                          ...defaultAgentForm,
+                          selected_admin_id: n.admin ? String(n.admin.id) : '',
+                          group_id: n.id ? String(n.id) : '',
+                        }))
+                        setShowAgentModal(true)
+                        setTab('ai_agents')
+                      }}
+                      className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold transition-all"
+                      style={{
+                        background: '#2d3a6e',
+                        color: '#ffffff',
+                        border: '1px solid #3d4f9e',
+                        boxShadow: '0 2px 10px rgba(45,58,110,0.60)',
+                      }}
+                      onMouseEnter={e => {
+                        (e.currentTarget as HTMLElement).style.background = '#3d4f9e'
+                        ;(e.currentTarget as HTMLElement).style.borderColor = '#5a6fc2'
+                        ;(e.currentTarget as HTMLElement).style.boxShadow = '0 4px 16px rgba(67,97,238,0.45)'
+                      }}
+                      onMouseLeave={e => {
+                        (e.currentTarget as HTMLElement).style.background = '#2d3a6e'
+                        ;(e.currentTarget as HTMLElement).style.borderColor = '#3d4f9e'
+                        ;(e.currentTarget as HTMLElement).style.boxShadow = '0 2px 10px rgba(45,58,110,0.60)'
+                      }}
+                    >
+                      <Bot size={13} />
+                      Crear Agente IA
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
@@ -730,7 +900,7 @@ Si el cliente tiene una consulta compleja o quiere hablar con una persona, dile 
               <p className="font-bold text-base" style={{ color: 'var(--text)' }}>Editar negocio</p>
               <button onClick={() => setEditingNegocio(null)} className="p-1.5 rounded-lg" style={{ color: 'var(--text-muted)' }}><X size={18} /></button>
             </div>
-            <form onSubmit={handleEditNegocio} className="p-5 space-y-4">
+            <form onSubmit={handleEditNegocio} className="p-5 space-y-4 max-h-[80vh] overflow-y-auto">
               <div>
                 <label className="input-label">Nombre del negocio *</label>
                 <input className="input-field" value={editNegocioForm.name} onChange={e => setEditNegocioForm(f => ({ ...f, name: e.target.value }))} placeholder="Ej: Abogados Tributarios" />
@@ -739,6 +909,88 @@ Si el cliente tiene una consulta compleja o quiere hablar con una persona, dile 
                 <label className="input-label">Descripción</label>
                 <input className="input-field" value={editNegocioForm.description} onChange={e => setEditNegocioForm(f => ({ ...f, description: e.target.value }))} placeholder="Descripción opcional" />
               </div>
+
+              {/* Plan selector */}
+              <div>
+                <label className="input-label">Plan de suscripción</label>
+                <div className="flex gap-1.5 mt-1">
+                  {(['basico', 'pro', 'enterprise'] as PlanKey[]).map(p => {
+                    const active = editNegocioForm.plan === p
+                    const c = PLAN_LIGHT[p]
+                    return (
+                      <button key={p} type="button"
+                        onClick={() => setEditNegocioForm(f => ({ ...f, plan: p }))}
+                        className="flex-1 py-2.5 rounded-xl text-xs font-bold border transition-all"
+                        style={{
+                          background: active ? c.bg : 'var(--surface-0)',
+                          color: active ? c.text : 'var(--text-muted)',
+                          border: active ? `2px solid ${c.border}` : '1px solid var(--border-2)',
+                          boxShadow: active ? `0 4px 14px ${c.bg}55` : 'none',
+                        }}>
+                        {PLAN_LIMITS[p].label}
+                      </button>
+                    )
+                  })}
+                </div>
+                <p className="text-[10px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                  {editNegocioForm.plan === 'basico' && 'Hasta 5 usuarios · 1 número WhatsApp · sin Agente IA'}
+                  {editNegocioForm.plan === 'pro' && 'Hasta 15 usuarios · 3 números WA · 2 Agentes IA · exportar CSV'}
+                  {editNegocioForm.plan === 'enterprise' && 'Usuarios y WA ilimitados · Agentes IA ilimitados · todas las funciones'}
+                </p>
+              </div>
+
+              {/* Feature panel */}
+              {(() => {
+                const lim = PLAN_LIMITS[editNegocioForm.plan as PlanKey]
+                const features = [
+                  { label: 'Chat WhatsApp',          on: lim.whatsapp_chat,        detail: '' },
+                  { label: 'PDF / Orden de trabajo',  on: lim.pdf_ot,              detail: '' },
+                  { label: 'Agente IA',               on: lim.max_ai_agents !== 0, detail: lim.max_ai_agents === -1 ? 'ilimitados' : lim.max_ai_agents > 0 ? `hasta ${lim.max_ai_agents}` : '' },
+                  { label: 'Seguimiento de leads',    on: lim.seguimiento,         detail: '' },
+                  { label: 'Google Calendar',         on: lim.google_calendar,     detail: '' },
+                  { label: 'Exportar CSV',            on: lim.export_csv,          detail: '' },
+                  { label: 'Analytics avanzados',     on: lim.analytics_avanzados, detail: '' },
+                ]
+                const limits = [
+                  { label: 'Usuarios',         val: lim.max_users === -1 ? 'Ilimitados' : `Hasta ${lim.max_users}` },
+                  { label: 'Números WhatsApp', val: lim.max_wa_numbers === -1 ? 'Ilimitados' : `Hasta ${lim.max_wa_numbers}` },
+                  { label: 'Leads activos',    val: lim.max_leads === -1 ? 'Ilimitados' : `Hasta ${lim.max_leads}` },
+                ]
+                return (
+                  <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border-2)' }}>
+                    <div className="px-3 py-2" style={{ background: 'var(--surface-3)', borderBottom: '1px solid var(--border)' }}>
+                      <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: 'var(--text-muted)' }}>Funciones incluidas</p>
+                    </div>
+                    <div style={{ background: 'var(--surface-1)' }}>
+                      {features.map((f, i) => (
+                        <div key={f.label} className="flex items-center justify-between px-3 py-2"
+                          style={{ borderBottom: i < features.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                          <span className="text-xs font-medium" style={{ color: f.on ? 'var(--text)' : 'var(--text-muted)' }}>{f.label}</span>
+                          <div className="flex items-center gap-1.5">
+                            {f.detail && <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{f.detail}</span>}
+                            {f.on
+                              ? <CheckCircle size={13} style={{ color: '#16a34a' }} />
+                              : <XCircle size={13} style={{ color: 'rgba(26,32,53,0.2)' }} />
+                            }
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="px-3 py-2.5" style={{ background: 'var(--surface-3)', borderTop: '1px solid var(--border)' }}>
+                      <p className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: 'var(--text-muted)' }}>Límites</p>
+                      <div className="flex gap-3">
+                        {limits.map(l => (
+                          <div key={l.label} className="flex-1 text-center">
+                            <p className="text-xs font-bold" style={{ color: 'var(--text)' }}>{l.val}</p>
+                            <p className="text-[9px] mt-0.5" style={{ color: 'var(--text-muted)' }}>{l.label}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })()}
+
               <div className="flex gap-3 pt-1">
                 <button type="button" onClick={() => setEditingNegocio(null)} className="btn-ghost flex-1">Cancelar</button>
                 <button type="submit" disabled={editNegocioSaving} className="btn-primary flex-1">
@@ -891,12 +1143,15 @@ Si el cliente tiene una consulta compleja o quiere hablar con una persona, dile 
       )}
 
       {/* ── WHATSAPP META ── */}
-      {tab === 'whatsapp' && (
+      {tab === 'whatsapp' && (() => {
+        const visibleWA = waConfigs.filter(c => inSelectedNegocio(c.group_id))
+        return (
         <div className="space-y-4">
           <div className="flex items-center gap-3">
             <div className="flex-1">
               <p className="text-sm text-white/62">
                 Configura los números aquí. El administrador los asignará a grupos y les dará nombre.
+                {selectedNegocioId && <span className="ml-2 text-neon font-medium">({visibleWA.length} de {waConfigs.length})</span>}
               </p>
             </div>
             <button onClick={openCreateWA} className="btn-primary flex-shrink-0">
@@ -905,7 +1160,7 @@ Si el cliente tiene una consulta compleja o quiere hablar con una persona, dile 
           </div>
 
           <div className="bg-surface-1 rounded-xl border border-white/[0.07] overflow-hidden">
-            {waConfigs.length === 0 ? (
+            {visibleWA.length === 0 ? (
               <div className="text-center py-16 text-white/52">
                 <MessageSquare size={32} className="mx-auto mb-3 opacity-30" />
                 <p className="font-medium">Sin configuraciones</p>
@@ -925,7 +1180,7 @@ Si el cliente tiene una consulta compleja o quiere hablar con una persona, dile 
                     </tr>
                   </thead>
                   <tbody>
-                    {waConfigs.map(cfg => (
+                    {visibleWA.map(cfg => (
                       <tr key={cfg.id} className="border-b border-white/5 hover:bg-surface-0/50 transition-colors">
                         <td className="px-4 py-3 font-mono font-medium text-white/90">{cfg.phone_number}</td>
                         <td className="px-4 py-3">
@@ -978,10 +1233,13 @@ Si el cliente tiene una consulta compleja o quiere hablar con una persona, dile 
             )}
           </div>
         </div>
-      )}
+        )
+      })()}
 
       {/* ── WHATSAPP QR ── */}
-      {tab === 'whatsapp_qr' && (
+      {tab === 'whatsapp_qr' && (() => {
+        const visibleQR = qrConfigs.filter(c => inSelectedNegocio(c.group_id))
+        return (
         <div className="space-y-4">
           <div className="flex items-center gap-3">
             <div className="flex-1">
@@ -1007,10 +1265,10 @@ Si el cliente tiene una consulta compleja o quiere hablar con una persona, dile 
             <div className="flex items-center justify-center py-16">
               <Loader2 size={24} className="animate-spin text-white/52" />
             </div>
-          ) : qrConfigs.length === 0 ? (
+          ) : visibleQR.length === 0 ? (
             <div className="bg-surface-1 rounded-xl border border-white/[0.07] text-center py-16 text-white/52">
               <QrCode size={32} className="mx-auto mb-3 opacity-30" />
-              <p className="font-medium">Sin sesiones QR</p>
+              <p className="font-medium">Sin sesiones QR{selectedNegocioId ? ' para este negocio' : ''}</p>
               <p className="text-sm mt-1">Crea una sesión y escanea el QR con tu teléfono</p>
             </div>
           ) : (
@@ -1025,7 +1283,7 @@ Si el cliente tiene una consulta compleja o quiere hablar con una persona, dile 
                   </tr>
                 </thead>
                 <tbody>
-                  {qrConfigs.map(cfg => (
+                  {visibleQR.map(cfg => (
                     <tr key={cfg.id} className="border-b border-white/5 hover:bg-surface-0/50 transition-colors">
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
@@ -1073,7 +1331,8 @@ Si el cliente tiene una consulta compleja o quiere hablar con una persona, dile 
             </div>
           )}
         </div>
-      )}
+        )
+      })()}
 
       {/* ── GOOGLE OAUTH ── */}
       {tab === 'google' && (
@@ -1186,8 +1445,15 @@ Si el cliente tiene una consulta compleja o quiere hablar con una persona, dile 
       )}
 
       {/* ── USERS ── */}
-      {tab === 'users' && (
+      {tab === 'users' && (() => {
+        const visibleUsers = users.filter(u => inSelectedNegocio(u.group_id))
+        return (
         <div className="bg-surface-1 rounded-xl border border-white/[0.07] overflow-hidden">
+          {selectedNegocioId && (
+            <div className="px-4 py-2.5 border-b border-white/5 text-xs text-white/42">
+              Mostrando {visibleUsers.length} de {users.length} usuarios
+            </div>
+          )}
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -1200,7 +1466,7 @@ Si el cliente tiene una consulta compleja o quiere hablar con una persona, dile 
                 </tr>
               </thead>
               <tbody>
-                {users.map(u => (
+                {visibleUsers.map(u => (
                   <tr key={u.id} className="border-b border-white/5 hover:bg-surface-0/50 transition-colors">
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
@@ -1250,7 +1516,8 @@ Si el cliente tiene una consulta compleja o quiere hablar con una persona, dile 
             </table>
           </div>
         </div>
-      )}
+        )
+      })()}
 
       {/* ── QR Modal ── */}
       {showQRModal && qrModalConfig && (
@@ -1422,14 +1689,18 @@ Si el cliente tiene una consulta compleja o quiere hablar con una persona, dile 
       )}
 
       {/* ── Agentes IA tab ────────────────────────────────────────── */}
-      {tab === 'ai_agents' && (
+      {tab === 'ai_agents' && (() => {
+        const visibleAgents = agents.filter((a: any) => inSelectedNegocio(a.group_id))
+        return (
         <div className="space-y-4">
           <div className="bg-surface-1 rounded-xl border border-white/[0.07] shadow-sm overflow-hidden">
             <div className="flex items-center justify-between px-6 py-4 border-b border-white/5">
               <div>
                 <h2 className="font-semibold text-white/90 flex items-center gap-2">
                   <Bot size={16} className="text-lime" /> Agentes IA
-                  <span className="text-white/52 font-normal">({agents.length})</span>
+                  <span className="text-white/52 font-normal">
+                    ({visibleAgents.length}{selectedNegocioId && agents.length !== visibleAgents.length ? ` de ${agents.length}` : ''})
+                  </span>
                 </h2>
                 <p className="text-xs text-white/42 mt-0.5">Respuestas automáticas por WhatsApp con OpenAI — configura uno por negocio</p>
               </div>
@@ -1443,15 +1714,15 @@ Si el cliente tiene una consulta compleja o quiere hablar con una persona, dile 
               <div className="px-6 py-10 text-center text-white/42 text-sm flex items-center justify-center gap-2">
                 <Loader2 size={16} className="animate-spin" /> Cargando agentes...
               </div>
-            ) : agents.length === 0 ? (
+            ) : visibleAgents.length === 0 ? (
               <div className="px-6 py-14 text-center space-y-3">
                 <Bot size={40} className="mx-auto text-white/15" />
-                <p className="text-white/52 text-sm font-medium">No hay agentes configurados</p>
+                <p className="text-white/52 text-sm font-medium">No hay agentes configurados{selectedNegocioId ? ' para este negocio' : ''}</p>
                 <p className="text-white/30 text-xs">Crea el primer agente y asígnalo a un número WhatsApp de cualquier negocio.</p>
               </div>
             ) : (
               <div className="divide-y divide-white/[0.05]">
-                {agents.map(agent => (
+                {visibleAgents.map(agent => (
                   <div key={agent.id} className="px-6 py-4">
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex items-start gap-3 min-w-0">
@@ -1567,7 +1838,202 @@ Si el cliente tiene una consulta compleja o quiere hablar con una persona, dile 
             )}
           </div>
         </div>
-      )}
+        )
+      })()}
+
+      {/* ── Security audit log tab — tecnico sees ALL negocios ──────── */}
+      {tab === 'security' && (() => {
+        const severityBadge: Record<string, string> = {
+          info: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
+          warning: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
+          critical: 'bg-danger/10 text-danger border-danger/20',
+        }
+        const actionLabel: Record<string, string> = {
+          login_success: 'Inicio de sesión',
+          login_failed: 'Intento fallido',
+          login_blocked: 'Acceso bloqueado',
+          login_locked: 'Cuenta bloqueada',
+          account_unlocked: 'Cuenta desbloqueada',
+          user_created: 'Usuario creado',
+          user_updated: 'Usuario actualizado',
+          user_deactivated: 'Usuario desactivado',
+        }
+        const roleLabel: Record<string, string> = {
+          superadmin: 'Super Admin', subadmin: 'Sub Admin',
+          agendadora: 'Agendador/a', vendedor: 'Vendedor',
+          verificador: 'Verificador', tecnico: 'Técnico',
+        }
+        const totalPages = Math.max(1, Math.ceil(auditTotal / 50))
+        return (
+          <div className="space-y-4">
+            {/* Stats globales */}
+            {secStats && (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {[
+                  { label: 'Intentos fallidos (24h)', value: secStats.failed_logins_24h, color: secStats.failed_logins_24h > 0 ? 'text-amber-400' : 'text-white/70', bg: secStats.failed_logins_24h > 0 ? 'border-amber-500/20' : '' },
+                  { label: 'Cuentas bloqueadas ahora', value: secStats.blocked_accounts, color: secStats.blocked_accounts > 0 ? 'text-danger' : 'text-white/70', bg: secStats.blocked_accounts > 0 ? 'border-danger/20' : '' },
+                  { label: 'Eventos críticos (24h)', value: secStats.critical_events_24h, color: secStats.critical_events_24h > 0 ? 'text-red-400' : 'text-white/70', bg: secStats.critical_events_24h > 0 ? 'border-red-500/20' : '' },
+                  { label: 'Total eventos globales', value: secStats.total_events, color: 'text-white/70', bg: '' },
+                ].map(s => (
+                  <div key={s.label} className={`bg-surface-1 rounded-xl border px-4 py-3 ${s.bg || 'border-white/[0.07]'}`}>
+                    <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
+                    <p className="text-xs text-white/42 mt-0.5">{s.label}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Cuentas bloqueadas (todos los negocios) */}
+            <div className="bg-danger/5 border border-danger/20 rounded-xl overflow-hidden">
+                <div className="flex items-center gap-2 px-5 py-3 border-b border-danger/15">
+                  <span className="w-2 h-2 rounded-full bg-danger animate-pulse" />
+                  <span className="text-sm font-semibold text-danger">
+                    {lockedUsers.length} cuenta{lockedUsers.length > 1 ? 's' : ''} bloqueada{lockedUsers.length > 1 ? 's' : ''} en el sistema
+                  </span>
+                </div>
+                <div className="divide-y divide-danger/10">
+                  {lockedUsers.length === 0 && (
+                    <div className="px-5 py-4 text-sm text-white/45">
+                      No hay cuentas bloqueadas actualmente.
+                    </div>
+                  )}
+                  {lockedUsers.map((u: any) => {
+                    const until = new Date(u.locked_until)
+                    const remaining = Math.max(0, Math.ceil((until.getTime() - Date.now()) / 60000))
+                    return (
+                      <div key={u.id} className="flex items-center gap-4 px-5 py-3">
+                        <div className="w-8 h-8 rounded-full bg-danger/15 flex items-center justify-center flex-shrink-0">
+                          <span className="text-danger font-bold text-xs">{u.name.charAt(0)}</span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-white/90">{u.name}</p>
+                          <p className="text-xs text-white/42">{u.email} · {roleLabel[u.role] ?? u.role}{u.negocio_name ? ` · ${u.negocio_name}` : ''}</p>
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <p className="text-xs text-danger/80">{remaining} min restantes</p>
+                          <p className="text-[10px] text-white/30">{u.failed_attempts} intentos</p>
+                        </div>
+                        <button
+                          onClick={() => handleUnlock(u.id, u.email)}
+                          className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-danger/15 hover:bg-danger/25 text-danger border border-danger/20 transition-colors flex-shrink-0"
+                        >
+                          Desbloquear
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+
+            {/* Tabla global */}
+            <div className="bg-surface-1 rounded-xl border border-white/[0.07] overflow-hidden">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-white/5 gap-3 flex-wrap">
+                <h2 className="font-semibold text-white/90 flex items-center gap-2">
+                  <Shield size={16} className="text-white/60" />
+                  Auditoría Global — Todos los negocios
+                  <span className="text-white/40 font-normal text-sm">({auditTotal})</span>
+                </h2>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <select
+                    value={auditAction}
+                    onChange={e => setAuditAction(e.target.value)}
+                    className="input text-xs py-1.5 px-2 h-auto"
+                  >
+                    <option value="">Todas las acciones</option>
+                    {Object.entries(actionLabel).map(([k, v]) => (
+                      <option key={k} value={k}>{v}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={auditSeverity}
+                    onChange={e => setAuditSeverity(e.target.value)}
+                    className="input text-xs py-1.5 px-2 h-auto"
+                  >
+                    <option value="">Todos los niveles</option>
+                    <option value="info">Info</option>
+                    <option value="warning">Warning</option>
+                    <option value="critical">Critical</option>
+                  </select>
+                  <button
+                    onClick={() => loadAuditLog(1)}
+                    disabled={auditLoading}
+                    className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border border-white/10 bg-surface-2 text-white/70 hover:bg-surface-3 transition-colors disabled:opacity-50"
+                  >
+                    <RefreshCw size={12} className={auditLoading ? 'animate-spin' : ''} />
+                    Actualizar
+                  </button>
+                </div>
+              </div>
+
+              {auditLoading ? (
+                <div className="py-12 text-center text-white/42 text-sm">Cargando registros...</div>
+              ) : auditLog.length === 0 ? (
+                <div className="py-12 text-center space-y-2">
+                  <Shield size={32} className="mx-auto text-white/15" />
+                  <p className="text-white/42 text-sm">Sin eventos de auditoría</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead className="bg-surface-0 border-b border-white/[0.07]">
+                      <tr>
+                        <th className="table-header">Fecha/Hora</th>
+                        <th className="table-header">Acción</th>
+                        <th className="table-header">Usuario</th>
+                        <th className="table-header">IP</th>
+                        <th className="table-header">Nivel</th>
+                        <th className="table-header">Detalle</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {auditLog.map((e: any) => (
+                        <tr key={e.id} className={`table-row ${e.severity === 'critical' ? 'bg-danger/[0.03]' : e.severity === 'warning' ? 'bg-amber-500/[0.02]' : ''}`}>
+                          <td className="table-cell text-white/42 whitespace-nowrap">
+                            {new Date(e.created_at).toLocaleString('es-CL', { dateStyle: 'short', timeStyle: 'short' })}
+                          </td>
+                          <td className="table-cell font-medium text-white/80">
+                            {actionLabel[e.action] ?? e.action}
+                          </td>
+                          <td className="table-cell text-white/60">{e.actor_email ?? '—'}</td>
+                          <td className="table-cell text-white/42 font-mono">{e.ip_address ?? '—'}</td>
+                          <td className="table-cell">
+                            <span className={`badge border text-[10px] font-semibold ${severityBadge[e.severity] ?? 'bg-surface-2 text-white/50'}`}>
+                              {e.severity}
+                            </span>
+                          </td>
+                          <td className="table-cell text-white/42 max-w-xs truncate" title={e.details ?? ''}>{e.details ?? '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between px-6 py-3 border-t border-white/[0.05] text-xs text-white/42">
+                  <span>Página {auditPage} de {totalPages} · {auditTotal} registros</span>
+                  <div className="flex gap-1.5">
+                    <button
+                      onClick={() => loadAuditLog(auditPage - 1)}
+                      disabled={auditPage <= 1 || auditLoading}
+                      className="px-3 py-1 rounded-lg border border-white/10 hover:bg-surface-2 disabled:opacity-30 transition-colors"
+                    >
+                      Anterior
+                    </button>
+                    <button
+                      onClick={() => loadAuditLog(auditPage + 1)}
+                      disabled={auditPage >= totalPages || auditLoading}
+                      className="px-3 py-1 rounded-lg border border-white/10 hover:bg-surface-2 disabled:opacity-30 transition-colors"
+                    >
+                      Siguiente
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      })()}
 
       {/* ── Crear Negocio Modal ──────────────────────────────────── */}
       {showNegocioModal && (
@@ -1634,6 +2100,40 @@ Si el cliente tiene una consulta compleja o quiere hablar con una persona, dile 
                       El administrador podrá configurar las etapas del pipeline desde su panel.
                     </p>
                   )}
+                </div>
+                <div>
+                  <label className="input-label">Plan *</label>
+                  <div className="flex gap-2 mt-1">
+                    {([
+                      { key: 'basico',     label: 'Básico',     activeBg: '#475569', activeBorder: '#64748b', activeText: '#ffffff', inactiveBg: 'rgba(71,85,105,0.15)', inactiveBorder: 'rgba(100,116,139,0.40)', inactiveText: '#94a3b8' },
+                      { key: 'pro',        label: 'Pro',        activeBg: '#4361ee', activeBorder: '#4361ee', activeText: '#ffffff', inactiveBg: 'rgba(67,97,238,0.12)', inactiveBorder: 'rgba(67,97,238,0.40)', inactiveText: '#7b9ff5' },
+                      { key: 'enterprise', label: 'Enterprise', activeBg: '#d97706', activeBorder: '#d97706', activeText: '#ffffff', inactiveBg: 'rgba(217,119,6,0.12)',  inactiveBorder: 'rgba(217,119,6,0.40)',  inactiveText: '#fbbf24' },
+                    ] as const).map(({ key: p, label, activeBg, activeBorder, activeText, inactiveBg, inactiveBorder, inactiveText }) => {
+                      const active = negocioForm.plan === p
+                      return (
+                        <button
+                          key={p}
+                          type="button"
+                          onClick={() => setNegocioForm(f => ({ ...f, plan: p }))}
+                          className="flex-1 py-3 rounded-xl text-xs font-bold border-2 transition-all duration-150 flex flex-col items-center gap-0.5"
+                          style={{
+                            background: active ? activeBg : inactiveBg,
+                            color: active ? activeText : inactiveText,
+                            borderColor: active ? activeBorder : inactiveBorder,
+                            boxShadow: active ? `0 4px 14px ${activeBg}55` : 'none',
+                            transform: active ? 'translateY(-1px)' : 'none',
+                          }}
+                        >
+                          {PLAN_LIMITS[p].label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <p className="text-[10px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                    {negocioForm.plan === 'basico' && 'Hasta 5 usuarios · 1 número WhatsApp · sin Agente IA'}
+                    {negocioForm.plan === 'pro' && 'Hasta 15 usuarios · 3 números WA · 2 Agentes IA · exportar CSV'}
+                    {negocioForm.plan === 'enterprise' && 'Usuarios y WA ilimitados · Agentes IA ilimitados · todas las funciones'}
+                  </p>
                 </div>
               </div>
 

@@ -27,6 +27,7 @@ export default function Login() {
     if (role === 'tecnico')    return '/tecnico'
     if (role === 'vendedor')   return '/agenda'
     if (role === 'verificador') return '/pagos'
+    if (role === 'agendadora') return '/'
     return '/'
   }
 
@@ -40,7 +41,7 @@ export default function Login() {
       navigate(homeFor(role))
     } catch (err: any) {
       if (!err?.response) {
-        toast.error('Backend no disponible. Verifica que la API esté corriendo en localhost:8000')
+        toast.error('Backend no disponible. Verifica la URL de la API')
       } else {
         toast.error(err?.response?.data?.detail || 'Credenciales incorrectas')
       }

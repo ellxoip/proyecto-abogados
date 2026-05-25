@@ -19,6 +19,13 @@ export default async function DocumentosIndexPage() {
   if (!session) redirect("/login");
   if (session.user.role !== Role.SUPER_ADMIN) return notFound();
 
+  // El módulo Documentos expone ÚNICAMENTE las OT que NEXIO entrega al
+  // marcar el lead como Pago Comprometido. Comprobantes de pago, subidas
+  // manuales del expediente y resoluciones finales viven en la ficha del
+  // caso (`/admin/casos/[id]`), no aquí. Las OT se identifican por el
+  // prefijo `[OT/...]` que `cases/route.ts` inserta al recibir el payload
+  // desde NEXIO.
+  const OT_PREFIX = "[OT/";
   const categories = await withRls(async (tx) => {
     const cats = await tx.category.findMany({
       orderBy: { name: "asc" },
@@ -27,7 +34,10 @@ export default async function DocumentosIndexPage() {
           select: {
             id: true,
             updates: {
-              where: { document_url: { not: null } },
+              where: {
+                document_url: { not: null },
+                description: { startsWith: OT_PREFIX },
+              },
               select: { id: true },
             },
           },
@@ -59,7 +69,7 @@ export default async function DocumentosIndexPage() {
               Documentos
             </h1>
             <p className="text-xs text-[var(--text-muted)] mt-1">
-              Carpetas por categoría · {categories.length} categorías · {totalDocs} documentos
+              Carpetas por categoría · {categories.length} categorías · {totalDocs} OT recibidas desde NEXIO
             </p>
           </div>
         </div>

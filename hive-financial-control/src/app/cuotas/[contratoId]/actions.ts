@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import { PaymentPortalService } from "@/server/services/integrations/payment-portal.service";
 import { AtInformaClient } from "@/server/services/integrations/at-informa.client";
+import { normalizePagaCuotasPortalLink } from "@/server/services/integrations/pagacuotas-links";
 
 const PAGACUOTAS_PORTAL_URL = (process.env.PAGACUOTAS_PORTAL_URL || "http://localhost:3002").replace(/\/+$/, "");
 const PAGACUOTAS_API_URL = process.env.PAGACUOTAS_API_URL || "http://localhost:4000";
@@ -62,8 +63,10 @@ export async function generarAccesoPagaCuotasAction(contratoId: number): Promise
 
   const { rut, nombre, email, telefono } = contrato.cliente;
   const credentials = await new PaymentPortalService().ensurePortalCredentials(contrato.cliente.id);
+  const passwordLabel = credentials.password ?? "Usa tu clave vigente";
+  const autoLoginUrl = await getPagaCuotasAutoLoginUrl({ rut, nombre, telefono, email });
   const portal_url =
-    (await getPagaCuotasAutoLoginUrl({ rut, nombre, telefono, email })) ??
+    normalizePagaCuotasPortalLink(autoLoginUrl) ??
     `${PAGACUOTAS_PORTAL_URL}/client/login?identifier=${encodeURIComponent(rut)}`;
 
   // Push paymentLink + password a service-control para que el botón
@@ -86,14 +89,14 @@ export async function generarAccesoPagaCuotasAction(contratoId: number): Promise
   }
   const message = [
     `Hola ${nombre},`,
-    `puedes revisar y pagar tus cuotas en PagaCuotas: ${portal_url}`,
+    `puedes entrar a tu Portal PagaCuotas para revisar tu caso y pagar tus cuotas: ${portal_url}`,
     `RUT: ${rut}`,
-    `Clave temporal: ${credentials.password}`,
+    `Clave: ${passwordLabel}`,
     "Al ingresar podras cambiar tu clave.",
   ].join("\n");
   const whatsapp_url = telefono
     ? `https://wa.me/${telefono.replace(/\D/g, "")}?text=${encodeURIComponent(message)}`
     : null;
 
-  return { portal_url, rut, email, telefono, nombre, password: credentials.password, whatsapp_url, message };
+  return { portal_url, rut, email, telefono, nombre, password: passwordLabel, whatsapp_url, message };
 }

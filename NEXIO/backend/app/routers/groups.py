@@ -11,9 +11,11 @@ router = APIRouter(prefix="/api/groups", tags=["groups"])
 @router.get("", response_model=List[schemas.GroupOut])
 def list_groups(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     gids = get_visible_group_ids(db, current_user)
-    if gids is None:
-        return db.query(models.Group).all()
-    return db.query(models.Group).filter(models.Group.id.in_(gids)).all()
+    # Only return sub-groups (negocio_id IS NOT NULL); negocios are root entities, not grupos
+    q = db.query(models.Group).filter(models.Group.negocio_id.isnot(None))
+    if gids is not None:
+        q = q.filter(models.Group.id.in_(gids))
+    return q.all()
 
 
 @router.post("", response_model=schemas.GroupOut)
@@ -61,6 +63,39 @@ def delete_group(
     group = db.query(models.Group).filter(models.Group.id == group_id).first()
     if not group:
         raise HTTPException(status_code=404, detail="Grupo no encontrado")
+
+    blockers = []
+
+    sub_groups = db.query(models.Group).filter(models.Group.negocio_id == group_id).count()
+    if sub_groups:
+        blockers.append(f"{sub_groups} sub-grupo(s)")
+
+    users = db.query(models.User).filter(models.User.group_id == group_id).count()
+    if users:
+        blockers.append(f"{users} usuario(s)")
+
+    areas = db.query(models.Area).filter(models.Area.group_id == group_id).count()
+    if areas:
+        blockers.append(f"{areas} área(s)")
+
+    leads = db.query(models.Lead).filter(models.Lead.group_id == group_id).count()
+    if leads:
+        blockers.append(f"{leads} lead(s)")
+
+    wconfigs = db.query(models.WhatsAppConfig).filter(models.WhatsAppConfig.group_id == group_id).count()
+    if wconfigs:
+        blockers.append(f"{wconfigs} config(s) de WhatsApp")
+
+    agents = db.query(models.AIAgent).filter(models.AIAgent.group_id == group_id).count()
+    if agents:
+        blockers.append(f"{agents} agente(s) IA")
+
+    if blockers:
+        raise HTTPException(
+            status_code=409,
+            detail=f"No se puede eliminar el grupo porque tiene: {', '.join(blockers)}. Reasigná o eliminá estos registros primero."
+        )
+
     db.delete(group)
     db.commit()
     return {"ok": True}
@@ -93,10 +128,16 @@ def get_default_assignment(
 # ── AREAS ────────────────────────────────────────────────
 @router.get("/{group_id}/areas", response_model=List[schemas.AreaOut])
 def list_areas(group_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    group = db.query(models.Group).filter(models.Group.id == group_id).first()
+    # If the group is a sub-group, also check the parent negocio for shared areas
+    target_ids = [group_id]
+    if group and group.negocio_id:
+        target_ids.append(group.negocio_id)
     return (
         db.query(models.Area)
         .options(joinedload(models.Area.phone_configs))
-        .filter(models.Area.group_id == group_id)
+        .filter(models.Area.group_id.in_(target_ids), models.Area.is_active == True)
+        .order_by(models.Area.name)
         .all()
     )
 

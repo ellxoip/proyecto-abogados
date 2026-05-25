@@ -7,6 +7,8 @@ import {
   createCalendarEvent, getCalendarEvents, getGroupVendors, exportLeads,
   getContactAgentState, setContactAgentState, dismissAgentLead,
 } from '../api'
+import { apiUrl } from '../api/client'
+import { playMessageSound, playNewLeadSound } from '../hooks/useNotificationSound'
 import type { Lead } from '../types'
 import { STAGE_LABELS, STAGE_COLORS } from '../types'
 import {
@@ -14,7 +16,7 @@ import {
   Phone, Mail, MapPin, FileText, Clock, Download,
   ChevronDown, Info, History, StickyNote, SlidersHorizontal,
   User, Building2, Hash, CalendarDays, ChevronLeft, ChevronRight, Pencil, Check, X as XIcon,
-  CalendarPlus, Clipboard, Paperclip, Mic, Square, CheckCheck, AlertTriangle, Bot,
+  CalendarPlus, Clipboard, Paperclip, Mic, Square, CheckCheck, AlertTriangle, Bot, ArrowRight, ArrowLeft, ClipboardList,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useAuthStore } from '../store/auth'
@@ -22,7 +24,9 @@ import LeadModal from '../components/LeadModal'
 import { format, isToday, isYesterday } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { parseDate as parseAsUTC } from '../utils/dates'
+import { rutOnChange } from '../utils/rut'
 import { LeadDetailView } from './LeadDetail'
+import { MoveLeadModal, NEXT_STAGE, PREV_STAGE } from '../components/MoveLeadModal'
 import { useNavigate, Link, useLocation } from 'react-router-dom'
 
 const ALL_STAGES = [
@@ -49,7 +53,10 @@ function fmt(n: number) { return n ? `$${Math.round(n).toLocaleString('es-CL')}`
 
 function ExportButton() {
   const [loading, setLoading] = React.useState(false)
+  const { user } = useAuthStore()
+  const planAllows = user?.negocio_plan_limits?.export_csv ?? false
   const handleExport = async () => {
+    if (!planAllows) { toast.error('Exportar CSV requiere plan Pro o superior'); return }
     setLoading(true)
     try { await exportLeads() }
     catch { toast.error('Error al exportar') }
@@ -57,7 +64,9 @@ function ExportButton() {
   }
   return (
     <button onClick={handleExport} disabled={loading}
-      className="flex items-center gap-1.5 border border-white/10 bg-surface-1 hover:bg-surface-0 text-white/78 text-sm font-semibold px-3 py-2 sm:py-2.5 rounded-xl transition-colors shadow-sm disabled:opacity-50">
+      className="flex items-center gap-1.5 border border-white/10 bg-surface-1 hover:bg-surface-0 text-white/78 text-sm font-semibold px-3 py-2 sm:py-2.5 rounded-xl transition-colors shadow-sm disabled:opacity-50"
+      title={!planAllows ? 'Plan Pro requerido' : 'Exportar CSV'}
+      style={!planAllows ? { opacity: 0.45, cursor: 'not-allowed' } : {}}>
       <Download size={14} className={loading ? 'animate-spin' : ''} />
       <span className="hidden sm:inline">Exportar</span>
     </button>
@@ -87,17 +96,18 @@ const fmtCLP = (n: number | string | null | undefined) => {
   return `$${Math.round(num).toLocaleString('es-CL')}`
 }
 
-function EditableRow({ label, value, onSave, type = 'text', placeholder, isMoney = false }: {
+function EditableRow({ label, value, onSave, type = 'text', placeholder, isMoney = false, transform }: {
   label: string
   value: string | number | null | undefined
   onSave: (v: string) => Promise<void>
   type?: 'text' | 'number' | 'email' | 'tel'
   placeholder?: string
   isMoney?: boolean
+  transform?: (v: string) => string
 }) {
   const [editing, setEditing] = useState(false)
-  const [draft, setDraft]     = useState('')
-  const [saving, setSaving]   = useState(false)
+  const [draft, setDraft] = useState('')
+  const [saving, setSaving] = useState(false)
 
   const start = () => { setDraft(value?.toString() ?? ''); setEditing(true) }
   const cancel = () => setEditing(false)
@@ -128,7 +138,7 @@ function EditableRow({ label, value, onSave, type = 'text', placeholder, isMoney
               autoFocus
               type={type}
               value={draft}
-              onChange={e => setDraft(e.target.value)}
+              onChange={e => setDraft(transform ? transform(e.target.value) : e.target.value)}
               onKeyDown={onKey}
               onBlur={save}
               placeholder={placeholder}
@@ -215,22 +225,22 @@ function FillContactSplit({ messages, lead, onSave, onClose }: {
   const [saving, setSaving] = useState(false)
 
   const [contactForm, setContactForm] = useState({
-    name:         lead.contact?.name         ?? '',
-    phone:        lead.contact?.phone        ?? '',
-    email:        lead.contact?.email        ?? '',
-    rut_persona:  lead.contact?.rut_persona  ?? '',
-    rut_empresa:  lead.contact?.rut_empresa  ?? '',
+    name: lead.contact?.name ?? '',
+    phone: lead.contact?.phone ?? '',
+    email: lead.contact?.email ?? '',
+    rut_persona: lead.contact?.rut_persona ?? '',
+    rut_empresa: lead.contact?.rut_empresa ?? '',
     razon_social: lead.contact?.razon_social ?? '',
-    city:         lead.contact?.city         ?? '',
+    city: lead.contact?.city ?? '',
   })
   const [leadForm, setLeadForm] = useState({
-    honorarios:          lead.honorarios       ? lead.honorarios.toString()       : '',
-    cuota_inicial:       lead.cuota_inicial    ? lead.cuota_inicial.toString()    : '',
-    num_cuotas:          lead.num_cuotas       ? lead.num_cuotas.toString()       : '1',
-    monto_cuota:         lead.monto_cuota      ? lead.monto_cuota.toString()      : '',
+    honorarios: lead.honorarios ? lead.honorarios.toString() : '',
+    cuota_inicial: lead.cuota_inicial ? lead.cuota_inicial.toString() : '',
+    num_cuotas: lead.num_cuotas ? lead.num_cuotas.toString() : '1',
+    monto_cuota: lead.monto_cuota ? lead.monto_cuota.toString() : '',
     service_description: lead.service_description ?? '',
-    notes:               lead.notes              ?? '',
-    source:              lead.source             ?? 'whatsapp',
+    notes: lead.notes ?? '',
+    source: lead.source ?? 'whatsapp',
   })
 
   const setC = (k: string, v: string) => setContactForm(f => ({ ...f, [k]: v }))
@@ -238,8 +248,8 @@ function FillContactSplit({ messages, lead, onSave, onClose }: {
     const updated = { ...f, [k]: v }
     if (k === 'cuota_inicial' || k === 'num_cuotas' || k === 'monto_cuota') {
       const ci = parseFloat(k === 'cuota_inicial' ? v : f.cuota_inicial) || 0
-      const nc = parseInt(k === 'num_cuotas'      ? v : f.num_cuotas)    || 1
-      const mc = parseFloat(k === 'monto_cuota'   ? v : f.monto_cuota)   || 0
+      const nc = parseInt(k === 'num_cuotas' ? v : f.num_cuotas) || 1
+      const mc = parseFloat(k === 'monto_cuota' ? v : f.monto_cuota) || 0
       if (ci > 0 || mc > 0) {
         updated.honorarios = Math.round(ci + nc * mc).toString()
       }
@@ -298,11 +308,11 @@ function FillContactSplit({ messages, lead, onSave, onClose }: {
               </div>
               <div>
                 <label className="input-label">RUT Persona</label>
-                <input className="input" value={contactForm.rut_persona} onChange={e => setC('rut_persona', e.target.value)} placeholder="12.345.678-9" />
+                <input className="input" value={contactForm.rut_persona} onChange={e => setC('rut_persona', rutOnChange(e.target.value))} placeholder="12.345.678-9" />
               </div>
               <div>
                 <label className="input-label">RUT Empresa</label>
-                <input className="input" value={contactForm.rut_empresa} onChange={e => setC('rut_empresa', e.target.value)} placeholder="76.000.000-0" />
+                <input className="input" value={contactForm.rut_empresa} onChange={e => setC('rut_empresa', rutOnChange(e.target.value))} placeholder="76.000.000-0" />
               </div>
               <div className="col-span-2">
                 <label className="input-label">Razón Social</label>
@@ -366,7 +376,19 @@ function FillContactSplit({ messages, lead, onSave, onClose }: {
         <div className="flex-1 flex flex-col min-w-0">
           {/* Header */}
           <div className="px-4 py-2.5 flex-shrink-0 border-b border-white/[0.07] flex items-center gap-3 bg-surface-0">
-            <div className="w-9 h-9 rounded-full bg-surface-3 flex items-center justify-center flex-shrink-0">
+            {lead.contact?.avatar_url ? (
+              <img
+                src={lead.contact.avatar_url}
+                alt={lead.contact?.name}
+                className="w-9 h-9 rounded-full object-cover flex-shrink-0"
+                onError={e => {
+                  (e.currentTarget as HTMLImageElement).style.display = 'none';
+                  (e.currentTarget.nextElementSibling as HTMLElement).style.display = 'flex'
+                }}
+              />
+            ) : null}
+            <div className="w-9 h-9 rounded-full bg-surface-3 flex items-center justify-center flex-shrink-0"
+              style={{ display: lead.contact?.avatar_url ? 'none' : 'flex' }}>
               <span className="font-bold text-sm text-white/62">
                 {(lead.contact?.name ?? 'C').charAt(0).toUpperCase()}
               </span>
@@ -379,7 +401,7 @@ function FillContactSplit({ messages, lead, onSave, onClose }: {
           {/* Messages */}
           <div className="flex-1 overflow-y-auto py-3 px-[3%] space-y-0.5 wa-chat-bg">
             {messages.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full" style={{color:'rgba(26,32,53,0.38)'}}>
+              <div className="flex flex-col items-center justify-center h-full" style={{ color: 'rgba(26,32,53,0.38)' }}>
                 <MessageSquare size={26} className="mb-2 opacity-40" />
                 <p className="text-xs">Sin mensajes aún</p>
               </div>
@@ -390,7 +412,7 @@ function FillContactSplit({ messages, lead, onSave, onClose }: {
               return (
                 <div key={m.id} className={`flex ${out ? 'justify-end' : 'justify-start'} mb-0.5`}>
                   <div className="relative max-w-[80%]"
-                    style={{marginRight: out ? 8 : 0, marginLeft: out ? 0 : 8}}>
+                    style={{ marginRight: out ? 8 : 0, marginLeft: out ? 0 : 8 }}>
                     {/* Bubble */}
                     <div className={out ? 'chat-bubble-out' : ''} style={{
                       backgroundColor: bubbleBg,
@@ -402,8 +424,8 @@ function FillContactSplit({ messages, lead, onSave, onClose }: {
                       color: out ? '#ffffff' : 'var(--text)',
                     }}>
                       <ChatMsgContent m={m} />
-                      <div className="flex items-center justify-end gap-1 mt-1" style={{minHeight:14}}>
-                        <span style={{color: out ? 'rgba(255,255,255,0.70)' : 'rgba(26,32,53,0.40)', fontSize:11, whiteSpace:'nowrap'}}>
+                      <div className="flex items-center justify-end gap-1 mt-1" style={{ minHeight: 14 }}>
+                        <span style={{ color: out ? 'rgba(255,255,255,0.70)' : 'rgba(26,32,53,0.40)', fontSize: 11, whiteSpace: 'nowrap' }}>
                           {format(parseAsUTC(m.created_at), 'HH:mm', { locale: es })}
                         </span>
                         {out && <WaTicksChat status={m.status} />}
@@ -489,9 +511,41 @@ function DarkAudioPlayer({ src }: { src: string }) {
   )
 }
 
+// Detecta URLs (http/https) en texto plano y las renderiza como <a>
+// clickeables. Mantiene el resto del texto intacto (saltos de línea
+// los preserva `whitespace-pre-wrap` del contenedor). Excluye signos
+// de puntuación finales comunes (.,;:!?) del href.
+const URL_REGEX = /(https?:\/\/[^\s<>"'`]+[^\s<>"'`.,;:!?)\]])/g
+function renderLinkified(text: string, linkClass: string): React.ReactNode[] {
+  if (!text) return []
+  const parts: React.ReactNode[] = []
+  let lastIndex = 0
+  let match: RegExpExecArray | null
+  URL_REGEX.lastIndex = 0
+  while ((match = URL_REGEX.exec(text)) !== null) {
+    if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index))
+    const href = match[0]
+    parts.push(
+      <a
+        key={`url-${match.index}`}
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+        className={linkClass}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {href}
+      </a>,
+    )
+    lastIndex = match.index + href.length
+  }
+  if (lastIndex < text.length) parts.push(text.slice(lastIndex))
+  return parts
+}
+
 function ChatMsgContent({ m }: { m: any }) {
   const type = m.message_type || 'text'
-  const url  = m.media_url || null
+  const url = m.media_url || null
   if (!m.content && !url) return null
   if (url && (type === 'image' || /\.(jpg|jpeg|png|webp|gif)$/i.test(url))) {
     return (
@@ -518,33 +572,40 @@ function ChatMsgContent({ m }: { m: any }) {
       </a>
     )
   }
-  return <p className="leading-relaxed whitespace-pre-wrap text-[13px] text-white/85" style={{wordBreak:'break-word',overflowWrap:'anywhere'}}>{m.content}</p>
+  return (
+    <p className="leading-relaxed whitespace-pre-wrap text-[13px] text-white/85" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
+      {renderLinkified(m.content, 'underline underline-offset-2 text-sky-300 hover:text-sky-200')}
+    </p>
+  )
 }
 
 // Used in FillContactSplit (blue bg → white ticks)
+const TICK_LABEL: Record<string, string> = { logged: 'Pendiente', sent: 'Enviado', delivered: 'Entregado', read: 'Leído', failed: 'Error' }
 function WaTicksChat({ status }: { status: string }) {
-  if (status === 'failed')    return <span className="text-danger font-bold" style={{fontSize:13, lineHeight:1}}>!</span>
-  if (status === 'logged')    return <Clock size={11} color="rgba(255,255,255,0.38)" />
-  if (status === 'read')      return <CheckCheck size={14} color="#53bdeb" strokeWidth={2.5} />
-  if (status === 'delivered') return <CheckCheck size={14} color="rgba(255,255,255,0.50)" strokeWidth={2.5} />
-  return <Check size={14} color="rgba(255,255,255,0.50)" strokeWidth={2.5} />
+  const label = TICK_LABEL[status] ?? 'Enviado'
+  if (status === 'failed') return <span title={label} className="text-danger font-bold" style={{ fontSize: 13, lineHeight: 1 }}>!</span>
+  if (status === 'logged') return <span title={label}><Clock size={13} color="rgba(255,255,255,0.55)" /></span>
+  if (status === 'read') return <span title={label}><CheckCheck size={16} color="#53bdeb" strokeWidth={2.5} /></span>
+  if (status === 'delivered') return <span title={label}><CheckCheck size={16} color="rgba(255,255,255,0.75)" strokeWidth={2.5} /></span>
+  return <span title={label}><Check size={16} color="rgba(255,255,255,0.75)" strokeWidth={2.5} /></span>
 }
 
 // Used in ChatTab (WA green/white bg → proper WA colors)
 function WaTicks({ status }: { status: string }) {
-  if (status === 'failed')    return <span style={{color:'#ef4444', fontWeight:'bold', fontSize:13, lineHeight:1}}>!</span>
-  if (status === 'logged')    return <Clock size={11} color="#8696a0" />
-  if (status === 'read')      return <CheckCheck size={14} color="#53bdeb" strokeWidth={2.5} />
-  if (status === 'delivered') return <CheckCheck size={14} color="#8696a0" strokeWidth={2.5} />
-  return <Check size={14} color="#8696a0" strokeWidth={2.5} />
+  const label = TICK_LABEL[status] ?? 'Enviado'
+  if (status === 'failed') return <span title={label} style={{ color: '#ef4444', fontWeight: 'bold', fontSize: 13, lineHeight: 1 }}>!</span>
+  if (status === 'logged') return <span title={label}><Clock size={13} color="#8696a0" /></span>
+  if (status === 'read') return <span title={label}><CheckCheck size={16} color="#53bdeb" strokeWidth={2.5} /></span>
+  if (status === 'delivered') return <span title={label}><CheckCheck size={16} color="#8696a0" strokeWidth={2.5} /></span>
+  return <span title={label}><Check size={16} color="#8696a0" strokeWidth={2.5} /></span>
 }
 
 // Audio player for WhatsApp-style light bubbles
 function WaAudioPlayer({ src }: { src: string }) {
   const audioRef = useRef<HTMLAudioElement>(null)
-  const [playing, setPlaying]     = useState(false)
-  const [progress, setProgress]   = useState(0)
-  const [duration, setDuration]   = useState(0)
+  const [playing, setPlaying] = useState(false)
+  const [progress, setProgress] = useState(0)
+  const [duration, setDuration] = useState(0)
   const [currentTime, setCurrentTime] = useState(0)
 
   const toggle = () => {
@@ -601,14 +662,14 @@ function WaAudioPlayer({ src }: { src: string }) {
 // Message content for WA-style light bubbles (dark text)
 function WaChatMsgContent({ m }: { m: any }) {
   const type = m.message_type || 'text'
-  const url  = m.media_url || null
+  const url = m.media_url || null
   if (!m.content && !url) return null
   if (url && (type === 'image' || /\.(jpg|jpeg|png|webp|gif)$/i.test(url))) {
     return (
       <a href={url} target="_blank" rel="noreferrer" className="block">
         <img src={url} alt="imagen" className="rounded-xl max-w-[220px] max-h-[220px] object-cover cursor-zoom-in" />
         {m.content && m.content !== '[Imagen]' && (
-          <p className="mt-1 text-[13px] leading-relaxed whitespace-pre-wrap" style={{color:'#111b21'}}>{m.content}</p>
+          <p className="mt-1 text-[13px] leading-relaxed whitespace-pre-wrap" style={{ color: '#111b21' }}>{m.content}</p>
         )}
       </a>
     )
@@ -624,7 +685,7 @@ function WaChatMsgContent({ m }: { m: any }) {
     return (
       <a href={url} target="_blank" rel="noreferrer"
         className="flex items-center gap-2 text-sm underline underline-offset-2"
-        style={{color:'#111b21'}}>
+        style={{ color: '#111b21' }}>
         <FileText size={13} className="flex-shrink-0" />
         <span className="truncate max-w-[180px]">{m.content || fname}</span>
       </a>
@@ -632,8 +693,8 @@ function WaChatMsgContent({ m }: { m: any }) {
   }
   return (
     <p className="leading-relaxed whitespace-pre-wrap text-[13px]"
-      style={{color:'#111b21', wordBreak:'break-word', overflowWrap:'anywhere'}}>
-      {m.content}
+      style={{ color: '#111b21', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
+      {renderLinkified(m.content, 'underline underline-offset-2 text-[#027eb5] hover:text-[#015d87]')}
     </p>
   )
 }
@@ -643,30 +704,30 @@ function formatRecSecs(s: number) {
 }
 
 function ChatTab({ lead, configs, onLeadUpdate, onClearUnread }: { lead: Lead; configs: any[]; onLeadUpdate: (l: Lead) => void; onClearUnread?: (contactId: number) => void }) {
-  const [messages, setMessages]     = useState<any[]>([])
-  const [msgText, setMsgText]       = useState('')
-  const [sending, setSending]       = useState(false)
-  const [showFill, setShowFill]     = useState(false)
-  const [mediaFile, setMediaFile]   = useState<File | null>(null)
+  const [messages, setMessages] = useState<any[]>([])
+  const [msgText, setMsgText] = useState('')
+  const [sending, setSending] = useState(false)
+  const [showFill, setShowFill] = useState(false)
+  const [mediaFile, setMediaFile] = useState<File | null>(null)
   const [mediaPreview, setMediaPreview] = useState<string | null>(null)
-  const [isRecording, setIsRecording]   = useState(false)
-  const [recordSecs, setRecordSecs]     = useState(0)
-  const [micBusy, setMicBusy]           = useState(false)
-  const [ctxMenu, setCtxMenu]           = useState<{x:number;y:number;msg:any}|null>(null)
-  const [editingMsg, setEditingMsg]     = useState<any|null>(null)
-  const [editText, setEditText]         = useState('')
-  const [loadingMsgs, setLoadingMsgs]   = useState(true)
+  const [isRecording, setIsRecording] = useState(false)
+  const [recordSecs, setRecordSecs] = useState(0)
+  const [micBusy, setMicBusy] = useState(false)
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; msg: any } | null>(null)
+  const [editingMsg, setEditingMsg] = useState<any | null>(null)
+  const [editText, setEditText] = useState('')
+  const [loadingMsgs, setLoadingMsgs] = useState(true)
   const [selectedConfigId, setSelectedConfigId] = useState<string>('')
   const [agentInfo, setAgentInfo] = useState<{ agent: { id: number; name: string } | null; state: string | null } | null>(null)
 
-  const endRef           = useRef<HTMLDivElement>(null)
-  const pollRef          = useRef<ReturnType<typeof setInterval> | null>(null)
-  const fileInputRef     = useRef<HTMLInputElement>(null)
+  const endRef = useRef<HTMLDivElement>(null)
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
-  const audioChunksRef   = useRef<Blob[]>([])
-  const recordTimerRef   = useRef<ReturnType<typeof setInterval> | null>(null)
-  const sseRef           = useRef<EventSource | null>(null)
-  const sseReconnectRef  = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const audioChunksRef = useRef<Blob[]>([])
+  const recordTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const sseRef = useRef<EventSource | null>(null)
+  const sseReconnectRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Phone configs for this area (many-to-many junction table, most reliable source)
   const areaConfigs: any[] = (lead.area?.phone_configs ?? []).filter((c: any) => c.is_active !== false)
@@ -679,7 +740,7 @@ function ChatTab({ lead, configs, onLeadUpdate, onClearUnread }: { lead: Lead; c
       ?? configs[0]?.id?.toString()
       ?? ''
     setSelectedConfigId(first)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lead.area?.id])
 
   const activeConfig = areaConfigs.find((c: any) => c.id.toString() === selectedConfigId)
@@ -703,7 +764,7 @@ function ChatTab({ lead, configs, onLeadUpdate, onClearUnread }: { lead: Lead; c
     loadMessages()
     markMessagesRead(lead.contact_id)
       .then(() => onClearUnread?.(lead.contact_id))
-      .catch(() => {})
+      .catch(() => { })
 
     const contactId = lead.contact_id
 
@@ -711,10 +772,24 @@ function ChatTab({ lead, configs, onLeadUpdate, onClearUnread }: { lead: Lead; c
       const token = localStorage.getItem('token')
       if (!token) return
       if (sseRef.current) sseRef.current.close()
-      const url = `/api/whatsapp/stream?token=${encodeURIComponent(token)}`
+      if (sseReconnectRef.current) clearTimeout(sseReconnectRef.current)
+      const url = apiUrl(`/api/whatsapp/stream?token=${encodeURIComponent(token)}`)
       const es = new EventSource(url)
       sseRef.current = es
+      // Watchdog: reconnect + reload if no keepalive for 25s
+      let wd: ReturnType<typeof setTimeout> | null = null
+      const resetWd = () => {
+        if (wd) clearTimeout(wd)
+        wd = setTimeout(() => {
+          es.close(); sseRef.current = null
+          getWhatsAppMessages({ contact_id: contactId })
+            .then(data => setMessages(data.slice().reverse())).catch(() => {})
+          sseReconnectRef.current = setTimeout(connectSSE, 200)
+        }, 25000)
+      }
+      resetWd()
       es.onmessage = (e) => {
+        resetWd()
         let evt: any
         try { evt = JSON.parse(e.data) } catch { return }
         if (evt.type === 'new_message' && evt.message?.contact_id === contactId) {
@@ -731,13 +806,17 @@ function ChatTab({ lead, configs, onLeadUpdate, onClearUnread }: { lead: Lead; c
         if (evt.type === 'refresh') {
           getWhatsAppMessages({ contact_id: contactId })
             .then(data => setMessages(data.slice().reverse()))
-            .catch(() => {})
+            .catch(() => { })
         }
       }
       es.onerror = () => {
+        if (wd) clearTimeout(wd)
         es.close()
         sseRef.current = null
-        sseReconnectRef.current = setTimeout(connectSSE, 3000)
+        getWhatsAppMessages({ contact_id: contactId })
+          .then(data => setMessages(data.slice().reverse()))
+          .catch(() => { })
+        sseReconnectRef.current = setTimeout(connectSSE, 1000)
       }
     }
     connectSSE()
@@ -745,7 +824,7 @@ function ChatTab({ lead, configs, onLeadUpdate, onClearUnread }: { lead: Lead; c
     pollRef.current = setInterval(() => {
       getWhatsAppMessages({ contact_id: contactId })
         .then(data => setMessages(data.slice().reverse()))
-        .catch(() => {})
+        .catch(() => { })
     }, 8000)
 
     return () => {
@@ -760,7 +839,7 @@ function ChatTab({ lead, configs, onLeadUpdate, onClearUnread }: { lead: Lead; c
 
   // Load agent state for this contact
   useEffect(() => {
-    getContactAgentState(lead.contact_id).then(setAgentInfo).catch(() => {})
+    getContactAgentState(lead.contact_id).then(setAgentInfo).catch(() => { })
   }, [lead.contact_id])
 
   const handleAgentToggle = async () => {
@@ -831,7 +910,7 @@ function ChatTab({ lead, configs, onLeadUpdate, onClearUnread }: { lead: Lead; c
   const handleSend = async () => {
     if (!configId) { toast.error('Sin número WhatsApp configurado para este lead'); return }
     const hasMedia = !!mediaFile
-    const hasText  = !!msgText.trim()
+    const hasText = !!msgText.trim()
     if (!hasMedia && !hasText) { toast.error('Escribe un mensaje o adjunta un archivo'); return }
     setSending(true)
     try {
@@ -876,13 +955,13 @@ function ChatTab({ lead, configs, onLeadUpdate, onClearUnread }: { lead: Lead; c
   const handleFillSave = async (contactData: any, leadData: any) => {
     const updatedContact = await updateContact(lead.contact_id, contactData)
     const payload: Record<string, any> = {}
-    if (leadData.honorarios    !== '') payload.honorarios          = parseFloat(leadData.honorarios)    || 0
-    if (leadData.cuota_inicial !== '') payload.cuota_inicial       = parseFloat(leadData.cuota_inicial) || 0
-    if (leadData.num_cuotas    !== '') payload.num_cuotas          = parseInt(leadData.num_cuotas)      || 1
-    if (leadData.monto_cuota   !== '') payload.monto_cuota         = parseFloat(leadData.monto_cuota)   || 0
+    if (leadData.honorarios !== '') payload.honorarios = parseFloat(leadData.honorarios) || 0
+    if (leadData.cuota_inicial !== '') payload.cuota_inicial = parseFloat(leadData.cuota_inicial) || 0
+    if (leadData.num_cuotas !== '') payload.num_cuotas = parseInt(leadData.num_cuotas) || 1
+    if (leadData.monto_cuota !== '') payload.monto_cuota = parseFloat(leadData.monto_cuota) || 0
     if (leadData.service_description !== '') payload.service_description = leadData.service_description || null
-    if (leadData.notes !== '')          payload.notes              = leadData.notes || null
-    if (leadData.source)                payload.source             = leadData.source
+    if (leadData.notes !== '') payload.notes = leadData.notes || null
+    if (leadData.source) payload.source = leadData.source
     const updatedLead = Object.keys(payload).length > 0
       ? await updateLead(lead.id, payload)
       : lead
@@ -930,11 +1009,10 @@ function ChatTab({ lead, configs, onLeadUpdate, onClearUnread }: { lead: Lead; c
           <button
             onClick={handleAgentToggle}
             title={agentInfo.state === 'active' ? `Agente activo: ${agentInfo.agent.name}` : 'Agente pausado — tú tienes el control'}
-            className={`flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg border transition-colors flex-shrink-0 ${
-              agentInfo.state === 'active'
+            className={`flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg border transition-colors flex-shrink-0 ${agentInfo.state === 'active'
                 ? 'bg-lime/10 text-lime border-lime/25 hover:bg-danger/10 hover:text-danger hover:border-danger/25'
                 : 'bg-amber-500/10 text-amber-400 border-amber-500/25 hover:bg-lime/10 hover:text-lime hover:border-lime/25'
-            }`}
+              }`}
           >
             <Bot size={11} />
             {agentInfo.state === 'active' ? 'IA activa' : 'Tú tienes control'}
@@ -953,7 +1031,7 @@ function ChatTab({ lead, configs, onLeadUpdate, onClearUnread }: { lead: Lead; c
         {messages.length === 0 ? (
           <div className="flex-1 flex flex-col items-center justify-center" style={{ color: 'rgba(17,27,33,0.40)' }}>
             {loadingMsgs
-              ? <div className="w-5 h-5 border-2 rounded-full animate-spin mb-2" style={{borderColor:'rgba(17,27,33,0.12)', borderTopColor:'#25d366'}} />
+              ? <div className="w-5 h-5 border-2 rounded-full animate-spin mb-2" style={{ borderColor: 'rgba(17,27,33,0.12)', borderTopColor: '#25d366' }} />
               : <MessageSquare size={26} className="mb-2 opacity-40" />
             }
             <p className="text-xs">{loadingMsgs ? 'Cargando mensajes...' : 'Sin mensajes aún'}</p>
@@ -972,7 +1050,7 @@ function ChatTab({ lead, configs, onLeadUpdate, onClearUnread }: { lead: Lead; c
                     lastDateStr = dateStr
                     const label = isToday(d) ? 'Hoy'
                       : isYesterday(d) ? 'Ayer'
-                      : format(d, "d 'de' MMMM yyyy", { locale: es })
+                        : format(d, "d 'de' MMMM yyyy", { locale: es })
                     items.push(
                       <div key={`sep-${dateStr}`} className="flex items-center justify-center my-3">
                         <span className="text-[11px] font-medium px-3 py-1 rounded-full"
@@ -984,13 +1062,13 @@ function ChatTab({ lead, configs, onLeadUpdate, onClearUnread }: { lead: Lead; c
                   }
                   const out = m.direction === 'out'
                   const WA_OUT = '#d9fdd3'
-                  const WA_IN  = '#ffffff'
+                  const WA_IN = '#ffffff'
                   items.push(
                     <div key={m.id} className={`flex ${out ? 'justify-end' : 'justify-start'} mb-[3px] group`}>
                       <div className={`relative max-w-[78%] ${out ? 'wa-bubble-out-wrap' : 'wa-bubble-in-wrap'}`}
-                        style={{marginRight: out ? 10 : 0, marginLeft: out ? 0 : 10}}>
+                        style={{ marginRight: out ? 10 : 0, marginLeft: out ? 0 : 10 }}>
                         <div
-                          onContextMenu={e => { e.preventDefault(); setCtxMenu({x: e.clientX, y: e.clientY, msg: m}) }}
+                          onContextMenu={e => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY, msg: m }) }}
                           style={{
                             backgroundColor: out ? WA_OUT : WA_IN,
                             borderRadius: out ? '7.5px 0px 7.5px 7.5px' : '0px 7.5px 7.5px 7.5px',
@@ -999,17 +1077,17 @@ function ChatTab({ lead, configs, onLeadUpdate, onClearUnread }: { lead: Lead; c
                             position: 'relative', zIndex: 1, cursor: 'default',
                           }}>
                           <WaChatMsgContent m={m} />
-                          <div className="flex items-center justify-end gap-1" style={{minHeight:15, marginTop:2}}>
-                            <span style={{color:'rgba(17,27,33,0.5)', fontSize:11, whiteSpace:'nowrap'}}>
+                          <div className="flex items-center justify-end gap-1" style={{ minHeight: 15, marginTop: 2 }}>
+                            <span style={{ color: 'rgba(17,27,33,0.5)', fontSize: 11, whiteSpace: 'nowrap' }}>
                               {format(parseAsUTC(m.created_at), 'HH:mm', { locale: es })}
                             </span>
                             {out && <WaTicks status={m.status} />}
                           </div>
                         </div>
                         <button
-                          onClick={e => setCtxMenu({x: e.clientX, y: e.clientY, msg: m})}
+                          onClick={e => setCtxMenu({ x: e.clientX, y: e.clientY, msg: m })}
                           className="absolute top-1 opacity-0 group-hover:opacity-100 transition-opacity rounded-full p-0.5"
-                          style={{ ...(out ? {left:-20} : {right:-20}), background: out ? WA_OUT : WA_IN, fontSize:12, color:'rgba(17,27,33,0.45)' }}>
+                          style={{ ...(out ? { left: -20 } : { right: -20 }), background: out ? WA_OUT : WA_IN, fontSize: 12, color: 'rgba(17,27,33,0.45)' }}>
                           ▾
                         </button>
                       </div>
@@ -1026,33 +1104,33 @@ function ChatTab({ lead, configs, onLeadUpdate, onClearUnread }: { lead: Lead; c
 
       {/* Media preview */}
       {(mediaFile || isRecording) && (
-        <div className="px-4 py-2 flex items-center gap-3 flex-shrink-0" style={{borderTop:'1px solid #e9edef', backgroundColor:'#f0f2f5'}}>
+        <div className="px-4 py-2 flex items-center gap-3 flex-shrink-0" style={{ borderTop: '1px solid #e9edef', backgroundColor: '#f0f2f5' }}>
           {isRecording ? (
             <>
-              <span className="w-2 h-2 rounded-full animate-pulse flex-shrink-0" style={{backgroundColor:'#ef4444'}} />
-              <span className="text-sm font-semibold" style={{color:'#ef4444'}}>{formatRecSecs(recordSecs)}</span>
-              <span className="text-xs" style={{color:'#54656f'}}>Grabando...</span>
+              <span className="w-2 h-2 rounded-full animate-pulse flex-shrink-0" style={{ backgroundColor: '#ef4444' }} />
+              <span className="text-sm font-semibold" style={{ color: '#ef4444' }}>{formatRecSecs(recordSecs)}</span>
+              <span className="text-xs" style={{ color: '#54656f' }}>Grabando...</span>
             </>
           ) : isImage && mediaPreview ? (
             <>
               <img src={mediaPreview} alt="preview" className="w-10 h-10 rounded-lg object-cover flex-shrink-0" />
-              <span className="text-xs truncate flex-1" style={{color:'#54656f'}}>{mediaFile!.name}</span>
+              <span className="text-xs truncate flex-1" style={{ color: '#54656f' }}>{mediaFile!.name}</span>
             </>
           ) : isAudio ? (
             <>
-              <Mic size={16} style={{color:'#54656f', flexShrink:0}} />
+              <Mic size={16} style={{ color: '#54656f', flexShrink: 0 }} />
               <audio controls src={mediaPreview!} className="h-8 flex-1" />
             </>
           ) : (
             <>
-              <FileText size={16} style={{color:'#54656f', flexShrink:0}} />
-              <span className="text-xs truncate flex-1" style={{color:'#54656f'}}>{mediaFile!.name}</span>
+              <FileText size={16} style={{ color: '#54656f', flexShrink: 0 }} />
+              <span className="text-xs truncate flex-1" style={{ color: '#54656f' }}>{mediaFile!.name}</span>
             </>
           )}
           {!isRecording && (
             <button onClick={clearMedia}
               className="p-1 rounded-full flex-shrink-0 transition-colors"
-              style={{color:'#54656f'}}>
+              style={{ color: '#54656f' }}>
               <XIcon size={13} />
             </button>
           )}
@@ -1060,7 +1138,7 @@ function ChatTab({ lead, configs, onLeadUpdate, onClearUnread }: { lead: Lead; c
       )}
 
       {/* Input bar — WhatsApp style */}
-      <div className="flex items-end gap-2 px-2 py-2 flex-shrink-0" style={{backgroundColor:'#f0f2f5', borderTop:'1px solid #e9edef'}}>
+      <div className="flex items-end gap-2 px-2 py-2 flex-shrink-0" style={{ backgroundColor: '#f0f2f5', borderTop: '1px solid #e9edef' }}>
         <input ref={fileInputRef} type="file"
           accept="image/*,audio/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx"
           className="hidden" onChange={handleFileSelect} />
@@ -1070,7 +1148,7 @@ function ChatTab({ lead, configs, onLeadUpdate, onClearUnread }: { lead: Lead; c
           disabled={!configId || isRecording}
           title="Adjuntar"
           className="p-2 rounded-full transition-colors flex-shrink-0 disabled:opacity-30"
-          style={{color:'#54656f'}}>
+          style={{ color: '#54656f' }}>
           <Paperclip size={22} />
         </button>
 
@@ -1102,7 +1180,7 @@ function ChatTab({ lead, configs, onLeadUpdate, onClearUnread }: { lead: Lead; c
           <button onClick={handleSend}
             disabled={sending || isRecording || !configId}
             className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 disabled:opacity-30 transition-opacity"
-            style={{backgroundColor:'#00a884', color:'#ffffff'}}>
+            style={{ backgroundColor: '#00a884', color: '#ffffff' }}>
             {sending ? <RefreshCw size={18} className="animate-spin" /> : <Send size={18} />}
           </button>
         ) : (
@@ -1133,7 +1211,7 @@ function ChatTab({ lead, configs, onLeadUpdate, onClearUnread }: { lead: Lead; c
         <>
           <div className="fixed inset-0 z-40" onClick={() => setCtxMenu(null)} />
           <div className="fixed z-50 rounded-xl shadow-2xl overflow-hidden bg-surface-1 border border-white/10"
-            style={{top: ctxMenu.y, left: ctxMenu.x, minWidth:160}}>
+            style={{ top: ctxMenu.y, left: ctxMenu.x, minWidth: 160 }}>
             {ctxMenu.msg.direction === 'out' && ctxMenu.msg.message_type === 'text' && (
               <button
                 onClick={() => { setEditingMsg(ctxMenu.msg); setEditText(ctxMenu.msg.content); setCtxMenu(null) }}
@@ -1212,10 +1290,10 @@ function InfoTab({ lead, onUpdate, onOpenFull }: { lead: Lead; onUpdate: (l: Lea
       } else {
         // Single payment default: cuota_inicial = total
         payload.cuota_inicial = val
-        payload.monto_cuota   = 0
+        payload.monto_cuota = 0
       }
     } else if (field === 'num_cuotas') {
-      const h  = lead.honorarios || 0
+      const h = lead.honorarios || 0
       const nc = val
       // If cuota_inicial equals honorarios it was auto-filled, not manually set — reset it
       const autoFilled = lead.cuota_inicial === lead.honorarios
@@ -1224,7 +1302,7 @@ function InfoTab({ lead, onUpdate, onOpenFull }: { lead: Lead; onUpdate: (l: Lea
       payload.monto_cuota = h > 0 && nc > 0 ? Math.round((h - ci) / nc) : 0
     } else if (field === 'cuota_inicial') {
       // Manual change: recalculate monto_cuota
-      const h  = lead.honorarios || 0
+      const h = lead.honorarios || 0
       const nc = lead.num_cuotas || 1
       payload.monto_cuota = h > 0 && nc > 0 ? Math.round((h - val) / nc) : 0
     }
@@ -1253,29 +1331,29 @@ function InfoTab({ lead, onUpdate, onOpenFull }: { lead: Lead; onUpdate: (l: Lea
       {/* Contact section card */}
       <SectionHead>Contacto</SectionHead>
       <div className="rounded-xl border border-white/[0.09] bg-surface-0">
-        <EditableRow label="Nombre"    value={lead.contact?.name}        onSave={v => saveContact('name', v)}        placeholder="Nombre real del cliente" />
-        <EditableRow label="Teléfono"  value={lead.contact?.phone}       onSave={v => saveContact('phone', v)}       type="tel" placeholder="+56 9 1234 5678" />
-        <EditableRow label="Correo"    value={lead.contact?.email}       onSave={v => saveContact('email', v)}       type="email" placeholder="correo@email.com" />
-        <EditableRow label="RUT"       value={lead.contact?.rut_persona} onSave={v => saveContact('rut_persona', v)} placeholder="12.345.678-9" />
-        <EditableRow label="RUT Emp."  value={lead.contact?.rut_empresa} onSave={v => saveContact('rut_empresa', v)} placeholder="76.000.000-0" />
-        <EditableRow label="Empresa"   value={lead.contact?.razon_social} onSave={v => saveContact('razon_social', v)} placeholder="Razón social" />
-        <EditableRow label="Domicilio" value={lead.contact?.address}     onSave={v => saveContact('address', v)}    placeholder="Av. Principal 123" />
-        <EditableRow label="Comuna"    value={lead.contact?.city}        onSave={v => saveContact('city', v)}        placeholder="Providencia" />
+        <EditableRow label="Nombre" value={lead.contact?.name} onSave={v => saveContact('name', v)} placeholder="Nombre real del cliente" />
+        <EditableRow label="Teléfono" value={lead.contact?.phone} onSave={v => saveContact('phone', v)} type="tel" placeholder="+56 9 1234 5678" />
+        <EditableRow label="Correo" value={lead.contact?.email} onSave={v => saveContact('email', v)} type="email" placeholder="correo@email.com" />
+        <EditableRow label="RUT" value={lead.contact?.rut_persona} onSave={v => saveContact('rut_persona', v)} placeholder="12.345.678-9" transform={rutOnChange} />
+        <EditableRow label="RUT Emp." value={lead.contact?.rut_empresa} onSave={v => saveContact('rut_empresa', v)} placeholder="76.000.000-0" transform={rutOnChange} />
+        <EditableRow label="Empresa" value={lead.contact?.razon_social} onSave={v => saveContact('razon_social', v)} placeholder="Razón social" />
+        <EditableRow label="Domicilio" value={lead.contact?.address} onSave={v => saveContact('address', v)} placeholder="Av. Principal 123" />
+        <EditableRow label="Comuna" value={lead.contact?.city} onSave={v => saveContact('city', v)} placeholder="Providencia" />
       </div>
 
       {/* Lead section card */}
       <SectionHead>Expediente</SectionHead>
       <div className="rounded-xl border border-white/[0.09] bg-surface-0">
-        <DataRow label="Área"       value={lead.area?.name} />
+        <DataRow label="Área" value={lead.area?.name} />
         <EditableSelectRow label="Prioridad" value={lead.priority} onSave={v => saveLead('priority', v)}
-          options={[{ value: 'low', label: 'Baja' },{ value: 'normal', label: 'Normal' },{ value: 'high', label: 'Alta' }]} />
-        <DataRow label="Vendedor"   value={lead.vendedor?.name} />
-        <DataRow label="Agendadora" value={lead.agendadora?.name} />
+          options={[{ value: 'low', label: 'Baja' }, { value: 'normal', label: 'Normal' }, { value: 'high', label: 'Alta' }]} />
+        <DataRow label="Vendedor" value={lead.vendedor?.name} />
+        <DataRow label="Agendador/a" value={lead.agendadora?.name} />
         <EditableSelectRow label="Fuente" value={lead.source} onSave={v => saveLead('source', v)}
           options={[
-            { value: 'whatsapp', label: 'WhatsApp' },{ value: 'referido', label: 'Referido' },
-            { value: 'facebook', label: 'Facebook' },{ value: 'instagram', label: 'Instagram' },
-            { value: 'web', label: 'Sitio Web' },{ value: 'otro', label: 'Otro' },
+            { value: 'whatsapp', label: 'WhatsApp' }, { value: 'referido', label: 'Referido' },
+            { value: 'facebook', label: 'Facebook' }, { value: 'instagram', label: 'Instagram' },
+            { value: 'web', label: 'Sitio Web' }, { value: 'otro', label: 'Otro' },
           ]} />
         <DataRow label="Creado" value={format(new Date(lead.created_at), "d MMM yyyy", { locale: es })} />
       </div>
@@ -1283,17 +1361,17 @@ function InfoTab({ lead, onUpdate, onOpenFull }: { lead: Lead; onUpdate: (l: Lea
       {/* Honorarios section card */}
       <SectionHead>Honorarios</SectionHead>
       <div className="rounded-xl border border-white/[0.09] bg-surface-0">
-        <EditableRow label="Total"         value={lead.honorarios || ''}    onSave={v => saveLead('honorarios', v)}    type="number" placeholder="1200000" isMoney />
-        <EditableRow label="N° Cuotas"     value={lead.num_cuotas}          onSave={v => saveLead('num_cuotas', v)}    type="number" placeholder="1" />
-        <EditableRow label="Cuota inicial" value={lead.cuota_inicial || ''} onSave={v => saveLead('cuota_inicial', v)} type="number" placeholder="200000"  isMoney />
-        <EditableRow label="Monto cuota"   value={lead.monto_cuota || ''}   onSave={v => saveLead('monto_cuota', v)}   type="number" placeholder="200000"  isMoney />
+        <EditableRow label="Total" value={lead.honorarios || ''} onSave={v => saveLead('honorarios', v)} type="number" placeholder="1200000" isMoney />
+        <EditableRow label="N° Cuotas" value={lead.num_cuotas} onSave={v => saveLead('num_cuotas', v)} type="number" placeholder="1" />
+        <EditableRow label="Cuota inicial" value={lead.cuota_inicial || ''} onSave={v => saveLead('cuota_inicial', v)} type="number" placeholder="200000" isMoney />
+        <EditableRow label="Monto cuota" value={lead.monto_cuota || ''} onSave={v => saveLead('monto_cuota', v)} type="number" placeholder="200000" isMoney />
       </div>
 
       {/* Description + Notes */}
       <SectionHead>Descripción y Notas</SectionHead>
       <div className="rounded-xl border border-white/[0.09] bg-surface-0">
-        <EditableRow label="Descripción"    value={lead.service_description} onSave={v => saveLead('service_description', v)} placeholder="Ej: Liquidación concursal..." />
-        <EditableRow label="Notas internas" value={lead.notes}               onSave={v => saveLead('notes', v)}               placeholder="Ej: Cliente difícil, llamar tarde..." />
+        <EditableRow label="Descripción" value={lead.service_description} onSave={v => saveLead('service_description', v)} placeholder="Ej: Liquidación concursal..." />
+        <EditableRow label="Notas internas" value={lead.notes} onSave={v => saveLead('notes', v)} placeholder="Ej: Cliente difícil, llamar tarde..." />
       </div>
 
       {/* Integraciones externas */}
@@ -1351,16 +1429,16 @@ function InfoTab({ lead, onUpdate, onOpenFull }: { lead: Lead; onUpdate: (l: Lea
 
 // ── Historial Tab ─────────────────────────────────────────
 function HistorialTab({ lead, leadId }: { lead: Lead; leadId: number }) {
-  const [history, setHistory]   = useState<any[]>([])
+  const [history, setHistory] = useState<any[]>([])
   const [messages, setMessages] = useState<any[]>([])
-  const [loading, setLoading]   = useState(true)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     Promise.all([
       getLeadHistory(leadId),
       getWhatsAppMessages({ lead_id: leadId }),
     ]).then(([h, m]) => { setHistory(h); setMessages(m) })
-      .catch(() => {})
+      .catch(() => { })
       .finally(() => setLoading(false))
   }, [leadId])
 
@@ -1371,28 +1449,28 @@ function HistorialTab({ lead, leadId }: { lead: Lead; leadId: number }) {
   )
 
   const fmt = (n: number) => n > 0 ? `$${Math.round(n).toLocaleString('es-CL')}` : '—'
-  const daysIn  = Math.max(0, Math.floor((Date.now() - new Date(lead.created_at).getTime()) / 86400000))
-  const msgIn   = messages.filter(m => m.direction === 'in').length
-  const msgOut  = messages.filter(m => m.direction === 'out').length
+  const daysIn = Math.max(0, Math.floor((Date.now() - new Date(lead.created_at).getTime()) / 86400000))
+  const msgIn = messages.filter(m => m.direction === 'in').length
+  const msgOut = messages.filter(m => m.direction === 'out').length
   // messages come desc from API, so [0] is newest
   const lastMsg = messages[0] ?? null
-  const pv      = (lead as any).payment_verification
+  const pv = (lead as any).payment_verification
 
-  const RESULT_COLOR: Record<string, {bg:string;text:string;dot:string}> = {
-    success: {bg:'rgba(163,230,53,0.12)', text:'#a3e635', dot:'#a3e635'},
-    failed:  {bg:'rgba(239,68,68,0.12)',  text:'#ef4444', dot:'#ef4444'},
-    pending: {bg:'rgba(234,179,8,0.12)',  text:'#eab308', dot:'#eab308'},
-    manual:  {bg:'rgba(139,92,246,0.12)', text:'#a78bfa', dot:'#a78bfa'},
+  const RESULT_COLOR: Record<string, { bg: string; text: string; dot: string }> = {
+    success: { bg: 'rgba(163,230,53,0.12)', text: '#a3e635', dot: '#a3e635' },
+    failed: { bg: 'rgba(239,68,68,0.12)', text: '#ef4444', dot: '#ef4444' },
+    pending: { bg: 'rgba(234,179,8,0.12)', text: '#eab308', dot: '#eab308' },
+    manual: { bg: 'rgba(139,92,246,0.12)', text: '#a78bfa', dot: '#a78bfa' },
   }
-  const RESULT_LABEL: Record<string,string> = {
-    success:'Éxito', failed:'Falló', pending:'Pendiente', manual:'Manual',
+  const RESULT_LABEL: Record<string, string> = {
+    success: 'Éxito', failed: 'Falló', pending: 'Pendiente', manual: 'Manual',
   }
 
-  const PV_COLOR: Record<string,string> = {
-    pending:'#eab308', confirmed:'#a3e635', rejected:'#ef4444',
+  const PV_COLOR: Record<string, string> = {
+    pending: '#eab308', confirmed: '#a3e635', rejected: '#ef4444',
   }
-  const PV_LABEL: Record<string,string> = {
-    pending:'Pendiente verificación', confirmed:'Pago confirmado', rejected:'Rechazado',
+  const PV_LABEL: Record<string, string> = {
+    pending: 'Pendiente verificación', confirmed: 'Pago confirmado', rejected: 'Rechazado',
   }
 
   return (
@@ -1436,7 +1514,7 @@ function HistorialTab({ lead, leadId }: { lead: Lead; leadId: number }) {
           </p>
           {pv ? (
             <>
-              <p className="text-sm font-bold" style={{color: PV_COLOR[pv.status] ?? 'var(--text-2)'}}>
+              <p className="text-sm font-bold" style={{ color: PV_COLOR[pv.status] ?? 'var(--text-2)' }}>
                 {PV_LABEL[pv.status] ?? pv.status}
               </p>
               {pv.payment_amount && <p className="text-[11px] text-white/38 mt-0.5">{fmt(pv.payment_amount)}</p>}
@@ -1465,7 +1543,7 @@ function HistorialTab({ lead, leadId }: { lead: Lead; leadId: number }) {
                 {lead.agendadora.name.charAt(0)}
               </div>
               <div>
-                <p className="text-[10px] text-white/38">Agendadora</p>
+                <p className="text-[10px] text-white/38">Agendador/a</p>
                 <p className="text-xs font-semibold text-white/78">{lead.agendadora.name}</p>
               </div>
             </div>
@@ -1502,7 +1580,7 @@ function HistorialTab({ lead, leadId }: { lead: Lead; leadId: number }) {
             <div className="space-y-3">
               {/* Creación */}
               <div className="flex gap-3 items-start">
-                <div className="w-7 h-7 rounded-full bg-white/10 flex-shrink-0 flex items-center justify-center z-10 text-white/45" style={{fontSize:12}}>
+                <div className="w-7 h-7 rounded-full bg-white/10 flex-shrink-0 flex items-center justify-center z-10 text-white/45" style={{ fontSize: 12 }}>
                   ★
                 </div>
                 <div className="flex-1 pt-0.5 pb-1">
@@ -1515,22 +1593,22 @@ function HistorialTab({ lead, leadId }: { lead: Lead; leadId: number }) {
               </div>
 
               {history.map((h, i) => {
-                const rc = RESULT_COLOR[h.result] ?? {bg:'rgba(255,255,255,0.07)', text:'rgba(255,255,255,0.52)', dot:'rgba(255,255,255,0.30)'}
+                const rc = RESULT_COLOR[h.result] ?? { bg: 'rgba(255,255,255,0.07)', text: 'rgba(255,255,255,0.52)', dot: 'rgba(255,255,255,0.30)' }
                 // Duration at the previous stage
-                const prevTime = i === 0 ? new Date(lead.created_at) : new Date(history[i-1].created_at)
+                const prevTime = i === 0 ? new Date(lead.created_at) : new Date(history[i - 1].created_at)
                 const thisTime = new Date(h.created_at)
-                const durMins  = Math.round((thisTime.getTime() - prevTime.getTime()) / 60000)
+                const durMins = Math.round((thisTime.getTime() - prevTime.getTime()) / 60000)
                 const durLabel = durMins < 60
                   ? `${durMins}m`
                   : durMins < 1440
-                    ? `${Math.round(durMins/60)}h`
-                    : `${Math.round(durMins/1440)}d`
+                    ? `${Math.round(durMins / 60)}h`
+                    : `${Math.round(durMins / 1440)}d`
 
                 return (
                   <div key={h.id} className="flex gap-3 items-start">
                     {/* Dot */}
                     <div className="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center z-10 text-[10px] font-bold"
-                      style={{backgroundColor: rc.bg, color: rc.text}}>
+                      style={{ backgroundColor: rc.bg, color: rc.text }}>
                       {h.result === 'success' ? '✓' : h.result === 'failed' ? '✕' : h.result === 'manual' ? '↕' : '…'}
                     </div>
                     <div className="flex-1 min-w-0 pt-0.5">
@@ -1548,7 +1626,7 @@ function HistorialTab({ lead, leadId }: { lead: Lead; leadId: number }) {
                           {STAGE_LABELS[h.to_stage] ?? h.to_stage}
                         </span>
                         <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
-                          style={{backgroundColor: rc.bg, color: rc.text}}>
+                          style={{ backgroundColor: rc.bg, color: rc.text }}>
                           {RESULT_LABEL[h.result] ?? h.result ?? ''}
                         </span>
                         <span className="text-[10px] text-white/25 ml-1">({durLabel})</span>
@@ -1588,9 +1666,9 @@ function HistorialTab({ lead, leadId }: { lead: Lead; leadId: number }) {
 
 // ── Notas Tab ─────────────────────────────────────────────
 function NotasTab({ lead, onSaved }: { lead: Lead; onSaved: (l: Lead) => void }) {
-  const [notes, setNotes]   = useState(lead.notes ?? '')
+  const [notes, setNotes] = useState(lead.notes ?? '')
   const [saving, setSaving] = useState(false)
-  const [dirty, setDirty]   = useState(false)
+  const [dirty, setDirty] = useState(false)
 
   useEffect(() => { setNotes(lead.notes ?? ''); setDirty(false) }, [lead.id])
 
@@ -1627,12 +1705,12 @@ function NotasTab({ lead, onSaved }: { lead: Lead; onSaved: (l: Lead) => void })
 /* ── Agendar Tab ─────────────────────────────────────────── */
 function AgendarTab({ lead, onClose, onLeadUpdated }: { lead: Lead; onClose?: () => void; onLeadUpdated?: (l: Lead) => void }) {
   const navigate = useNavigate()
-  const [vendors, setVendors]           = useState<any[]>([])
-  const [saving, setSaving]             = useState(false)
+  const [vendors, setVendors] = useState<any[]>([])
+  const [saving, setSaving] = useState(false)
   const [vendorEvents, setVendorEvents] = useState<any[]>([])
-  const [loadingCal, setLoadingCal]     = useState(false)
+  const [loadingCal, setLoadingCal] = useState(false)
   const [calWeekStart, setCalWeekStart] = useState<Date>(() => {
-    const d = new Date(); d.setHours(0,0,0,0)
+    const d = new Date(); d.setHours(0, 0, 0, 0)
     d.setDate(d.getDate() - d.getDay() + 1) // Monday
     return d
   })
@@ -1650,7 +1728,7 @@ function AgendarTab({ lead, onClose, onLeadUpdated }: { lead: Lead; onClose?: ()
     getGroupVendors().then(vs => {
       setVendors(vs)
       if (vs.length) setForm(f => ({ ...f, assigned_to: vs[0].id.toString() }))
-    }).catch(() => {})
+    }).catch(() => { })
   }, [])
 
   // Load vendor calendar when vendor changes
@@ -1706,8 +1784,8 @@ function AgendarTab({ lead, onClose, onLeadUpdated }: { lead: Lead; onClose?: ()
   }
 
   const EVENT_TYPES = [
-    { value: 'reunion',     label: 'Reunión',     color: '#3B82F6' },
-    { value: 'llamada',     label: 'Llamada',     color: '#10B981' },
+    { value: 'reunion', label: 'Reunión', color: '#3B82F6' },
+    { value: 'llamada', label: 'Llamada', color: '#10B981' },
     { value: 'seguimiento', label: 'Seguimiento', color: '#F59E0B' },
   ]
 
@@ -1723,7 +1801,7 @@ function AgendarTab({ lead, onClose, onLeadUpdated }: { lead: Lead; onClose?: ()
     const dayStr = format(day, 'yyyy-MM-dd')
     return vendorEvents.filter(ev => {
       const start = new Date(ev.start_time)
-      const end   = new Date(ev.end_time)
+      const end = new Date(ev.end_time)
       const evDay = format(start, 'yyyy-MM-dd')
       return evDay === dayStr && start.getHours() <= hour && end.getHours() > hour
     })
@@ -1867,10 +1945,10 @@ function AgendarTab({ lead, onClose, onLeadUpdated }: { lead: Lead; onClose?: ()
                           background: hasEvent
                             ? 'rgba(67,97,238,0.08)'
                             : isPast
-                            ? 'rgba(26,32,53,0.04)'
-                            : isToday_
-                            ? 'rgba(67,97,238,0.03)'
-                            : 'transparent',
+                              ? 'rgba(26,32,53,0.04)'
+                              : isToday_
+                                ? 'rgba(67,97,238,0.03)'
+                                : 'transparent',
                           cursor: hasEvent || isPast ? 'default' : 'pointer',
                         }}
                         onMouseEnter={e => {
@@ -1932,11 +2010,10 @@ function AgendarTab({ lead, onClose, onLeadUpdated }: { lead: Lead; onClose?: ()
             {EVENT_TYPES.map(t => (
               <button key={t.value} type="button"
                 onClick={() => { set('event_type', t.value); set('color', t.color) }}
-                className={`px-2 py-2 rounded-xl border text-xs font-medium transition-all ${
-                  form.event_type === t.value
+                className={`px-2 py-2 rounded-xl border text-xs font-medium transition-all ${form.event_type === t.value
                     ? 'border-lime/40 bg-lime/10 text-lime'
                     : 'border-white/10 text-white/52 hover:border-white/20'
-                }`}>
+                  }`}>
                 {t.label}
               </button>
             ))}
@@ -1979,31 +2056,34 @@ const PAGE_SIZE = 80
 
 // ── Main ──────────────────────────────────────────────────
 export default function Leads() {
-  const { user }              = useAuthStore()
-  const [leads, setLeads]     = useState<Lead[]>([])
-  const [total, setTotal]     = useState(0)
-  const [page, setPage]       = useState(1)
-  const [pages, setPages]     = useState(1)
+  const { user } = useAuthStore()
+  const [leads, setLeads] = useState<Lead[]>([])
+  const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(1)
+  const [pages, setPages] = useState(1)
   const [loading, setLoading] = useState(true)
-  const [search, setSearch]   = useState('')
+  const [search, setSearch] = useState('')
   const [searchInput, setSearchInput] = useState('')
-  const [stageFilter, setStage]    = useState('')
+  const [stageFilter, setStage] = useState('')
   const [groupFilter, setGroupFilter] = useState('')
   const [showModal, setModal] = useState(false)
-  const [selected, setSelected]         = useState<Lead | null>(null)
-  const [activeTab, setActiveTab]       = useState<'info'|'chat'|'historial'|'notas'|'agendar'>('info')
-  const [configs, setConfigs]           = useState<any[]>([])
+  const [selected, setSelected] = useState<Lead | null>(null)
+  const [activeTab, setActiveTab] = useState<'info' | 'chat' | 'historial' | 'notas' | 'agendar'>('info')
+  const [configs, setConfigs] = useState<any[]>([])
   const [detailLeadId, setDetailLeadId] = useState<number | null>(null)
-  const searchTimer    = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const leadsSSERef    = useRef<EventSource | null>(null)
-  const leadsSSEReRef  = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const loadRef        = useRef<(p?: number) => Promise<void>>(async () => {})
-  const selContactRef  = useRef<number | null>(null)
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const leadsSSERef = useRef<EventSource | null>(null)
+  const leadsSSEReRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const leadsPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const loadRef = useRef<(p?: number) => Promise<void>>(async () => { })
+  const selContactRef = useRef<number | null>(null)
   const location = useLocation()
 
-  const canAdmin = !!(user?.role && ['superadmin','subadmin'].includes(user.role))
-  const isAdmin  = canAdmin
-  const canMove  = true
+  const canAdmin = !!(user?.role && ['superadmin', 'subadmin'].includes(user.role))
+  const isAdmin = canAdmin
+  const canMove = true
+  const canConfirmPago = !!(user?.role && ['admin', 'superadmin', 'vendedor'].includes(user.role))
+  const [moveTarget, setMoveTarget] = useState<string | null>(null)
   const [groups, setGroups] = useState<any[]>([])
 
   const buildParams = (p = page) => ({
@@ -2042,34 +2122,55 @@ export default function Leads() {
   useEffect(() => { loadRef.current = load }, [load])
   useEffect(() => { selContactRef.current = selected?.contact_id ?? null }, [selected])
 
-  // SSE: real-time lead list updates when WhatsApp messages arrive
+  // SSE: real-time lead list updates when WhatsApp messages arrive or history is synced
   useEffect(() => {
     const connect = () => {
       const token = localStorage.getItem('token')
       if (!token) return
       if (leadsSSERef.current) leadsSSERef.current.close()
-      const es = new EventSource(`/api/whatsapp/stream?token=${encodeURIComponent(token)}`)
+      const es = new EventSource(apiUrl(`/api/whatsapp/stream?token=${encodeURIComponent(token)}`))
       leadsSSERef.current = es
       es.onmessage = (e) => {
         let evt: any
         try { evt = JSON.parse(e.data) } catch { return }
+
+        // Full refresh triggered by history sync or manual broadcast
+        if (evt.type === 'refresh') {
+          loadRef.current(1)
+          return
+        }
+
         if (evt.type === 'new_message') {
           const cid = evt.contact_id as number
+          let isNew = false
+          let isActive = false
+
           setLeads(prev => {
             const exists = prev.some(l => l.contact_id === cid)
             if (!exists) {
-              // Unknown contact → may be a new lead, reload list
-              loadRef.current(1)
+              isNew = true
               return prev
             }
-            // Already viewing this chat → don't increment badge
-            if (selContactRef.current === cid) return prev
+            if (selContactRef.current === cid) {
+              isActive = true
+              return prev
+            }
             return prev.map(l =>
               l.contact_id === cid
                 ? { ...l, unread_count: (l.unread_count ?? 0) + 1 }
                 : l
             )
           })
+
+          setTimeout(() => {
+            if (isNew) {
+              playNewLeadSound()
+              // Wait a bit to ensure backend committed the new lead
+              setTimeout(() => loadRef.current(1), 1200)
+            } else if (!isActive) {
+              playMessageSound()
+            }
+          }, 10)
         }
       }
       es.onerror = () => {
@@ -2079,9 +2180,16 @@ export default function Leads() {
       }
     }
     connect()
+
+    // Fallback safety poll every 30s — catches missed SSE events and keeps data fresh
+    leadsPollRef.current = setInterval(() => {
+      loadRef.current(1)
+    }, 30000)
+
     return () => {
       if (leadsSSERef.current) { leadsSSERef.current.close(); leadsSSERef.current = null }
       if (leadsSSEReRef.current) clearTimeout(leadsSSEReRef.current)
+      if (leadsPollRef.current) clearInterval(leadsPollRef.current)
     }
   }, [])
 
@@ -2097,7 +2205,7 @@ export default function Leads() {
     } else {
       getLead(openLeadId).then(l => {
         if (l) { setSelected(l); setActiveTab('chat') }
-      }).catch(() => {})
+      }).catch(() => { })
     }
   }, [location.state])
 
@@ -2185,6 +2293,18 @@ export default function Leads() {
     setSelected(updated)
   }
 
+  const handleMove = async (stage: string) => {
+    if (!selected) return
+    try {
+      const updated = await moveLeadStage(selected.id, { stage })
+      handleLeadUpdated(updated)
+      toast.success(`Movido a ${STAGE_LABELS[stage] ?? stage}`)
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || 'Error al mover')
+    }
+    setMoveTarget(null)
+  }
+
   const clearContactUnread = useCallback((contactId: number) => {
     setLeads(prev => prev.map(l =>
       l.contact_id === contactId ? { ...l, unread_count: 0 } : l
@@ -2192,9 +2312,9 @@ export default function Leads() {
   }, [])
 
   const TABS = [
-    { key: 'info',    label: 'Info',    icon: Info },
-    { key: 'chat',    label: 'Chat',    icon: MessageSquare },
-    { key: 'notas',   label: 'Notas',   icon: StickyNote },
+    { key: 'info', label: 'Info', icon: Info },
+    { key: 'chat', label: 'Chat', icon: MessageSquare },
+    { key: 'notas', label: 'Notas', icon: StickyNote },
     { key: 'agendar', label: 'Agendar', icon: CalendarPlus },
   ] as const
 
@@ -2211,11 +2331,10 @@ export default function Leads() {
           <div className="flex items-center gap-3 flex-wrap">
             <h1 className="text-xl font-bold text-white">Leads</h1>
             {isAdmin && (
-              <span className={`text-sm font-bold px-3 py-1 rounded-xl border-2 ${
-                groupFilter
+              <span className={`text-sm font-bold px-3 py-1 rounded-xl border-2 ${groupFilter
                   ? 'bg-white/10 text-white border-white/20'
                   : 'bg-warn/10 text-warn border-warn/30'
-              }`}>
+                }`}>
                 {groupFilter
                   ? groups.find((g: any) => String(g.id) === groupFilter)?.name ?? 'Grupo'
                   : '⚠ Todos los grupos'}
@@ -2295,23 +2414,23 @@ export default function Leads() {
               const active = selected?.contact_id === lead.contact_id
 
               const STAGE_ACCENT: Record<string, { dot: string; badge: string; badgeText: string; border: string }> = {
-                lead:                 { dot: '#94a3b8', badge: '#f1f5f9',  badgeText: '#64748b',  border: '#94a3b8' },
-                reunion:              { dot: '#f59e0b', badge: '#fffbeb',  badgeText: '#d97706',  border: '#f59e0b' },
-                altamente_interesado: { dot: '#f59e0b', badge: '#fffbeb',  badgeText: '#d97706',  border: '#f59e0b' },
-                cierre:               { dot: '#4361ee', badge: '#eef2ff',  badgeText: '#4361ee',  border: '#4361ee' },
-                pago_comprometido:    { dot: '#22c55e', badge: '#f0fdf4',  badgeText: '#16a34a',  border: '#22c55e' },
-                pagado_confirmado:    { dot: '#22c55e', badge: '#f0fdf4',  badgeText: '#16a34a',  border: '#22c55e' },
-                recuperacion_lead:    { dot: '#ef4444', badge: '#fff1f2',  badgeText: '#dc2626',  border: '#ef4444' },
-                recuperacion_reunion: { dot: '#ef4444', badge: '#fff1f2',  badgeText: '#dc2626',  border: '#ef4444' },
-                recuperacion_cierre:  { dot: '#ef4444', badge: '#fff1f2',  badgeText: '#dc2626',  border: '#ef4444' },
+                lead: { dot: '#94a3b8', badge: '#f1f5f9', badgeText: '#64748b', border: '#94a3b8' },
+                reunion: { dot: '#f59e0b', badge: '#fffbeb', badgeText: '#d97706', border: '#f59e0b' },
+                altamente_interesado: { dot: '#f59e0b', badge: '#fffbeb', badgeText: '#d97706', border: '#f59e0b' },
+                cierre: { dot: '#4361ee', badge: '#eef2ff', badgeText: '#4361ee', border: '#4361ee' },
+                pago_comprometido: { dot: '#22c55e', badge: '#f0fdf4', badgeText: '#16a34a', border: '#22c55e' },
+                pagado_confirmado: { dot: '#22c55e', badge: '#f0fdf4', badgeText: '#16a34a', border: '#22c55e' },
+                recuperacion_lead: { dot: '#ef4444', badge: '#fff1f2', badgeText: '#dc2626', border: '#ef4444' },
+                recuperacion_reunion: { dot: '#ef4444', badge: '#fff1f2', badgeText: '#dc2626', border: '#ef4444' },
+                recuperacion_cierre: { dot: '#ef4444', badge: '#fff1f2', badgeText: '#dc2626', border: '#ef4444' },
               }
               const sa = STAGE_ACCENT[lead.current_stage] ?? { dot: '#94a3b8', badge: '#f1f5f9', badgeText: '#475569', border: '#94a3b8' }
               const hasUnread = group.some(l => (l.unread_count ?? 0) > 0)
 
               const Initial = lead.contact?.name?.trim()?.charAt(0)?.toUpperCase() ?? '?'
               const lastUpdate = lead.updated_at ?? lead.created_at
-              const daysSince  = lastUpdate ? Math.floor((Date.now() - new Date(lastUpdate + (lastUpdate.endsWith('Z') || lastUpdate.includes('+') ? '' : 'Z')).getTime()) / 86400000) : 0
-              const isCold     = daysSince >= 3
+              const daysSince = lastUpdate ? Math.floor((Date.now() - new Date(lastUpdate + (lastUpdate.endsWith('Z') || lastUpdate.includes('+') ? '' : 'Z')).getTime()) / 86400000) : 0
+              const isCold = daysSince >= 3
 
               const AVATAR_GRADIENTS = [
                 'linear-gradient(135deg, #4361ee 0%, #3a0ca3 100%)',
@@ -2338,16 +2457,20 @@ export default function Leads() {
                         ? (daysSince >= 5 ? '0 2px 8px rgba(239,68,68,0.12), 0 0 0 1px rgba(239,68,68,0.25)' : '0 2px 8px rgba(245,158,11,0.12), 0 0 0 1px rgba(245,158,11,0.25)')
                         : `0 2px 8px rgba(26,32,53,0.06), 0 0 0 1px ${sa.border}40`,
                   }}
-                  onMouseEnter={e => { if (!active) {
-                    const coldColor = daysSince >= 5 ? 'rgba(239,68,68,0.22)' : daysSince >= 3 ? 'rgba(245,158,11,0.22)' : `${sa.border}60`
-                    ;(e.currentTarget as HTMLElement).style.boxShadow = `0 6px 16px rgba(26,32,53,0.10), 0 0 0 2px ${coldColor}`
-                    ;(e.currentTarget as HTMLElement).style.transform = 'translateY(-2px)'
-                  }}}
-                  onMouseLeave={e => { if (!active) {
-                    const coldShadow = daysSince >= 5 ? '0 2px 8px rgba(239,68,68,0.12), 0 0 0 1px rgba(239,68,68,0.25)' : daysSince >= 3 ? '0 2px 8px rgba(245,158,11,0.12), 0 0 0 1px rgba(245,158,11,0.25)' : `0 2px 8px rgba(26,32,53,0.06), 0 0 0 1px ${sa.border}40`
-                    ;(e.currentTarget as HTMLElement).style.boxShadow = coldShadow
-                    ;(e.currentTarget as HTMLElement).style.transform = ''
-                  }}}
+                  onMouseEnter={e => {
+                    if (!active) {
+                      const coldColor = daysSince >= 5 ? 'rgba(239,68,68,0.22)' : daysSince >= 3 ? 'rgba(245,158,11,0.22)' : `${sa.border}60`
+                        ; (e.currentTarget as HTMLElement).style.boxShadow = `0 6px 16px rgba(26,32,53,0.10), 0 0 0 2px ${coldColor}`
+                        ; (e.currentTarget as HTMLElement).style.transform = 'translateY(-2px)'
+                    }
+                  }}
+                  onMouseLeave={e => {
+                    if (!active) {
+                      const coldShadow = daysSince >= 5 ? '0 2px 8px rgba(239,68,68,0.12), 0 0 0 1px rgba(239,68,68,0.25)' : daysSince >= 3 ? '0 2px 8px rgba(245,158,11,0.12), 0 0 0 1px rgba(245,158,11,0.25)' : `0 2px 8px rgba(26,32,53,0.06), 0 0 0 1px ${sa.border}40`
+                        ; (e.currentTarget as HTMLElement).style.boxShadow = coldShadow
+                        ; (e.currentTarget as HTMLElement).style.transform = ''
+                    }
+                  }}
                 >
                   {/* Delete button — admin/subadmin only, visible on hover */}
                   {isAdmin && (
@@ -2368,10 +2491,23 @@ export default function Leads() {
 
                     {/* Header: avatar + name + alert badge */}
                     <div className="flex items-start gap-3">
+                      {lead.contact?.avatar_url ? (
+                        <img
+                          src={lead.contact.avatar_url}
+                          alt={lead.contact.name}
+                          className="w-10 h-10 rounded-xl object-cover flex-shrink-0"
+                          style={{ boxShadow: '0 3px 10px rgba(0,0,0,0.18)' }}
+                          onError={e => {
+                            (e.currentTarget as HTMLImageElement).style.display = 'none';
+                            (e.currentTarget.nextElementSibling as HTMLElement).style.display = 'flex'
+                          }}
+                        />
+                      ) : null}
                       <div className="w-10 h-10 rounded-xl flex items-center justify-center font-black text-base flex-shrink-0 text-white"
                         style={{
                           background: active ? 'linear-gradient(135deg, #4361ee, #3a0ca3)' : avatarGrad,
                           boxShadow: '0 3px 10px rgba(0,0,0,0.18)',
+                          display: lead.contact?.avatar_url ? 'none' : 'flex',
                         }}>
                         {Initial}
                       </div>
@@ -2488,9 +2624,8 @@ export default function Leads() {
                     <button
                       key={p}
                       onClick={() => load(p as number)}
-                      className={`min-w-[30px] h-[30px] rounded-lg text-xs font-semibold transition-colors ${
-                        p === page ? 'bg-lime text-black' : 'border border-white/10 text-white/52 hover:text-white hover:bg-surface-2'
-                      }`}
+                      className={`min-w-[30px] h-[30px] rounded-lg text-xs font-semibold transition-colors ${p === page ? 'bg-lime text-black' : 'border border-white/10 text-white/52 hover:text-white hover:bg-surface-2'
+                        }`}
                     >{p}</button>
                   )
                 )}
@@ -2539,6 +2674,12 @@ export default function Leads() {
                     <span className={`w-1.5 h-1.5 rounded-full ${STAGE_DOT[selected.current_stage] ?? 'bg-white/30'}`} />
                     {STAGE_LABELS[selected.current_stage] ?? selected.current_stage}
                   </span>
+                  {selected.current_stage === 'cierre' && !selected.has_ot && (
+                    <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full"
+                      style={{ background: 'rgba(239,35,60,0.18)', color: '#ef233c', border: '1px solid rgba(239,35,60,0.35)' }}>
+                      <ClipboardList size={9} /> Sin OT
+                    </span>
+                  )}
                   {selected.area?.name && (
                     <span className="text-[11px] font-semibold text-white/50">{selected.area.name}</span>
                   )}
@@ -2558,6 +2699,28 @@ export default function Leads() {
                     onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(67,97,238,0.25)' }}
                     onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(67,97,238,0.15)' }}>
                     <Bot size={12} /> Atendido
+                  </button>
+                )}
+                {PREV_STAGE[selected.current_stage] && (
+                  <button
+                    onClick={() => setMoveTarget(PREV_STAGE[selected.current_stage])}
+                    className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-colors"
+                    style={{ background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.55)', border: '1px solid rgba(255,255,255,0.10)' }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.12)' }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.06)' }}
+                    title={`Retroceder a ${STAGE_LABELS[PREV_STAGE[selected.current_stage]]}`}>
+                    <ArrowLeft size={12} /> Retroceder
+                  </button>
+                )}
+                {NEXT_STAGE[selected.current_stage] && (
+                  <button
+                    onClick={() => setMoveTarget(NEXT_STAGE[selected.current_stage])}
+                    className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg transition-all"
+                    style={{ background: 'var(--primary)', color: '#fff', border: '1px solid rgba(67,97,238,0.5)', boxShadow: '0 2px 8px rgba(67,97,238,0.35)' }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.boxShadow = '0 4px 14px rgba(67,97,238,0.5)' }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.boxShadow = '0 2px 8px rgba(67,97,238,0.35)' }}
+                    title={`Avanzar a ${STAGE_LABELS[NEXT_STAGE[selected.current_stage]]}`}>
+                    <ArrowRight size={12} /> Avanzar
                   </button>
                 )}
                 <button
@@ -2581,11 +2744,10 @@ export default function Leads() {
                 {selectedContactLeads.map(l => (
                   <button key={l.id}
                     onClick={() => setSelected(l)}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold whitespace-nowrap transition-all flex-shrink-0 ${
-                      selected?.id === l.id
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold whitespace-nowrap transition-all flex-shrink-0 ${selected?.id === l.id
                         ? 'bg-white/10 text-white border border-white/20 shadow-sm'
                         : 'bg-surface-1 border border-white/[0.07] text-white/52 hover:border-white/15'
-                    }`}>
+                      }`}>
                     <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${STAGE_DOT[l.current_stage]}`} />
                     {l.area?.name ?? 'Sin área'}
                   </button>
@@ -2597,11 +2759,10 @@ export default function Leads() {
             <div className="flex border-b border-white/[0.07] px-3 flex-shrink-0" style={{ background: 'rgba(255,255,255,0.01)' }}>
               {TABS.map(({ key, label, icon: Icon }) => (
                 <button key={key} onClick={() => setActiveTab(key)}
-                  className={`flex items-center gap-1.5 px-4 py-3 text-xs font-bold border-b-2 transition-all ${
-                    activeTab === key
+                  className={`flex items-center gap-1.5 px-4 py-3 text-xs font-bold border-b-2 transition-all ${activeTab === key
                       ? 'border-lime text-white'
                       : 'border-transparent text-white/35 hover:text-white/60 hover:border-white/15'
-                  }`}>
+                    }`}>
                   <Icon size={13} />
                   {label}
                 </button>
@@ -2610,14 +2771,18 @@ export default function Leads() {
 
             {/* Tab content */}
             <div className={`flex-1 min-h-0 ${activeTab === 'chat' ? 'flex flex-col overflow-hidden' : 'overflow-y-auto'}`}>
-              {activeTab === 'info'      && <InfoTab lead={selected} onUpdate={handleLeadUpdated} onOpenFull={() => setDetailLeadId(selected.id)} />}
-              {activeTab === 'chat'      && <ChatTab lead={selected} configs={configs} onLeadUpdate={handleLeadUpdated} onClearUnread={clearContactUnread} />}
+              {activeTab === 'info' && <InfoTab lead={selected} onUpdate={handleLeadUpdated} onOpenFull={() => setDetailLeadId(selected.id)} />}
+              {activeTab === 'chat' && <ChatTab lead={selected} configs={configs} onLeadUpdate={handleLeadUpdated} onClearUnread={clearContactUnread} />}
               {activeTab === 'historial' && <HistorialTab lead={selected} leadId={selected.id} />}
-              {activeTab === 'notas'     && <NotasTab lead={selected} onSaved={handleLeadUpdated} />}
-              {activeTab === 'agendar'   && <AgendarTab lead={selected} onLeadUpdated={handleLeadUpdated} />}
+              {activeTab === 'notas' && <NotasTab lead={selected} onSaved={handleLeadUpdated} />}
+              {activeTab === 'agendar' && <AgendarTab lead={selected} onLeadUpdated={handleLeadUpdated} />}
             </div>
           </div>
         </>
+      )}
+
+      {moveTarget !== null && selected && (
+        <MoveLeadModal lead={selected} targetStage={moveTarget} labels={STAGE_LABELS} canConfirmPago={canConfirmPago} userRole={user?.role} onConfirm={handleMove} onClose={() => setMoveTarget(null)} />
       )}
 
       {showModal && (

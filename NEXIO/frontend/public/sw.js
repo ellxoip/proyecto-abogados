@@ -1,4 +1,4 @@
-const CACHE = 'crm-v2'
+const CACHE = 'crm-v3'
 const PRECACHE = ['/', '/index.html']
 
 self.addEventListener('install', e => {
@@ -39,7 +39,7 @@ self.addEventListener('fetch', e => {
           caches.open(CACHE).then(c => c.put(e.request, clone))
         }
         return res
-      })
+      }).catch(() => caches.match('/index.html') || Response.error())
     })
   )
 })

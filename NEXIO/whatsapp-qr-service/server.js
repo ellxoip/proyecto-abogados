@@ -14,6 +14,7 @@ const QRCode = require('qrcode')
 const axios = require('axios')
 const fs = require('fs')
 const path = require('path')
+const NodeCache = require('node-cache')
 
 const app = express()
 app.use(express.json({ limit: '10mb' }))
@@ -28,19 +29,65 @@ const MEDIA_DIR = path.join(__dirname, 'media')
 // status: 'connecting' | 'qr_ready' | 'connected' | 'disconnected' | 'logged_out'
 const sessions = new Map()
 
-// Per-session in-memory message store (last 500 msgs per session)
-// Used by getMessage() so Baileys can retry/confirm delivery properly
-function createMsgStore() {
-  const msgs = new Map() // key.id -> message object
+// Serialization helpers for Buffer round-tripping in msgstore.json
+const _REPLACER = (_k, v) => {
+  if (Buffer.isBuffer(v)) return { __buf__: v.toString('base64') }
+  if (typeof v === 'bigint') return v.toString()
+  return v
+}
+const _REVIVER = (_k, v) => {
+  if (v && typeof v === 'object' && typeof v.__buf__ === 'string') return Buffer.from(v.__buf__, 'base64')
+  return v
+}
+
+// Per-session persistent message store (last 5000 msgs per session)
+// Persisted to sessions/{sessionId}/msgstore.json so getMessage() works across restarts
+// (prevents "Esperando el mensaje" / pending-forever messages on recipient's phone)
+function createMsgStore(sessionId) {
+  const msgs = new Map()
+  const storePath = sessionId
+    ? path.join(SESSIONS_DIR, String(sessionId), 'msgstore.json')
+    : null
+  let saveTimer = null
+
+  if (storePath && fs.existsSync(storePath)) {
+    try {
+      const arr = JSON.parse(fs.readFileSync(storePath, 'utf8'), _REVIVER)
+      for (const { id, msg } of arr) {
+        if (id) msgs.set(id, msg)
+      }
+      console.log(`[QR] Session ${sessionId}: loaded ${msgs.size} msgs from persistent store`)
+    } catch (e) {
+      console.error(`[QR] Session ${sessionId}: msgstore load error:`, e.message)
+    }
+  }
+
+  const scheduleSave = () => {
+    if (!storePath) return
+    if (saveTimer) clearTimeout(saveTimer)
+    saveTimer = setTimeout(() => {
+      try {
+        const arr = Array.from(msgs.entries()).map(([id, msg]) => ({ id, msg }))
+        fs.writeFileSync(storePath, JSON.stringify(arr, _REPLACER))
+      } catch (e) {
+        console.error(`[QR] Session ${sessionId}: msgstore save error:`, e.message)
+      }
+    }, 3000)
+  }
+
   return {
     set(msg) {
+      if (!msg.key?.id) return
       msgs.set(msg.key.id, msg)
-      if (msgs.size > 500) {
+      if (msgs.size > 5000) {
         const oldest = msgs.keys().next().value
         msgs.delete(oldest)
       }
+      scheduleSave()
     },
     get(id) { return msgs.get(id) },
+    values() { return msgs.values() },
+    size() { return msgs.size },
   }
 }
 
@@ -65,6 +112,21 @@ async function notifyFastAPI(path, data) {
     await axios.post(`${FASTAPI_URL}${path}`, data, { timeout: 5000 })
   } catch (e) {
     console.error(`[QR] Failed to notify FastAPI at ${path}:`, e.message)
+  }
+}
+
+
+// Fetch WhatsApp profile picture for a JID and push to CRM (fire-and-forget)
+async function pushProfilePic(sock, jid) {
+  if (!sock || !jid) return
+  try {
+    const url = await sock.profilePictureUrl(jid, 'image')
+    if (!url) return
+    const phone = jid.replace('@s.whatsapp.net', '')
+    // Fire async, no await — never block message processing
+    notifyFastAPI('/api/webhooks/qr-contact-pic', { phone, avatar_url: url })
+  } catch {
+    // Contact has no pic or has blocked profile visibility — ignore silently
   }
 }
 
@@ -107,6 +169,11 @@ async function startSession(sessionId) {
   const { state, saveCreds } = await useMultiFileAuthState(sessionPath)
   const { version } = await fetchLatestBaileysVersion()
 
+  const session = sessions.get(sessionId) || { status: 'connecting', qr: null, phone: null, reconnectTimer: null, chats: [], msgStore: createMsgStore(sessionId), retryCache: new NodeCache() }
+  if (!session.msgStore) session.msgStore = createMsgStore(sessionId)
+  if (!session.retryCache) session.retryCache = new NodeCache()
+  sessions.set(sessionId, session)
+
   const sock = makeWASocket({
     version,
     auth: {
@@ -119,18 +186,17 @@ async function startSession(sessionId) {
     markOnlineOnConnect: true,
     syncFullHistory: false,
     generateHighQualityLinkPreview: false,
+    msgRetryCounterCache: session.retryCache,
+    retryRequestDelayMs: 5000,
     defaultQueryTimeoutMs: 60000,
     getMessage: async (key) => {
-      const stored = sessions.get(sessionId)?.msgStore?.get(key.id)
+      const stored = session.msgStore.get(key.id)
       return stored?.message || undefined
     },
   })
 
-  const session = sessions.get(sessionId) || { status: 'connecting', qr: null, phone: null, reconnectTimer: null, chats: [], msgStore: createMsgStore() }
-  if (!session.msgStore) session.msgStore = createMsgStore()
   session.sock = sock
   session.status = 'connecting'
-  sessions.set(sessionId, session)
 
   sock.ev.on('creds.update', saveCreds)
 
@@ -281,13 +347,57 @@ async function startSession(sessionId) {
     // 'notify' = real-time new message; 'append' = missed messages delivered after reconnection
     if (type !== 'notify' && type !== 'append') return
     for (const msg of messages) {
-      // Skip own messages
-      if (msg.key.fromMe) continue
       // Skip groups, broadcast, newsletter — but allow @s.whatsapp.net AND @lid (newer WA format)
       if (!msg.key.remoteJid) continue
       if (msg.key.remoteJid.endsWith('@g.us')) continue
       if (msg.key.remoteJid.endsWith('@broadcast')) continue
       if (msg.key.remoteJid.endsWith('@newsletter')) continue
+
+      // For our own outgoing messages (fromMe=true):
+      //   - If the message is already in msgStore it was sent via this QR service (already saved by backend) → skip
+      //   - Otherwise it was typed on the physical phone and the backend doesn't know about it → push it
+      if (msg.key.fromMe) {
+        const alreadySentByCRM = session.msgStore.get(msg.key.id)
+        if (alreadySentByCRM) continue
+        // Message sent from physical phone — push to backend as outgoing
+        const remoteJid = msg.key.remoteJid
+        const to = remoteJid.endsWith('@s.whatsapp.net')
+          ? remoteJid.replace('@s.whatsapp.net', '')
+          : null
+        if (!to) continue
+        const content =
+          msg.message?.conversation ||
+          msg.message?.extendedTextMessage?.text ||
+          msg.message?.imageMessage?.caption ||
+          msg.message?.videoMessage?.caption ||
+          msg.message?.documentMessage?.fileName ||
+          ''
+        const msgType = msg.message?.conversation || msg.message?.extendedTextMessage
+          ? 'text'
+          : msg.message?.imageMessage    ? 'image'
+          : msg.message?.audioMessage    ? 'audio'
+          : msg.message?.videoMessage    ? 'video'
+          : msg.message?.stickerMessage  ? 'sticker'
+          : msg.message?.documentMessage ? 'document'
+          : 'text'
+        let mediaUrl = null
+        if (msgType !== 'text') {
+          const saved = await saveMedia(msg, sock, sessionId)
+          if (saved) mediaUrl = saved.mediaUrl
+        }
+        console.log(`[QR] Session ${sessionId}: outgoing-from-phone to=${to} type=${msgType} id=${msg.key.id}`)
+        await notifyFastAPI('/api/webhooks/qr-incoming', {
+          session_id: String(sessionId),
+          from_phone: to,
+          content: content || '',
+          message_type: msgType,
+          media_url: mediaUrl,
+          message_id: msg.key.id,
+          timestamp: msg.messageTimestamp,
+          is_from_me: true,
+        })
+        continue
+      }
 
       // @lid JIDs carry the real phone in senderPn; @s.whatsapp.net carry it in remoteJid
       let from
@@ -333,6 +443,8 @@ async function startSession(sessionId) {
         timestamp: msg.messageTimestamp,
       })
       console.log(`[QR] Session ${sessionId}: webhook sent for ${from}`)
+      // Fetch and push profile picture async (non-blocking)
+      pushProfilePic(sock, msg.key.remoteJid)
     }
   })
 
@@ -378,6 +490,7 @@ async function startSession(sessionId) {
 
   sock.ev.on('messaging-history.set', async ({ messages }) => {
     if (!messages || messages.length === 0) return
+    const SIX_MONTHS_AGO_S = Math.floor(Date.now() / 1000) - 6 * 30 * 24 * 3600
     const toImport = []
     // Also collect unique contacts to push to CRM regardless of message content
     const historyContacts = []
@@ -390,6 +503,19 @@ async function startSession(sessionId) {
 
       const phone = msg.key.remoteJid.replace('@s.whatsapp.net', '')
       if (!/^\d{7,}$/.test(phone)) continue
+
+      // messageTimestamp can be a Long (protobuf) or a plain number
+      const ts = msg.messageTimestamp
+      const timestamp = ts && typeof ts === 'object' && ts.low !== undefined
+        ? ts.low + ts.high * 4294967296
+        : Number(ts) || null
+
+      // Skip messages older than 6 months
+      if (timestamp && timestamp < SIX_MONTHS_AGO_S) continue
+
+      // Cache in msgStore for delivery retry/confirmation
+      if (msg.key?.id && msg.message) session.msgStore.set(msg)
+
       historyContacts.push({ phone, name: msg.pushName || null })
 
       let from = phone
@@ -411,12 +537,6 @@ async function startSession(sessionId) {
         : msg.message?.documentMessage ? 'document'
         : null
       if (!msgType) continue
-
-      // messageTimestamp can be a Long (protobuf) or a plain number
-      const ts = msg.messageTimestamp
-      const timestamp = ts && typeof ts === 'object' && ts.low !== undefined
-        ? ts.low + ts.high * 4294967296
-        : Number(ts) || null
 
       toImport.push({
         from_phone: from,
@@ -505,8 +625,9 @@ app.post('/sessions/:sessionId/send', async (req, res) => {
   try {
     const jid = to.replace(/[^0-9]/g, '') + '@s.whatsapp.net'
     const result = await session.sock.sendMessage(jid, { text: message })
+    console.log('[QR] Send result:', JSON.stringify(result, null, 2))
     // Store the exact proto message Baileys sent so getMessage() can serve retries correctly
-    if (result?.key?.id && result?.message) {
+    if (result?.key?.id) {
       session.msgStore.set(result)
     }
     res.json({ status: 'sent', message_id: result?.key?.id || null })
@@ -545,6 +666,7 @@ app.post('/sessions/:sessionId/send-file', async (req, res) => {
     }
 
     const result = await session.sock.sendMessage(jid, msgPayload)
+    if (result?.key?.id) session.msgStore.set(result)
     res.json({ status: 'sent', message_id: result?.key?.id || null })
   } catch (e) {
     console.error(`[QR] Send-file error:`, e.message)
@@ -557,7 +679,7 @@ app.post('/sessions/:sessionId/send-file', async (req, res) => {
 app.post('/sessions/:sessionId/mark-read', async (req, res) => {
   const { sessionId } = req.params
   const { to, message_ids } = req.body
-  const session = sessions.get(Number(sessionId))
+  const session = sessions.get(sessionId)
   if (!session?.sock || session.status !== 'connected') {
     return res.status(400).json({ error: 'Session not connected' })
   }
@@ -620,6 +742,100 @@ app.post('/sessions/:sessionId/sync-chats', async (req, res) => {
   res.json({ ok: true, pushed: chats.length })
 })
 
+// Re-import all messages from in-memory msgStore into the CRM (full 6-month history sync)
+app.post('/sessions/:sessionId/sync-msgstore', async (req, res) => {
+  const { sessionId } = req.params
+  const session = sessions.get(sessionId)
+  if (!session) return res.status(404).json({ error: 'Session not found' })
+
+  const SIX_MONTHS_AGO_S = Math.floor(Date.now() / 1000) - 6 * 30 * 24 * 3600
+  const toImport = []
+
+  for (const msg of session.msgStore.values()) {
+    if (!msg.key?.remoteJid) continue
+    if (msg.key.remoteJid.endsWith('@g.us')) continue
+    if (msg.key.remoteJid.endsWith('@broadcast')) continue
+    if (!msg.key.remoteJid.endsWith('@s.whatsapp.net')) continue
+
+    const phone = msg.key.remoteJid.replace('@s.whatsapp.net', '')
+    if (!/^\d{7,}$/.test(phone)) continue
+
+    const ts = msg.messageTimestamp
+    const timestamp = ts && typeof ts === 'object' && ts.low !== undefined
+      ? ts.low + ts.high * 4294967296
+      : Number(ts) || null
+
+    if (timestamp && timestamp < SIX_MONTHS_AGO_S) continue
+
+    const isFromMe = !!msg.key.fromMe
+    const content =
+      msg.message?.conversation ||
+      msg.message?.extendedTextMessage?.text ||
+      msg.message?.imageMessage?.caption ||
+      msg.message?.videoMessage?.caption ||
+      msg.message?.documentMessage?.fileName ||
+      null
+
+    if (!content) continue
+
+    const msgType = msg.message?.conversation || msg.message?.extendedTextMessage
+      ? 'text'
+      : msg.message?.imageMessage ? 'image'
+      : msg.message?.audioMessage ? 'audio'
+      : msg.message?.videoMessage ? 'video'
+      : msg.message?.documentMessage ? 'document'
+      : null
+
+    if (!msgType) continue
+
+    toImport.push({
+      from_phone: phone,
+      is_from_me: isFromMe,
+      content,
+      message_type: msgType,
+      message_id: msg.key.id,
+      timestamp,
+    })
+  }
+
+  if (toImport.length > 0) {
+    // Split into batches of 500 to avoid timeouts
+    const BATCH = 500
+    for (let i = 0; i < toImport.length; i += BATCH) {
+      await notifyFastAPI('/api/webhooks/qr-history', {
+        session_id: String(sessionId),
+        messages: toImport.slice(i, i + BATCH),
+      })
+    }
+  }
+
+  // Fetch profile pictures for all unique contacts found (fire-and-forget, staggered)
+  const uniquePhones = [...new Set(toImport.map(m => m.from_phone))]
+  for (let i = 0; i < uniquePhones.length; i++) {
+    const phone = uniquePhones[i]
+    const jid = phone + '@s.whatsapp.net'
+    // Stagger requests 300ms apart to avoid WA rate-limiting
+    setTimeout(() => pushProfilePic(session.sock, jid), i * 300)
+  }
+
+  console.log(`[QR] Session ${sessionId}: sync-msgstore pushed ${toImport.length} messages, fetching pics for ${uniquePhones.length} contacts`)
+  res.json({ ok: true, pushed: toImport.length })
+})
+
+// Send typing presence to a contact (composing / paused)
+app.post('/sessions/:sessionId/presence', async (req, res) => {
+  const { sessionId } = req.params
+  const { jid, type } = req.body  // type: 'composing' | 'paused'
+  const session = sessions.get(sessionId)
+  if (!session || session.status !== 'connected') return res.status(404).json({ error: 'Session not connected' })
+  try {
+    await session.sock.sendPresenceUpdate(type || 'composing', jid)
+    res.json({ ok: true })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
 // Health check
 app.get('/health', (_, res) => res.json({ ok: true, sessions: sessions.size }))
 
@@ -635,7 +851,7 @@ async function restorePersistedSessions() {
     if (!fs.statSync(p).isDirectory()) continue
     if (fs.readdirSync(p).length === 0) continue
     console.log(`[QR] Restoring session: ${dir}`)
-    sessions.set(dir, { status: 'connecting', qr: null, phone: null, reconnectTimer: null })
+    sessions.set(dir, { status: 'connecting', qr: null, phone: null, reconnectTimer: null, chats: [] })
     try {
       await startSession(dir)
     } catch (e) {

@@ -154,7 +154,7 @@ def build_lead_pdf(lead: models.Lead) -> BytesIO:
     service_rows = [
         ["Área Legal:",   lead.area.name if lead.area else "—"],
         ["Vendedor:",     lead.vendedor.name  if lead.vendedor  else "—"],
-        ["Agendadora:",   lead.agendadora.name if lead.agendadora else "—"],
+        ["Agendador/a:",  lead.agendadora.name if lead.agendadora else "—"],
         ["Fuente:",       (lead.source or "—").capitalize()],
     ]
     if lead.service_description:

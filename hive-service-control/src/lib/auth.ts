@@ -2,9 +2,11 @@ import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { Role } from "@/lib/db-enums";
+import { normalizeEmail, normalizeRut } from "@/lib/identity";
 // Auth bootstrap legitimately needs direct DB access: RLS depends on a
 // session, but here we are establishing one. Allowlisted in .eslintrc.
 import { _prisma } from "@/lib/db/_client";
+import { verifyMagicLink } from "@/lib/magic-link";
 
 const ANTI_ENUMERATION_DELAY_MS = 1500;
 
@@ -21,18 +23,28 @@ type VerifiedUser = {
  * autenticado o `null` si falla, escribe el audit log correspondiente y
  * aplica el delay anti-enumeración cuando el lookup falla.
  *
+ * El primer campo (`rawIdentifier`) acepta email O RUT — los clientes que
+ * vienen desde fc/PagaCuotas solo conocen su RUT (es lo que reciben por
+ * WhatsApp con la clave), pero el staff sigue ingresando con email.
+ *
  * Extraído como función pura para poder testearlo sin levantar NextAuth.
  */
 export async function verifyCredentials(
-  rawEmail: unknown,
+  rawIdentifier: unknown,
   rawPassword: unknown,
   opts: { skipDelay?: boolean } = {},
 ): Promise<VerifiedUser | null> {
-  const email = String(rawEmail ?? "").trim().toLowerCase();
+  const identifier = String(rawIdentifier ?? "").trim();
   const password = String(rawPassword ?? "");
-  if (!email || !password) return null;
+  if (!identifier || !password) return null;
 
-  const user = await _prisma.user.findUnique({ where: { email } });
+  const looksLikeEmail = identifier.includes("@");
+  const email = looksLikeEmail ? normalizeEmail(identifier) : "";
+  const rut = looksLikeEmail ? "" : normalizeRut(identifier);
+
+  const user = looksLikeEmail
+    ? await _prisma.user.findUnique({ where: { email } })
+    : await _prisma.user.findFirst({ where: { rut } });
   if (!user || !user.active) {
     if (!opts.skipDelay) {
       await new Promise((resolve) => setTimeout(resolve, ANTI_ENUMERATION_DELAY_MS));
@@ -47,7 +59,7 @@ export async function verifyCredentials(
         action: "LOGIN_FAILED",
         actorId: user.id,
         channel: "system",
-        message: `Intento de acceso fallido para ${email}`,
+        message: `Intento de acceso fallido para ${looksLikeEmail ? email : `RUT ${rut}`}`,
         status: "failed",
       },
     });
@@ -62,7 +74,7 @@ export async function verifyCredentials(
       action: "LOGIN_SUCCESS",
       actorId: user.id,
       channel: "system",
-      message: `Acceso exitoso al sistema. Rol: ${user.role}`,
+      message: `Acceso exitoso al sistema. Rol: ${user.role}${looksLikeEmail ? "" : " (login por RUT)"}`,
       status: "ok",
     },
   });
@@ -90,6 +102,40 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       },
       authorize: async (credentials) => {
         return verifyCredentials(credentials?.email, credentials?.password);
+      },
+    }),
+    Credentials({
+      id: "magic-link",
+      name: "magic-link",
+      credentials: {
+        token: { type: "text" },
+      },
+      authorize: async (credentials) => {
+        const token = String(credentials?.token ?? "");
+        const userId = verifyMagicLink(token);
+        if (!userId) return null;
+
+        const user = await _prisma.user.findUnique({ where: { id: userId } });
+        if (!user || !user.active) return null;
+        if (user.role !== Role.CLIENTE) return null;
+
+        await _prisma.auditLog.create({
+          data: {
+            action: "LOGIN_SUCCESS",
+            actorId: user.id,
+            channel: "system",
+            message: "Acceso por magic-link desde PagaCuotas post-pago.",
+            status: "ok",
+          },
+        });
+
+        return {
+          id: user.id,
+          email: user.email,
+          name: user.fullName,
+          role: user.role,
+          mustChangePassword: user.mustChangePassword,
+        };
       },
     }),
   ],

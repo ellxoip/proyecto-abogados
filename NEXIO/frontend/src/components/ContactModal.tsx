@@ -3,6 +3,7 @@ import { createContact } from '../api'
 import { useAuthStore } from '../store/auth'
 import toast from 'react-hot-toast'
 import { X, User } from 'lucide-react'
+import { rutOnChange } from '../utils/rut'
 
 interface Props { onClose: () => void; onSuccess: (c: any) => void }
 
@@ -62,7 +63,7 @@ export default function ContactModal({ onClose, onSuccess }: Props) {
             </Field>
             <Field label="RUT del Cliente">
               <input className="input" value={form.rut_persona}
-                onChange={e => set('rut_persona', e.target.value)} placeholder="15.489.296-6" />
+                onChange={e => set('rut_persona', rutOnChange(e.target.value))} placeholder="15.489.296-6" />
             </Field>
             <Field label="Email">
               <input type="email" className="input" value={form.email}
@@ -75,7 +76,7 @@ export default function ContactModal({ onClose, onSuccess }: Props) {
             <div className="grid grid-cols-2 gap-4">
               <Field label="RUT de la Empresa">
                 <input className="input" value={form.rut_empresa}
-                  onChange={e => set('rut_empresa', e.target.value)} placeholder="76.585.063-0" />
+                  onChange={e => set('rut_empresa', rutOnChange(e.target.value))} placeholder="76.585.063-0" />
               </Field>
               <Field label="Ciudad">
                 <input className="input" value={form.city}

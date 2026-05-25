@@ -77,8 +77,17 @@ def get_group_vendors(
 ):
     if current_user.role not in ("agendadora", "superadmin", "subadmin") or not current_user.group_id:
         return []
+    my_group = db.query(models.Group).filter(models.Group.id == current_user.group_id).first()
+    if not my_group:
+        return []
+    # For root-level users (superadmin/subadmin in the negocio group), include all sub-groups
+    if my_group.negocio_id is None and current_user.role in ("superadmin", "subadmin"):
+        sub_gids = [g.id for g in db.query(models.Group).filter(models.Group.negocio_id == my_group.id).all()]
+        group_ids = [my_group.id] + sub_gids
+    else:
+        group_ids = [current_user.group_id]
     users = db.query(models.User).filter(
-        models.User.group_id == current_user.group_id,
+        models.User.group_id.in_(group_ids),
         models.User.role.in_(["vendedor", "verificador", "subadmin"]),
         models.User.is_active == True,
     ).all()
@@ -205,6 +214,14 @@ def get_vendor_pipeline(
 
     result = {"espera_cliente": [], "sin_exito": [], "altamente_interesado": [], "no_show": [], "historial": [],
               "cierre": cierre_leads, "pago_comprometido": pago_leads}
+
+    def _contact_key(value: str | None):
+        if not value:
+            return None
+        digits = "".join(ch for ch in value if ch.isdigit())
+        return digits or None
+
+    seen_active_keys: set[tuple[str, int | str]] = set()
     for ev in events:
         status = ev.vendor_status or "espera_cliente"
 
@@ -229,10 +246,47 @@ def get_vendor_pipeline(
             "creator_name": ev.creator.name if ev.creator else None,
         }
 
+        dedupe_keys: list[tuple[str, int | str]] = []
+        if ev.lead_id:
+            dedupe_keys.append(("lead", ev.lead_id))
+        contact_key = _contact_key(entry["contact_phone"])
+        if contact_key:
+            dedupe_keys.append(("phone", contact_key))
+
+        # The vendor pipeline represents the current state of each lead/contact.
+        # Events are ordered newest first, so older attempts for the same case go
+        # to history instead of appearing as duplicate cards in another column.
+        if dedupe_keys and any(key in seen_active_keys for key in dedupe_keys):
+            result["historial"].append(entry)
+            continue
+        seen_active_keys.update(dedupe_keys)
+
         if is_resolved and is_old:
             result["historial"].append(entry)
         elif status in result:
             result[status].append(entry)
+
+    # If a lead/contact has a new active event in espera_cliente, move its old
+    # resolved events (no_show/sin_exito) to historial so they don't duplicate.
+    active_lead_ids = {e["lead_id"] for e in result["espera_cliente"] if e.get("lead_id")}
+    active_contact_keys = {
+        key for key in (_contact_key(e.get("contact_phone")) for e in result["espera_cliente"])
+        if key
+    }
+    for bucket in ("no_show", "sin_exito"):
+        keep, archive = [], []
+        for e in result[bucket]:
+            contact_key = _contact_key(e.get("contact_phone"))
+            has_active_reunion = (
+                e.get("lead_id") in active_lead_ids
+                or (contact_key is not None and contact_key in active_contact_keys)
+            )
+            if has_active_reunion:
+                archive.append(e)
+            else:
+                keep.append(e)
+        result[bucket] = keep
+        result["historial"].extend(archive)
 
     return result
 
@@ -510,7 +564,6 @@ def delete_event(
     event = db.query(models.CalendarEvent).filter(models.CalendarEvent.id == event_id).first()
     if not event:
         raise HTTPException(status_code=404, detail="Evento no encontrado")
-    db.query(models.Notification).filter(models.Notification.event_id == event_id).delete(synchronize_session=False)
     db.delete(event)
     db.commit()
     return {"ok": True}

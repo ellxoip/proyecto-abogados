@@ -12,7 +12,7 @@ import mimetypes
 from datetime import datetime, timezone
 from ..database import get_db
 from .. import models, schemas
-from ..auth import get_current_user, get_visible_group_ids, SECRET_KEY, ALGORITHM
+from ..auth import get_current_user, get_visible_group_ids, require_roles, SECRET_KEY, ALGORITHM
 from ..broadcaster import wa_broadcaster
 
 UPLOADS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../uploads"))
@@ -321,6 +321,24 @@ async def send_message(
     db.add(msg)
     db.commit()
     db.refresh(msg)
+
+    await wa_broadcaster.broadcast("new_message", {
+        "contact_id": msg.contact_id,
+        "message": {
+            "id": msg.id,
+            "contact_id": msg.contact_id,
+            "lead_id": msg.lead_id,
+            "whatsapp_config_id": msg.whatsapp_config_id,
+            "direction": msg.direction,
+            "message_type": msg.message_type,
+            "content": msg.content,
+            "media_url": msg.media_url,
+            "status": msg.status,
+            "is_read": msg.is_read,
+            "created_at": msg.created_at.isoformat() if msg.created_at else None,
+        },
+    })
+
     return msg
 
 
@@ -455,6 +473,7 @@ def get_conversations(
                 "id": contact.id,
                 "name": contact.name,
                 "phone": contact.phone,
+                "avatar_url": contact.avatar_url,
             },
             "last_message": last_msg.content if last_msg else "",
             "last_message_at": last_at.isoformat() if last_at else None,
@@ -465,6 +484,36 @@ def get_conversations(
         })
 
     return result
+
+
+@router.post("/messages/{message_id}/retry", response_model=schemas.WhatsAppMessageOut)
+async def retry_message(
+    message_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Re-send a 'logged' (unsent) outgoing message via the QR service."""
+    msg = db.query(models.WhatsAppMessage).filter(
+        models.WhatsAppMessage.id == message_id,
+        models.WhatsAppMessage.direction == "out",
+        models.WhatsAppMessage.status == "logged",
+    ).first()
+    if not msg:
+        raise HTTPException(status_code=404, detail="Mensaje no encontrado o no está en estado 'logged'")
+
+    contact = db.query(models.Contact).filter(models.Contact.id == msg.contact_id).first()
+    config = db.query(models.WhatsAppConfig).filter(models.WhatsAppConfig.id == msg.whatsapp_config_id).first()
+    if not contact or not config:
+        raise HTTPException(status_code=404, detail="Contacto o configuración no encontrada")
+
+    result = await send_whatsapp_api(config, contact.phone, msg.content)
+    if result["status"] != "logged":
+        msg.status = result["status"]
+        msg.message_id = result.get("message_id")
+        db.commit()
+        db.refresh(msg)
+
+    return msg
 
 
 @router.delete("/messages/{message_id}")
@@ -573,5 +622,72 @@ async def sync_chats(
             resp = await client.post(f"{QR_SERVICE_URL}/sessions/{config_id}/sync-chats")
             data = resp.json()
         return {"ok": True, "pushed": data.get("pushed", 0)}
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+
+@router.post("/typing")
+async def send_typing(
+    data: dict,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Send composing/paused presence to a contact so they see 'Escribiendo...'"""
+    config_id = data.get("config_id")
+    contact_id = data.get("contact_id")
+    typing = data.get("typing", True)
+    if not config_id or not contact_id:
+        raise HTTPException(status_code=400, detail="config_id y contact_id requeridos")
+    cfg = db.query(models.WhatsAppConfig).filter(
+        models.WhatsAppConfig.id == config_id,
+        models.WhatsAppConfig.api_provider == "qr",
+    ).first()
+    if not cfg:
+        return {"ok": False}
+    contact = db.query(models.Contact).filter(models.Contact.id == contact_id).first()
+    if not contact:
+        return {"ok": False}
+    phone = contact.phone.lstrip("+")
+    jid = f"{phone}@s.whatsapp.net"
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            await client.post(
+                f"{QR_SERVICE_URL}/sessions/{config_id}/presence",
+                json={"jid": jid, "type": "composing" if typing else "paused"},
+            )
+        return {"ok": True}
+    except Exception:
+        return {"ok": False}
+
+
+@router.post("/sync-full-history/{config_id}")
+async def sync_full_history(
+    config_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_roles("superadmin", "subadmin")),
+):
+    """Full history sync: re-import all messages from the QR service msgStore (up to 6 months)
+    and push all known contacts. Broadcasts a refresh event when done."""
+    cfg = db.query(models.WhatsAppConfig).filter(
+        models.WhatsAppConfig.id == config_id,
+        models.WhatsAppConfig.api_provider == "qr",
+    ).first()
+    if not cfg:
+        raise HTTPException(status_code=404, detail="Config no encontrada")
+    try:
+        async with httpx.AsyncClient(timeout=120) as client:
+            # 1) Push contact stubs (chats.upsert cache)
+            chats_resp = await client.post(f"{QR_SERVICE_URL}/sessions/{config_id}/sync-chats")
+            chats_data = chats_resp.json()
+            # 2) Re-import all messages from in-memory msgStore
+            msgs_resp = await client.post(f"{QR_SERVICE_URL}/sessions/{config_id}/sync-msgstore")
+            msgs_data = msgs_resp.json()
+        # Fire a final refresh so all clients update immediately
+        await wa_broadcaster.broadcast("refresh", {})
+        return {
+            "ok": True,
+            "contacts_pushed": chats_data.get("pushed", 0),
+            "messages_pushed": msgs_data.get("pushed", 0),
+        }
     except Exception as e:
         raise HTTPException(status_code=503, detail=str(e))

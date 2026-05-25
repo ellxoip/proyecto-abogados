@@ -27,6 +27,7 @@ interface DbMessageSummary {
   type: string;
   createdAt: string;
   isMine: boolean;
+  isUnread?: boolean;
 }
 
 const NOTIF_ICONS: Record<string, React.ElementType> = {
@@ -37,12 +38,30 @@ const NOTIF_ICONS: Record<string, React.ElementType> = {
   default: Bell,
 };
 
+const headerIconButtonStyle = {
+  color: "var(--sidebar-bg)",
+  background: "rgba(38, 35, 92, 0.06)",
+  border: "1px solid rgba(38, 35, 92, 0.14)",
+};
+
+const headerIconButtonActiveStyle = {
+  color: "#FFFFFF",
+  background: "linear-gradient(180deg, var(--sidebar-bg) 0%, var(--sidebar-deep) 100%)",
+  border: "1px solid rgba(201, 168, 76, 0.45)",
+  boxShadow: "0 10px 20px -14px rgba(38, 35, 92, 0.8)",
+};
+
+const headerPanelLinkStyle = {
+  color: "var(--sidebar-bg)",
+};
+
 interface ModernHeaderProps {
   userName: string;
   userRole: string;
+  isSuperAdmin?: boolean;
 }
 
-export function ModernHeader({ userName, userRole }: ModernHeaderProps) {
+export function ModernHeader({ userName, userRole, isSuperAdmin = false }: ModernHeaderProps) {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showMessages, setShowMessages] = useState(false);
@@ -76,7 +95,12 @@ export function ModernHeader({ userName, userRole }: ModernHeaderProps) {
       fetchNotifications();
       fetchMessages();
     }, 60_000);
-    return () => clearInterval(interval);
+    const onUnreadChange = () => fetchMessages();
+    window.addEventListener("messenger:unread-changed", onUnreadChange);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("messenger:unread-changed", onUnreadChange);
+    };
   }, [fetchNotifications, fetchMessages]);
 
   async function markRead(id?: string) {
@@ -95,7 +119,7 @@ export function ModernHeader({ userName, userRole }: ModernHeaderProps) {
   }
 
   const unreadCount = notifications.filter((n) => !n.read).length;
-  const messageUnreadCount = messageSummaries.filter((m) => !m.isMine).length;
+  const messageUnreadCount = messageSummaries.filter((m) => m.isUnread ?? !m.isMine).length;
 
   return (
     <header
@@ -140,7 +164,7 @@ export function ModernHeader({ userName, userRole }: ModernHeaderProps) {
         <button
           aria-label="Buscar"
           className="sm:hidden btn-ghost p-2 rounded-lg"
-          style={{ color: "#FFFFFF" }}
+          style={headerIconButtonStyle}
         >
           <Search size={20} />
         </button>
@@ -154,7 +178,7 @@ export function ModernHeader({ userName, userRole }: ModernHeaderProps) {
                 setShowUserMenu(false);
               }}
               className="relative btn-ghost p-2 rounded-lg"
-              style={{ color: "#FFFFFF" }}
+              style={showNotifications ? headerIconButtonActiveStyle : headerIconButtonStyle}
               aria-label="Notificaciones"
             >
               <Bell size={20} />
@@ -188,7 +212,7 @@ export function ModernHeader({ userName, userRole }: ModernHeaderProps) {
                     <button
                       onClick={() => markRead()}
                       className="text-[10px] font-bold uppercase tracking-wide"
-                      style={{ color: "#FFFFFF" }}
+                      style={headerPanelLinkStyle}
                     >
                       Marcar todas como leídas
                     </button>
@@ -242,11 +266,13 @@ export function ModernHeader({ userName, userRole }: ModernHeaderProps) {
                     })
                   )}
                 </div>
-                <div className="px-4 py-3 text-center border-t" style={{ borderColor: "var(--border-glass)" }}>
-                  <a href="/admin/productividad" className="text-xs font-semibold" style={{ color: "#FFFFFF" }}>
-                    Ver dashboard de productividad →
-                  </a>
-                </div>
+                {isSuperAdmin && (
+                  <div className="px-4 py-3 text-center border-t" style={{ borderColor: "var(--border-glass)" }}>
+                    <a href="/admin/productividad" className="text-xs font-semibold" style={headerPanelLinkStyle}>
+                      Ver dashboard de productividad →
+                    </a>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -259,7 +285,7 @@ export function ModernHeader({ userName, userRole }: ModernHeaderProps) {
                 setShowUserMenu(false);
               }}
               className="relative btn-ghost p-2 rounded-lg"
-              style={{ color: "#FFFFFF" }}
+              style={showMessages ? headerIconButtonActiveStyle : headerIconButtonStyle}
               aria-label="Mensajes"
             >
               <MessageSquare size={20} />
@@ -345,10 +371,10 @@ export function ModernHeader({ userName, userRole }: ModernHeaderProps) {
                   className="px-4 py-3 text-center border-t flex items-center justify-between"
                   style={{ borderColor: "var(--border-glass)" }}
                 >
-                  <Link href="/admin/mensajeria" className="text-xs font-semibold" style={{ color: "#FFFFFF" }} onClick={() => setShowMessages(false)}>
+                  <Link href="/admin/mensajeria" className="text-xs font-semibold" style={headerPanelLinkStyle} onClick={() => setShowMessages(false)}>
                     Abrir centro de mensajería
                   </Link>
-                  <Link href="/admin/bandeja" className="text-xs font-semibold" style={{ color: "#FFFFFF" }} onClick={() => setShowMessages(false)}>
+                  <Link href="/admin/bandeja" className="text-xs font-semibold" style={headerPanelLinkStyle} onClick={() => setShowMessages(false)}>
                     Bandeja
                   </Link>
                 </div>

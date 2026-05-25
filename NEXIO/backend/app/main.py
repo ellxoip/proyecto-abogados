@@ -1,7 +1,8 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent / ".env")
@@ -16,9 +17,10 @@ if hasattr(time, 'tzset'):
 from sqlalchemy import text
 from .database import engine
 from . import models
-from .routers import auth, users, groups, contacts, leads, payments, calendar, notifications, whatsapp, pdf, webhooks, settings, tecnico, google_calendar, push, whatsapp_qr, whatsapp_sessions, at_informa_integration, legal_finance_integration, pagacuotas_router, ai_agents, pipeline_stages, work_orders
+from .routers import auth, users, groups, contacts, leads, payments, calendar, notifications, whatsapp, pdf, webhooks, settings, tecnico, google_calendar, push, whatsapp_qr, whatsapp_sessions, at_informa_integration, legal_finance_integration, pagacuotas_router, ai_agents, pipeline_stages, work_orders, security
 from .seed import seed
 from .auth import hash_password
+from .broadcaster import wa_broadcaster
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
@@ -27,12 +29,30 @@ app = FastAPI(
     version="1.0.0",
 )
 
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """ISO 27001 A.14.1.3 — HTTP security headers on every response."""
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+        return response
+
+
+app.add_middleware(SecurityHeadersMiddleware)
+
+# ISO 27001 A.13.1 — CORS restricted to configured origins
+_raw_origins = os.getenv("ALLOWED_ORIGINS", "*")
+_allowed_origins = [o.strip() for o in _raw_origins.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=_allowed_origins,
+    allow_credentials=_raw_origins != "*",
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept"],
 )
 
 app.include_router(auth.router)
@@ -60,6 +80,7 @@ app.include_router(pagacuotas_router.public_router)
 app.include_router(ai_agents.router)
 app.include_router(work_orders.router)
 app.include_router(pipeline_stages.router)
+app.include_router(security.router)
 
 
 def _ensure_tecnico():
@@ -85,7 +106,10 @@ def _ensure_tecnico():
 
 
 def _run_migrations():
-    """Add new columns and indexes without dropping data."""
+    """SQLite-only: patch columns/tables on existing DBs. PostgreSQL uses create_all()."""
+    from .database import _is_sqlite
+    if not _is_sqlite:
+        return
     with engine.connect() as conn:
         # Recreate whatsapp_configs with nullable group_id if needed
         # Check if group_id is NOT NULL
@@ -171,6 +195,8 @@ def _run_migrations():
             "ALTER TABLE leads ADD COLUMN pagacuotas_link VARCHAR(500)",
             "ALTER TABLE leads ADD COLUMN hive_service_case_id VARCHAR(100)",
             "ALTER TABLE leads ADD COLUMN hive_service_status VARCHAR(30)",
+            "ALTER TABLE groups ADD COLUMN plan VARCHAR(20) DEFAULT 'basico'",
+            "ALTER TABLE groups ADD COLUMN plan_expires_at DATETIME",
         ]:
             try:
                 conn.execute(text(stmt))
@@ -330,6 +356,41 @@ def _run_migrations():
         except Exception:
             pass
 
+        # ISO 27001 A.9.4.2 — brute-force lockout columns on users
+        for stmt in [
+            "ALTER TABLE users ADD COLUMN failed_login_attempts INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE users ADD COLUMN locked_until DATETIME",
+        ]:
+            try:
+                conn.execute(text(stmt))
+                conn.commit()
+            except Exception:
+                pass
+
+        # ISO 27001 A.12.4.1 — security audit log table
+        try:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS security_audit_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                    actor_email VARCHAR(100),
+                    action VARCHAR(100) NOT NULL,
+                    resource_type VARCHAR(50),
+                    resource_id INTEGER,
+                    ip_address VARCHAR(45),
+                    user_agent VARCHAR(500),
+                    details TEXT,
+                    severity VARCHAR(20) NOT NULL DEFAULT 'info',
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_sal_action ON security_audit_logs(action)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_sal_created ON security_audit_logs(created_at)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_sal_severity ON security_audit_logs(severity)"))
+            conn.commit()
+        except Exception:
+            pass
+
         # Pipeline stages table for non-abogados negocios
         try:
             conn.execute(text("""
@@ -354,6 +415,12 @@ async def startup():
     seed()
     _ensure_tecnico()
     _migrate_negocio()  # Must run after seed so superadmin user exists
+    await wa_broadcaster.start()
+
+
+@app.on_event("shutdown")
+async def shutdown():
+    await wa_broadcaster.stop()
 
 
 def _migrate_negocio():
@@ -375,15 +442,25 @@ def _migrate_negocio():
                 orphan_ids = ",".join(str(r[0]) for r in orphan_admins)
                 conn.execute(text(f"UPDATE users SET group_id={root_id} WHERE id IN ({orphan_ids})"))
                 conn.commit()
-                print(f"[OK] Assigned {len(orphan_admins)} orphan superadmin(s) to existing negocio (id={root_id})")
+                print(f"✅ Assigned {len(orphan_admins)} orphan superadmin(s) to existing negocio (id={root_id})")
             else:
                 # No root group yet — create one and assign ALL orphans
-                conn.execute(text(
-                    "INSERT INTO groups (name, description, tipo) "
-                    "VALUES ('Abogados Tributarios', 'Negocio principal', 'abogados')"
-                ))
-                conn.commit()
-                root_id = conn.execute(text("SELECT last_insert_rowid()")).scalar()
+                from .database import _is_sqlite
+                if _is_sqlite:
+                    conn.execute(text(
+                        "INSERT INTO groups (name, description, tipo) "
+                        "VALUES ('Abogados Tributarios', 'Negocio principal', 'abogados')"
+                    ))
+                    conn.commit()
+                    root_id = conn.execute(text("SELECT last_insert_rowid()")).scalar()
+                else:
+                    row = conn.execute(text(
+                        "INSERT INTO groups (name, description, tipo) "
+                        "VALUES ('Abogados Tributarios', 'Negocio principal', 'abogados') "
+                        "RETURNING id"
+                    )).fetchone()
+                    conn.commit()
+                    root_id = row[0]
                 orphan_ids = ",".join(str(r[0]) for r in orphan_admins)
                 conn.execute(text(f"UPDATE users SET group_id={root_id} WHERE id IN ({orphan_ids})"))
                 conn.execute(text(
@@ -391,9 +468,9 @@ def _migrate_negocio():
                     f"WHERE negocio_id IS NULL AND id != {root_id}"
                 ))
                 conn.commit()
-                print(f"[OK] Negocio root group created (id={root_id}), {len(orphan_admins)} superadmin(s) assigned")
+                print(f"✅ Negocio root group created (id={root_id}), {len(orphan_admins)} superadmin(s) assigned")
         except Exception as e:
-            print(f"[WARN] _migrate_negocio: {e}")
+            print(f"⚠️  _migrate_negocio: {e}")
 
 
 @app.get("/health")
@@ -431,6 +508,6 @@ async def serve_spa(full_path: str):
     
     index_path = os.path.join(static_dir, "index.html")
     if os.path.isfile(index_path):
-        return FileResponse(index_path)
+        return FileResponse(index_path, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
         
     return {"message": "Frontend not built yet. Please run 'npm run build' first."}

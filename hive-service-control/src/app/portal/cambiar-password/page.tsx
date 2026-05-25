@@ -5,21 +5,17 @@ import ChangePasswordForm from "./ChangePasswordForm";
 export const dynamic = "force-dynamic";
 
 /**
- * Pantalla de rotación de contraseña inicial. El portal layout fuerza a
- * cualquier cliente con `mustChangePassword = true` a aterrizar acá antes
- * de poder ver el resto del portal. Cuando rota la clave, el flag baja a
- * false (vía server action + session.update) y el layout deja pasar.
+ * Pantalla de cambio voluntario de contraseña para clientes.
  *
- * Otros roles no deberían llegar acá; los devolvemos a la raíz.
+ * El cliente ya conoce su clave (la usó en PagaCuotas), por lo que el
+ * acceso a esta página es voluntario — no se fuerza redirección desde
+ * el middleware. Otros roles no deberían llegar acá: los devolvemos a
+ * la raíz.
  */
 export default async function CambiarPasswordPage() {
   const session = await auth();
   if (!session) redirect("/login");
   if (session.user.role !== "CLIENTE") redirect("/admin");
-
-  // Si el cliente ya no necesita rotar (recargó la página tras cambiar),
-  // lo dejamos volver al portal sin perder el viaje.
-  if (!session.user.mustChangePassword) redirect("/portal");
 
   return <ChangePasswordForm />;
 }

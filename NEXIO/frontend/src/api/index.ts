@@ -130,6 +130,7 @@ export const getConversations = () => api.get('/api/whatsapp/conversations').the
 export const markMessagesRead = (contactId: number) => api.post(`/api/whatsapp/messages/${contactId}/read`).then(r => r.data)
 export const deleteWhatsAppMessage = (id: number) => api.delete(`/api/whatsapp/messages/${id}`).then(r => r.data)
 export const editWhatsAppMessage = (id: number, content: string) => api.patch(`/api/whatsapp/messages/${id}`, { content }).then(r => r.data)
+export const retryWhatsAppMessage = (id: number) => api.post(`/api/whatsapp/messages/${id}/retry`).then(r => r.data)
 
 // TECNICO
 export const getTecnicoStats = () => api.get('/api/tecnico/stats').then(r => r.data)
@@ -221,6 +222,9 @@ export const downloadLeadPdf = async (leadId: number, contactName?: string) => {
 }
 
 export const syncWhatsAppChats = (configId: number) => api.post(`/api/whatsapp/sync-chats/${configId}`).then(r => r.data)
+export const sendTypingPresence = (config_id: number, contact_id: number, typing: boolean) =>
+  api.post('/api/whatsapp/typing', { config_id, contact_id, typing }).then(r => r.data)
+export const syncFullHistory = (configId: number) => api.post(`/api/whatsapp/sync-full-history/${configId}`).then(r => r.data)
 
 // NEGOCIOS
 export const getNegocios = () => api.get('/api/tecnico/negocios').then(r => r.data)
@@ -228,6 +232,7 @@ export const createNegocio = (data: any) => api.post('/api/tecnico/negocios', da
 export const patchNegocio = (id: number, data: any) => api.patch(`/api/tecnico/negocios/${id}`, data).then(r => r.data)
 export const deleteNegocio = (id: number) => api.delete(`/api/tecnico/negocios/${id}`)
 export const patchNegocioAdmin = (id: number, data: any) => api.patch(`/api/tecnico/negocios/${id}/admin`, data).then(r => r.data)
+export const patchNegocioPlan = (id: number, data: { plan: string; plan_expires_at?: string | null }) => api.patch(`/api/tecnico/negocios/${id}/plan`, data).then(r => r.data)
 
 // AI AGENTS
 export const getAIAgents = () => api.get('/api/ai-agents').then(r => r.data)
@@ -245,6 +250,12 @@ export const removeAgentConfig = (agentId: number, configId: number) =>
 export const getContactAgentState = (contactId: number) => api.get(`/api/ai-agents/contact-state/${contactId}`).then(r => r.data)
 export const setContactAgentState = (agentId: number, contactId: number, state: string) =>
   api.post(`/api/ai-agents/${agentId}/contact/${contactId}/state`, { state }).then(r => r.data)
+
+// SECURITY AUDIT LOG (ISO 27001)
+export const getAuditLog = (params?: any) => api.get('/api/security/audit-log', { params }).then(r => r.data)
+export const getSecurityStats = () => api.get('/api/security/stats').then(r => r.data)
+export const getLockedUsers = () => api.get('/api/security/locked-users').then(r => r.data)
+export const unlockUser = (userId: number) => api.post(`/api/security/unlock/${userId}`).then(r => r.data)
 
 // WORK ORDERS (OT)
 export const getOTTypes = () => api.get('/api/work-orders/types').then(r => r.data)

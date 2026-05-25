@@ -26,6 +26,7 @@ function homeFor(role?: string) {
   if (role === 'tecnico') return '/tecnico'
   if (role === 'vendedor') return '/agenda'
   if (role === 'verificador') return '/pagos'
+  if (role === 'agendadora') return '/'
   return '/'
 }
 
@@ -39,11 +40,11 @@ function ProtectedRoute({ children, roles }: { children: React.ReactNode; roles?
 }
 
 function AppRoutes() {
-  const { isAuthenticated } = useAuthStore()
+  const { isAuthenticated, user } = useAuthStore()
   usePushNotifications(isAuthenticated)
   return (
     <Routes>
-      <Route path="/login" element={isAuthenticated ? <Navigate to="/" replace /> : <Login />} />
+      <Route path="/login" element={isAuthenticated ? <Navigate to={homeFor(user?.role)} replace /> : <Login />} />
       <Route path="/" element={<ProtectedRoute roles={['superadmin','subadmin','agendadora','verificador','vendedor']}><Layout><Dashboard /></Layout></ProtectedRoute>} />
       <Route path="/leads" element={<ProtectedRoute roles={['superadmin','subadmin','agendadora']}><Layout><Leads /></Layout></ProtectedRoute>} />
       <Route path="/leads/:id" element={<ProtectedRoute roles={['superadmin','subadmin','agendadora']}><Layout><LeadDetail /></Layout></ProtectedRoute>} />

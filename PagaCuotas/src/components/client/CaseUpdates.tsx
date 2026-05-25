@@ -15,29 +15,41 @@ function getStageConfig(stage: string) {
   return STAGE_CONFIG[stage] || { label: stage, color: 'text-slate-600', bg: 'bg-slate-50 border-slate-200', icon: Briefcase };
 }
 
-export default function CaseUpdates() {
-  const [cases, setCases] = useState<CaseWithUpdates[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState('');
+interface CaseUpdatesProps {
+  cases?: CaseWithUpdates[];
+  isLoading?: boolean;
+  error?: string;
+}
+
+export default function CaseUpdates({ cases: providedCases, isLoading: providedLoading, error: providedError }: CaseUpdatesProps) {
+  const [internalCases, setInternalCases] = useState<CaseWithUpdates[]>([]);
+  const [internalLoading, setInternalLoading] = useState(true);
+  const [internalError, setInternalError] = useState('');
+  const usesExternalData = providedCases !== undefined;
+  const cases = providedCases ?? internalCases;
+  const isLoading = usesExternalData ? Boolean(providedLoading) : internalLoading;
+  const error = usesExternalData ? (providedError || '') : internalError;
 
   useEffect(() => {
+    if (usesExternalData) return;
+
     let cancelled = false;
-    setIsLoading(true);
+    setInternalLoading(true);
     fetchCaseUpdates()
       .then((data) => {
         if (cancelled) return;
-        setCases(data.cases || []);
+        setInternalCases(data.cases || []);
       })
       .catch((err: any) => {
         if (cancelled) return;
         // Graceful degradation: if the endpoint is not available, just hide the section
-        setError(err.message || '');
+        setInternalError(err.message || '');
       })
       .finally(() => {
-        if (!cancelled) setIsLoading(false);
+        if (!cancelled) setInternalLoading(false);
       });
     return () => { cancelled = true; };
-  }, []);
+  }, [usesExternalData]);
 
   // Don't render the section if there's an error or no data
   if (!isLoading && (error || cases.length === 0)) return null;

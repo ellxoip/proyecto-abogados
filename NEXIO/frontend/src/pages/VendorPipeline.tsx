@@ -107,7 +107,8 @@ function LeadPipelineCard({ lead, onOT }: { lead: any; onOT: (leadId: number) =>
           )}
         </div>
 
-        {/* OT label + button */}
+        {/* OT label + button — only for cierre/pago_comprometido leads */}
+        {(lead.current_stage === 'cierre' || lead.current_stage === 'pago_comprometido') && (
         <div>
           <p className="text-[9px] font-bold uppercase tracking-widest mb-1 px-0.5"
             style={{ color: lead.has_ot ? '#16a34a' : '#dc2626' }}>
@@ -126,6 +127,7 @@ function LeadPipelineCard({ lead, onOT }: { lead: any; onOT: (leadId: number) =>
             {lead.has_ot ? 'Ver / Editar OT' : 'Agregar OT'}
           </button>
         </div>
+        )}
       </div>
     </div>
   )
@@ -200,7 +202,6 @@ function OutcomeModal({ outcome, onConfirm, onCancel }: {
 function EventCard({ ev, onMark, onEdit }: { ev: any; onMark: (id: number, s: string, notes?: string) => Promise<void>; onEdit: (ev: any) => void }) {
   const [expanded, setExpanded] = useState(false)
   const [pendingOutcome, setPendingOutcome] = useState<string | null>(null)
-  const [showOT, setShowOT] = useState(false)
 
   const handleConfirm = async (notes: string) => {
     await onMark(ev.id, pendingOutcome!, notes || undefined)
@@ -220,19 +221,10 @@ function EventCard({ ev, onMark, onEdit }: { ev: any; onMark: (id: number, s: st
         </div>
         <div className="flex items-center gap-1 flex-shrink-0">
           {ev.lead_id && (
-            <>
-              <button
-                onClick={() => setShowOT(true)}
-                className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold transition-colors"
-                style={{ background: 'rgba(204,255,0,0.08)', color: '#CCFF00', border: '1px solid rgba(204,255,0,0.2)' }}
-                title="Crear / ver OT">
-                <ClipboardList size={11} /> OT
-              </button>
-              <Link to={`/leads/${ev.lead_id}`}
-                className="p-1.5 hover:bg-surface-2 rounded-lg text-white/52 transition-colors" title="Ver lead">
-                <Link2 size={12} />
-              </Link>
-            </>
+            <Link to={`/leads/${ev.lead_id}`}
+              className="p-1.5 hover:bg-surface-2 rounded-lg text-white/52 transition-colors" title="Ver lead">
+              <Link2 size={12} />
+            </Link>
           )}
           <button onClick={() => onEdit(ev)} className="p-1.5 hover:bg-surface-2 rounded-lg text-white/52 transition-colors">
             <MoreVertical size={12} />
@@ -321,10 +313,6 @@ function EventCard({ ev, onMark, onEdit }: { ev: any; onMark: (id: number, s: st
         />
       )}
 
-      {/* OT modal */}
-      {showOT && ev.lead_id && (
-        <WorkOrderModal leadId={ev.lead_id} onClose={() => setShowOT(false)} />
-      )}
     </div>
   )
 }
@@ -430,15 +418,33 @@ export default function VendorPipeline() {
   const pagoLeads: any[]    = pipeline?.pago_comprometido ?? []
   const sinOTCount          = [...cierreLeads, ...pagoLeads].filter((l: any) => !l.has_ot).length
   const totalLeads          = cierreLeads.length + pagoLeads.length
-  const totalEvents: number = COLS.reduce((a, c) => {
-    const items = c.key === 'sin_exito'
-      ? (pipeline?.sin_exito?.length ?? 0) + (pipeline?.no_show?.length ?? 0)
-      : (pipeline?.[c.key]?.length ?? 0)
-    return a + items
-  }, 0)
 
   // Leads already shown in lead columns — hide their events from meeting columns
   const leadIdsWithStage = new Set([...cierreLeads, ...pagoLeads].map((l: any) => l.lead_id))
+  const normalizePhone = (phone?: string | null) => (phone ?? '').replace(/\D/g, '')
+  const meetingCaseKey = (ev: any) => ev.lead_id ? `lead:${ev.lead_id}` : (normalizePhone(ev.contact_phone) ? `phone:${normalizePhone(ev.contact_phone)}` : `event:${ev.id}`)
+  const allMeetingEvents: any[] = [
+    ...(pipeline?.espera_cliente ?? []),
+    ...(pipeline?.altamente_interesado ?? []),
+    ...(pipeline?.sin_exito ?? []),
+    ...(pipeline?.no_show ?? []),
+  ].sort((a: any, b: any) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime())
+  const latestMeetingIds = new Set<number>()
+  const seenMeetingCases = new Set<string>()
+  allMeetingEvents.forEach((ev: any) => {
+    const key = meetingCaseKey(ev)
+    if (seenMeetingCases.has(key)) return
+    seenMeetingCases.add(key)
+    latestMeetingIds.add(ev.id)
+  })
+  const visibleMeetingItems = (items: any[]) => items.filter((ev: any) => (
+    !leadIdsWithStage.has(ev.lead_id) &&
+    latestMeetingIds.has(ev.id)
+  ))
+  const totalEvents: number =
+    visibleMeetingItems(pipeline?.espera_cliente ?? []).length +
+    visibleMeetingItems(pipeline?.altamente_interesado ?? []).length +
+    visibleMeetingItems([...(pipeline?.sin_exito ?? []), ...(pipeline?.no_show ?? [])]).length
 
   const LEAD_COLS = [
     { key: 'cierre',            label: 'Cierre',            items: cierreLeads, accent: '#38bdf8', accentDim: 'rgba(14,165,233,0.12)', border: 'rgba(14,165,233,0.30)' },
@@ -472,7 +478,7 @@ export default function VendorPipeline() {
           {(() => {
             const col = COLS[0] // espera_cliente
             const raw: any[] = (pipeline?.[col.key] as any[]) ?? []
-            const items = raw.filter((ev: any) => !leadIdsWithStage.has(ev.lead_id))
+            const items = visibleMeetingItems(raw)
             return (
               <div key={col.key} className="flex flex-col flex-shrink-0" style={{ width: 260 }}>
                 <div className={`rounded-xl mb-2.5 px-3 py-2.5 flex items-center justify-between border ${col.header}`}>
@@ -496,7 +502,7 @@ export default function VendorPipeline() {
           {(() => {
             const col = COLS[1] // altamente_interesado
             const raw: any[] = (pipeline?.[col.key] as any[]) ?? []
-            const items = raw.filter((ev: any) => !leadIdsWithStage.has(ev.lead_id))
+            const items = visibleMeetingItems(raw)
             return (
               <div key={col.key} className="flex flex-col flex-shrink-0" style={{ width: 260 }}>
                 <div className={`rounded-xl mb-2.5 px-3 py-2.5 flex items-center justify-between border ${col.header}`}>
@@ -551,7 +557,7 @@ export default function VendorPipeline() {
           {(() => {
             const col = COLS[2] // sin_exito
             const raw: any[] = [...(pipeline?.sin_exito ?? []), ...(pipeline?.no_show ?? [])]
-            const items = raw.filter((ev: any) => !leadIdsWithStage.has(ev.lead_id))
+            const items = visibleMeetingItems(raw)
             return (
               <div key={col.key} className="flex flex-col flex-shrink-0" style={{ width: 260 }}>
                 <div className={`rounded-xl mb-2.5 px-3 py-2.5 flex items-center justify-between border ${col.header}`}>

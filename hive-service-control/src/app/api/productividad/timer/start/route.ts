@@ -50,9 +50,19 @@ export async function POST(req: Request) {
         lawyerId: session.user.id,
         status: { in: ACTIVE_LIKE_STATUSES },
       },
-      include: { case: { select: { code: true } } },
+      include: { case: { select: { id: true, code: true } } },
     });
     if (existing) {
+      // Idempotencia útil: si el abogado ya tiene una sesión viva
+      // exactamente en este mismo caso, no es realmente un conflicto.
+      // Devolvemos 200 con la sesión existente para que el cliente la
+      // muestre en el widget en lugar de levantar un error confuso.
+      if (existing.caseId === caseId) {
+        return {
+          kind: "ok" as const,
+          body: { ok: true, sessionId: existing.id, status: existing.status, reused: true },
+        };
+      }
       return {
         kind: "conflict" as const,
         status: 409,
@@ -61,6 +71,9 @@ export async function POST(req: Request) {
           code: "ALREADY_OPEN",
           error: `Ya tienes una sesión ${existing.status} en el caso ${existing.case.code}. Ciérrala o pausa antes de iniciar otra.`,
           openSessionId: existing.id,
+          openCaseId: existing.caseId,
+          openCaseCode: existing.case.code,
+          openStatus: existing.status,
         },
       };
     }
@@ -77,6 +90,13 @@ export async function POST(req: Request) {
     });
     if (!kase) {
       return { kind: "error" as const, status: 404, body: { ok: false, error: "Caso no encontrado." } };
+    }
+    if (kase.stage !== "IN_PROGRESS") {
+      return {
+        kind: "error" as const,
+        status: 409,
+        body: { ok: false, error: "El caso debe estar En Desarrollo antes de iniciar conteo." },
+      };
     }
     const isAssigned = kase.abogados.some((a) => a.id === session.user.id);
     const isPrivileged =

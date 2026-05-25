@@ -8,6 +8,13 @@ vi.mock("@/lib/auth", () => ({
   auth: () => authMock(),
 }));
 
+// La acción dispara un fetch a hive-financial-control para sincronizar la
+// nueva clave; lo neutralizamos en pruebas unitarias.
+const syncMock = vi.fn().mockResolvedValue(undefined);
+vi.mock("@/lib/services/financial-password-sync", () => ({
+  syncClientPasswordToFinancial: (...args: unknown[]) => syncMock(...args),
+}));
+
 // Importamos DESPUÉS del mock para que el module factory ya esté en scope.
 const { changeOwnPassword } = await import("@/app/portal/cambiar-password/actions");
 
@@ -34,6 +41,7 @@ async function seedClient(opts: {
 
 beforeEach(() => {
   authMock.mockReset();
+  syncMock.mockClear();
 });
 
 describe("changeOwnPassword", () => {
@@ -153,6 +161,26 @@ describe("changeOwnPassword", () => {
       where: { action: "PASSWORD_CHANGED", actorId: user.id },
     });
     expect(audit).not.toBeNull();
+  });
+
+  it("propaga la nueva clave a hive-financial-control para clientes", async () => {
+    const user = await seedClient({ password: "Y732HX" });
+    authMock.mockResolvedValue({ user: { id: user.id, role: "CLIENTE" } });
+
+    const r = await changeOwnPassword({
+      currentPassword: "Y732HX",
+      newPassword: "ClaveNueva9",
+      confirmPassword: "ClaveNueva9",
+    });
+    expect(r).toEqual({ ok: true });
+
+    expect(syncMock).toHaveBeenCalledTimes(1);
+    expect(syncMock).toHaveBeenCalledWith({
+      rut: "21331955-8",
+      currentPassword: "Y732HX",
+      newPassword: "ClaveNueva9",
+      source: "service-control",
+    });
   });
 
   it("rechaza si la cuenta está inactiva", async () => {

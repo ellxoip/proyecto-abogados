@@ -10,8 +10,9 @@ const loginSchema = z.object({
 
 const updatePasswordSchema = z.object({
   identifier: z.string().min(3),
-  currentPassword: z.string().regex(/^[a-zA-Z0-9]{6}$/),
+  currentPassword: z.string().regex(/^[a-zA-Z0-9]{6}$/).optional(),
   newPassword: z.string().regex(/^[a-zA-Z0-9]{6}$/),
+  autoLoginPasswordChange: z.boolean().optional(),
 });
 
 export async function POST(request: NextRequest) {
@@ -43,11 +44,11 @@ export async function PATCH(request: NextRequest) {
     assertInternalApiAuth(request);
     const body = updatePasswordSchema.parse(await request.json());
     const service = new PaymentPortalService();
-    const result = await service.updatePortalPassword(
-      body.identifier,
-      body.currentPassword,
-      body.newPassword,
-    );
+    const result = body.autoLoginPasswordChange
+      ? await service.setPortalPasswordFromAutoLogin(body.identifier, body.newPassword)
+      : body.currentPassword
+        ? await service.updatePortalPassword(body.identifier, body.currentPassword, body.newPassword)
+        : null;
 
     if (!result) {
       return NextResponse.json(

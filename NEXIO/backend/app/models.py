@@ -35,6 +35,9 @@ class User(Base):
     at_informa_user_id = Column(String(100), nullable=True)  # UUID del usuario en AT Informa
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     dashboard_clear_at = Column(DateTime(timezone=True), nullable=True)
+    # ISO 27001 A.9.4.2 — brute-force protection
+    failed_login_attempts = Column(Integer, default=0, nullable=False)
+    locked_until = Column(DateTime(timezone=True), nullable=True)
 
     group = relationship("Group", back_populates="members")
     leads_as_agendadora = relationship("Lead", foreign_keys="Lead.agendadora_id", back_populates="agendadora")
@@ -53,6 +56,9 @@ class Group(Base):
     negocio_id = Column(Integer, ForeignKey("groups.id"), nullable=True)
     # tipo: 'abogados' keeps hardcoded pipeline + AT/LF integrations; others use custom stages
     tipo = Column(String(50), nullable=False, server_default="abogados")
+    # plan: basico | pro | enterprise
+    plan = Column(String(20), nullable=False, server_default="basico")
+    plan_expires_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     members = relationship("User", back_populates="group")
@@ -126,6 +132,7 @@ class Contact(Base):
     group_id = Column(Integer, ForeignKey("groups.id"), nullable=True)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
     notes = Column(Text, nullable=True)
+    avatar_url = Column(String(500), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -445,3 +452,21 @@ class GoogleCalendarToken(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     user = relationship("User", back_populates="google_token")
+
+
+class SecurityAuditLog(Base):
+    """ISO 27001 A.12.4.1 — immutable audit trail for security-relevant events."""
+    __tablename__ = "security_audit_logs"
+    id            = Column(Integer, primary_key=True, index=True)
+    user_id       = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    actor_email   = Column(String(100), nullable=True)   # preserved even if user deleted
+    action        = Column(String(100), nullable=False, index=True)
+    resource_type = Column(String(50), nullable=True)
+    resource_id   = Column(Integer, nullable=True)
+    ip_address    = Column(String(45), nullable=True)
+    user_agent    = Column(String(500), nullable=True)
+    details       = Column(Text, nullable=True)
+    severity      = Column(String(20), default="info", nullable=False)  # info | warning | critical
+    created_at    = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    user = relationship("User", foreign_keys=[user_id])

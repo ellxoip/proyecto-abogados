@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   getUsers, createUser, updateUser, deleteUser,
   getGroups, createGroup, updateGroup, deleteGroup,
@@ -7,21 +8,23 @@ import {
   getStageLabels, updateStageLabels,
   getPipelineStages, createPipelineStage, updatePipelineStage, deletePipelineStage,
   adminListWASessions, adminDeleteWASession,
-  getAtInformaAbogados, syncVendedoresFromAtInforma,
   getAIAgents, createAIAgent, updateAIAgent, toggleAIAgent, deleteAIAgent, getAIAgentLogs,
   getAllWhatsAppConfigs, assignAgentWhatsApp, addAgentConfig, removeAgentConfig,
+  getAuditLog, getSecurityStats, getLockedUsers, unlockUser,
 } from '../api'
 import type { User, Group, Area, WhatsAppConfig } from '../types'
 import { STAGE_LABELS as DEFAULT_STAGE_LABELS } from '../types'
-import { Users, Building, Plus, Edit2, Trash2, X, Shield, GitBranch, Phone, ChevronRight, Layers, Smartphone, Wifi, WifiOff, RefreshCw, Link2, UserCheck, UserMinus, Bot, Zap, ChevronDown, ChevronUp, Eye, Clock, MessageSquare, ToggleLeft, ToggleRight, GripVertical } from 'lucide-react'
+import { Users, Building, Plus, Edit2, Trash2, X, Shield, GitBranch, Phone, ChevronRight, Layers, Smartphone, Wifi, WifiOff, RefreshCw, UserCheck, UserMinus, Bot, Zap, ChevronDown, ChevronUp, Eye, Clock, MessageSquare, ToggleLeft, ToggleRight, GripVertical } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useAuthStore } from '../store/auth'
 
-type Tab = 'users' | 'groups' | 'pipeline' | 'whatsapp_sessions' | 'ai_agents'
+type Tab = 'users' | 'groups' | 'pipeline' | 'whatsapp_sessions' | 'ai_agents' | 'security'
 
 export default function Admin() {
   const { user: me } = useAuthStore()
-  const [activeTab, setActiveTab] = useState<Tab>('users')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const activeTab: Tab = (searchParams.get('tab') as Tab) || 'users'
+  const setActiveTab = (id: Tab) => setSearchParams({ tab: id })
   const [users, setUsers] = useState<User[]>([])
   const [groups, setGroups] = useState<Group[]>([])
   const [selectedGroup, setSelectedGroup] = useState<number | null>(null)
@@ -46,11 +49,6 @@ export default function Admin() {
   const [stageForm, setStageForm] = useState({ key: '', name: '', color: '#ccff00', order: 0 })
   const [editingStage, setEditingStage] = useState<any | null>(null)
   const [showStageModal, setShowStageModal] = useState(false)
-  const [atSyncing, setAtSyncing] = useState(false)
-  const [atPreview, setAtPreview] = useState<{
-    abogados: {id:string;fullName:string;email:string;phone:string;role:string;status:'new'|'update'}[];
-    to_deactivate: {name:string;email:string}[];
-  } | null>(null)
 
   // Members modal
   const [showMembersModal, setShowMembersModal] = useState(false)
@@ -258,14 +256,22 @@ export default function Admin() {
     }))
   }
 
+  const [deletingAreaId, setDeletingAreaId] = useState<number | null>(null)
+
   const handleDeleteArea = async (id: number) => {
-    if (!confirm('¿Eliminar esta área? Se perderán los leads asociados.')) return
-    try {
-      await deleteArea(id)
-      toast.success('Área eliminada')
-      if (selectedGroup) await loadGroupData(selectedGroup)
-    } catch (err: any) {
-      toast.error(err?.response?.data?.detail || 'Error al eliminar')
+    if (deletingAreaId === id) {
+      try {
+        await deleteArea(id)
+        toast.success('Área eliminada')
+        setDeletingAreaId(null)
+        if (selectedGroup) await loadGroupData(selectedGroup)
+      } catch (err: any) {
+        toast.error(err?.response?.data?.detail || 'Error al eliminar')
+        setDeletingAreaId(null)
+      }
+    } else {
+      setDeletingAreaId(id)
+      setTimeout(() => setDeletingAreaId(prev => prev === id ? null : prev), 3000)
     }
   }
 
@@ -281,15 +287,16 @@ export default function Admin() {
   }
 
   const roleLabel: Record<string, string> = {
-    superadmin: 'Super Admin', subadmin: 'Sub Admin', agendadora: 'Agendadora',
-    vendedor: 'Vendedor', dante: 'Verificador Pagos',
+    superadmin: 'Super Admin', subadmin: 'Sub Admin', agendadora: 'Agendador/a',
+    vendedor: 'Vendedor', verificador: 'Verificador Pagos', dante: 'Verificador Pagos',
   }
   const roleBadge: Record<string, string> = {
-    superadmin: 'bg-surface-1 text-white border-lime',
-    subadmin:   'bg-surface-2 text-white/85 border-white/10',
-    agendadora: 'bg-surface-2 text-white/85 border-white/10',
-    vendedor:   'bg-surface-2 text-white/85 border-white/10',
-    dante:      'bg-surface-2 text-white/85 border-white/10',
+    superadmin:  'bg-surface-1 text-white border-lime',
+    subadmin:    'bg-surface-2 text-white/85 border-white/10',
+    agendadora:  'bg-surface-2 text-white/85 border-white/10',
+    vendedor:    'bg-surface-2 text-white/85 border-white/10',
+    verificador: 'bg-surface-2 text-white/85 border-white/10',
+    dante:       'bg-surface-2 text-white/85 border-white/10',
   }
 
   const handleSaveStage = async () => {
@@ -339,15 +346,6 @@ export default function Admin() {
   const isTecnico = me?.role === 'tecnico'
   const myGroup = groups.find(g => g.id === me?.group_id)
   const negocioTipo: string = (myGroup as any)?.tipo ?? 'abogados'
-
-  const tabs = [
-    { id: 'users' as Tab,             label: 'Usuarios',        icon: Users },
-    { id: 'groups' as Tab,            label: 'Grupos & Áreas',   icon: Building },
-    { id: 'pipeline' as Tab,          label: 'Pipeline',         icon: GitBranch },
-    { id: 'whatsapp_sessions' as Tab, label: 'WhatsApp QR',      icon: Smartphone },
-    // "Agentes IA" = tecnico full CRUD | business admins = "Mis Agentes" (read + toggle)
-    { id: 'ai_agents' as Tab, label: isTecnico ? 'Agentes IA' : 'Mis Agentes', icon: Bot },
-  ]
 
   // ── WhatsApp sessions state ──────────────────────────────────
   const [waSessions, setWASessions] = useState<any[]>([])
@@ -416,6 +414,44 @@ Reglas:
   }, [])
 
   useEffect(() => { if (activeTab === 'ai_agents') loadAgents() }, [activeTab])
+
+  // ── Security audit log state ─────────────────────────────
+  const [auditLog, setAuditLog] = useState<any[]>([])
+  const [auditTotal, setAuditTotal] = useState(0)
+  const [auditPage, setAuditPage] = useState(1)
+  const [auditLoading, setAuditLoading] = useState(false)
+  const [secStats, setSecStats] = useState<any>(null)
+  const [lockedUsers, setLockedUsers] = useState<any[]>([])
+  const [auditAction, setAuditAction] = useState('')
+  const [auditSeverity, setAuditSeverity] = useState('')
+
+  const loadAuditLog = useCallback(async (page = 1) => {
+    setAuditLoading(true)
+    try {
+      const params: any = { page, page_size: 50 }
+      if (auditAction) params.action = auditAction
+      if (auditSeverity) params.severity = auditSeverity
+      const [logData, stats, locked] = await Promise.all([
+        getAuditLog(params), getSecurityStats(), getLockedUsers()
+      ])
+      setAuditLog(logData.items)
+      setAuditTotal(logData.total)
+      setAuditPage(page)
+      setSecStats(stats)
+      setLockedUsers(locked)
+    } catch { toast.error('Error cargando auditoría') }
+    finally { setAuditLoading(false) }
+  }, [auditAction, auditSeverity])
+
+  useEffect(() => { if (activeTab === 'security') loadAuditLog(1) }, [activeTab, auditAction, auditSeverity])
+
+  const handleUnlock = async (userId: number, email: string) => {
+    try {
+      await unlockUser(userId)
+      toast.success(`Cuenta desbloqueada: ${email}`)
+      loadAuditLog(auditPage)
+    } catch { toast.error('Error desbloqueando cuenta') }
+  }
 
   const openAgentModal = (agent?: any) => {
     if (agent) {
@@ -549,17 +585,6 @@ Reglas:
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 bg-surface-2 p-1 rounded-xl w-fit">
-        {tabs.map(({ id, label, icon: Icon }) => (
-          <button key={id} onClick={() => setActiveTab(id)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${
-              activeTab === id ? 'bg-surface-1 text-white shadow-sm' : 'text-white/62 hover:text-white/85'
-            }`}>
-            <Icon size={14} /> {label}
-          </button>
-        ))}
-      </div>
 
       {/* Users tab */}
       {activeTab === 'users' && (
@@ -567,111 +592,12 @@ Reglas:
           <div className="flex items-center justify-between px-6 py-4 border-b border-white/5">
             <h2 className="font-semibold text-white/90">Usuarios <span className="text-white/52 font-normal">({visibleUsers.length})</span></h2>
             <div className="flex items-center gap-2">
-              <button
-                onClick={async () => {
-                  setAtSyncing(true)
-                  try {
-                    const data = await getAtInformaAbogados()
-                    setAtPreview({ abogados: data.abogados ?? [], to_deactivate: data.to_deactivate ?? [] })
-                  } catch { toast.error('No se pudo conectar con AT Informa') }
-                  finally { setAtSyncing(false) }
-                }}
-                disabled={atSyncing}
-                className="flex items-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-xl border border-white/10 bg-surface-2 text-white/78 hover:bg-surface-1 transition-colors disabled:opacity-50"
-              >
-                <Link2 size={14} className={atSyncing ? 'animate-spin' : ''} />
-                Sync AT Informa
-              </button>
               <button onClick={openCreateUser} className="btn-primary text-sm">
                 <Plus size={15} /> Nuevo Usuario
               </button>
             </div>
           </div>
-          {/* AT Informa sync panel */}
-          {atPreview && (
-            <div className="mx-6 mt-4 mb-2 rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-bold text-amber-400 text-sm">
-                    {atPreview.abogados.length} abogados en AT Informa
-                    {atPreview.to_deactivate.length > 0 && ` · ${atPreview.to_deactivate.length} se desactivarán`}
-                  </p>
-                  <p className="text-white/52 text-xs mt-0.5">
-                    <span className="text-green-400 font-medium">{atPreview.abogados.filter(a => a.status === 'new').length} nuevos</span>
-                    {' · '}
-                    <span className="text-blue-400 font-medium">{atPreview.abogados.filter(a => a.status === 'update').length} actualizar</span>
-                    {atPreview.to_deactivate.length > 0 && <>{' · '}<span className="text-red-400 font-medium">{atPreview.to_deactivate.length} desactivar</span></>}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button onClick={() => setAtPreview(null)} className="text-white/40 hover:text-white/70 text-xs">Cancelar</button>
-                  <button
-                    onClick={async () => {
-                      setAtSyncing(true)
-                      try {
-                        const r = await syncVendedoresFromAtInforma()
-                        const parts = [`${r.created.length} creados`, `${r.updated.length} actualizados`]
-                        if (r.deactivated?.length) parts.push(`${r.deactivated.length} desactivados`)
-                        toast.success(`Sync completado: ${parts.join(', ')}`)
-                        setAtPreview(null)
-                        loadUsers()
-                      } catch { toast.error('Error en el sync') }
-                      finally { setAtSyncing(false) }
-                    }}
-                    disabled={atSyncing}
-                    className="btn-primary text-xs px-3 py-1.5"
-                  >
-                    {atSyncing ? 'Sincronizando...' : 'Confirmar Sync'}
-                  </button>
-                </div>
-              </div>
 
-              {/* Abogados from AT Informa */}
-              <div className="divide-y divide-white/5 max-h-48 overflow-y-auto rounded-lg border border-white/10">
-                {atPreview.abogados.map(ab => (
-                  <div key={ab.id} className="flex items-center gap-3 px-3 py-2 text-xs">
-                    <div className={`w-7 h-7 rounded-lg font-bold flex items-center justify-center text-[11px] flex-shrink-0 ${
-                      ab.status === 'new' ? 'bg-green-500/20 text-green-400' : 'bg-blue-500/20 text-blue-400'
-                    }`}>
-                      {ab.fullName?.charAt(0) ?? '?'}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="font-semibold text-white/90 truncate">{ab.fullName}</p>
-                      <p className="text-white/42 truncate">{ab.email}</p>
-                    </div>
-                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${
-                      ab.status === 'new'
-                        ? 'bg-green-500/15 text-green-400'
-                        : 'bg-blue-500/15 text-blue-400'
-                    }`}>
-                      {ab.status === 'new' ? 'Nuevo' : 'Actualizar'}
-                    </span>
-                  </div>
-                ))}
-              </div>
-
-              {/* CRM users not in AT → will be deactivated */}
-              {atPreview.to_deactivate.length > 0 && (
-                <div className="space-y-1">
-                  <p className="text-[10px] font-semibold text-red-400 uppercase tracking-wide">No están en AT Informa — se desactivarán</p>
-                  <div className="divide-y divide-white/5 max-h-28 overflow-y-auto rounded-lg border border-red-500/20 bg-red-500/5">
-                    {atPreview.to_deactivate.map(u => (
-                      <div key={u.email} className="flex items-center gap-3 px-3 py-2 text-xs">
-                        <div className="w-7 h-7 rounded-lg bg-red-500/20 text-red-400 font-bold flex items-center justify-center text-[11px] flex-shrink-0">
-                          {u.name?.charAt(0) ?? '?'}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="font-semibold text-white/70 truncate">{u.name}</p>
-                          <p className="text-white/38 truncate">{u.email}</p>
-                        </div>
-                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-red-500/15 text-red-400">Desactivar</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-surface-0 border-b border-white/[0.07]">
@@ -764,7 +690,7 @@ Reglas:
                   <button
                     onClick={() => openGroupMembers(g.id)}
                     className="flex items-center gap-1.5 text-xs font-medium text-white/62 hover:text-white bg-surface-2 hover:bg-surface-3 px-3 py-1.5 rounded-lg transition-colors">
-                    <UserCheck size={12} /> Abogados
+                    <UserCheck size={12} /> Usuarios
                   </button>
                   <button
                     onClick={() => openGroupAreas(g.id)}
@@ -854,10 +780,17 @@ Reglas:
                         className="p-2 hover:bg-surface-1 hover:shadow-sm rounded-lg text-white/52 hover:text-white/90 transition-all">
                         <Edit2 size={14} />
                       </button>
-                      <button onClick={() => handleDeleteArea(a.id)}
-                        className="p-2 hover:bg-danger/10 rounded-lg text-white/38 hover:text-danger transition-colors">
-                        <Trash2 size={14} />
-                      </button>
+                      {deletingAreaId === a.id ? (
+                        <button onClick={() => handleDeleteArea(a.id)}
+                          className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-semibold bg-danger/15 text-danger border border-danger/30 transition-colors">
+                          <Trash2 size={11} /> Confirmar
+                        </button>
+                      ) : (
+                        <button onClick={() => handleDeleteArea(a.id)}
+                          className="p-2 hover:bg-danger/10 rounded-lg text-white/38 hover:text-danger transition-colors">
+                          <Trash2 size={14} />
+                        </button>
+                      )}
                     </div>
                   </div>
                 )
@@ -1002,7 +935,7 @@ Reglas:
           <div className="flex items-center justify-between">
             <div>
               <h2 className="font-semibold text-white/90">Sesiones WhatsApp QR</h2>
-              <p className="text-sm text-white/52 mt-0.5">Números vinculados por agendadoras vía QR</p>
+              <p className="text-sm text-white/52 mt-0.5">Números vinculados por agendadores/as vía QR</p>
             </div>
             <button onClick={loadWASessions} className="w-9 h-9 flex items-center justify-center border border-white/10 rounded-xl bg-surface-1 text-white/45 hover:text-white/78 transition-colors">
               <RefreshCw size={14} className={waLoading ? 'animate-spin' : ''} />
@@ -1023,7 +956,7 @@ Reglas:
               <table className="w-full text-sm">
                 <thead className="bg-surface-0 border-b border-white/[0.07]">
                   <tr>
-                    <th className="table-header">Agendadora</th>
+                    <th className="table-header">Agendador/a</th>
                     <th className="table-header">Número</th>
                     <th className="table-header">Nombre sesión</th>
                     <th className="table-header">Estado</th>
@@ -1089,7 +1022,7 @@ Reglas:
             style={{ background: 'rgba(67,97,238,0.08)', border: '1px solid rgba(67,97,238,0.18)' }}>
             <Smartphone size={13} className="flex-shrink-0 mt-0.5" style={{ color: 'rgba(67,97,238,0.85)' }} />
             <p className="text-xs" style={{ color: 'rgba(147,168,255,0.80)' }}>
-              Las agendadoras gestionan sus propios números desde <strong>Mis WhatsApp</strong> en el menú lateral.
+              Los agendadores/as gestionan sus propios números desde <strong>Mis WhatsApp</strong> en el menú lateral.
               Cada una puede vincular hasta 3 números. Desde aquí puedes monitorear todas las conexiones y eliminar sesiones problemáticas.
             </p>
           </div>
@@ -1109,9 +1042,9 @@ Reglas:
                 </div>
                 <div>
                   <h2 className="text-base font-bold text-white">
-                    Abogados — {groups.find(g => g.id === membersGroupId)?.name}
+                    Usuarios — {groups.find(g => g.id === membersGroupId)?.name}
                   </h2>
-                  <p className="text-xs text-white/52 mt-0.5">{groupMembers.length} abogado{groupMembers.length !== 1 ? 's' : ''} asignado{groupMembers.length !== 1 ? 's' : ''}</p>
+                  <p className="text-xs text-white/52 mt-0.5">{groupMembers.length} usuario{groupMembers.length !== 1 ? 's' : ''} asignado{groupMembers.length !== 1 ? 's' : ''}</p>
                 </div>
               </div>
               <button onClick={() => { setShowMembersModal(false); setMembersGroupId(null) }}
@@ -1131,7 +1064,7 @@ Reglas:
                     {groupMembers.length === 0 ? (
                       <div className="text-center py-6 bg-surface-0 rounded-xl border border-white/[0.07]">
                         <UserCheck size={20} className="text-white/25 mx-auto mb-2" />
-                        <p className="text-sm text-white/40">Sin abogados asignados</p>
+                        <p className="text-sm text-white/40">Sin usuarios asignados</p>
                       </div>
                     ) : (
                       <div className="space-y-1.5">
@@ -1144,7 +1077,7 @@ Reglas:
                               <div className="flex items-center gap-2">
                                 <p className="text-sm font-semibold text-white/90 truncate">{u.name}</p>
                                 <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0 ${u.role === 'agendadora' ? 'bg-neon/10 text-neon' : 'bg-lime/10 text-lime'}`}>
-                                  {u.role === 'agendadora' ? 'Agendadora' : 'Abogado'}
+                                  {roleLabel[u.role] ?? u.role}
                                 </span>
                               </div>
                               <p className="text-xs text-white/42 truncate">{u.email}</p>
@@ -1175,7 +1108,7 @@ Reglas:
                               <div className="flex items-center gap-2">
                                 <p className="text-sm font-semibold text-white/90 truncate">{u.name}</p>
                                 <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-white/5 text-white/40 flex-shrink-0">
-                                  {u.role === 'agendadora' ? 'Agendadora' : 'Abogado'}
+                                  {roleLabel[u.role] ?? u.role}
                                 </span>
                               </div>
                               <p className="text-xs text-white/42 truncate">{u.email}</p>
@@ -1199,7 +1132,11 @@ Reglas:
       )}
 
       {/* User modal */}
-      {showUserModal && (
+      {showUserModal && (() => {
+        const maxUsers = me?.negocio_plan_limits?.max_users ?? -1
+        const activeUsers = users.filter(u => u.is_active && u.role !== 'tecnico').length
+        const atUserLimit = !editUser && maxUsers !== -1 && activeUsers >= maxUsers
+        return (
         <div className="fixed inset-0 modal-backdrop flex items-center justify-center z-50 p-4">
           <div className="bg-surface-1 rounded-2xl shadow-modal w-full max-w-md">
             <div className="flex items-center justify-between px-6 py-5 border-b border-white/[0.07]">
@@ -1208,6 +1145,12 @@ Reglas:
                 <X size={18} />
               </button>
             </div>
+            {atUserLimit && (
+              <div className="mx-6 mt-4 flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl text-sm font-medium"
+                style={{ background: 'rgba(239,35,60,0.08)', border: '1px solid rgba(239,35,60,0.20)', color: '#ef233c' }}>
+                <span>⚠ Límite de {maxUsers} usuarios del plan alcanzado. Actualiza el plan para agregar más.</span>
+              </div>
+            )}
             <form onSubmit={handleSaveUser} className="px-6 py-5 space-y-4">
               <div>
                 <label className="input-label">Nombre *</label>
@@ -1234,7 +1177,7 @@ Reglas:
                     onChange={e => setUserForm(f => ({ ...f, role: e.target.value }))}>
                     {me?.role === 'superadmin' && <option value="superadmin">Super Admin</option>}
                     <option value="subadmin">Sub Admin</option>
-                    <option value="agendadora">Agendadora</option>
+                    <option value="agendadora">Agendador/a</option>
                     <option value="vendedor">Vendedor</option>
                     <option value="verificador">Verificador Pagos</option>
                   </select>
@@ -1256,13 +1199,14 @@ Reglas:
             </form>
             <div className="px-6 py-4 border-t border-white/[0.07] flex gap-3">
               <button type="button" onClick={() => setShowUserModal(false)} className="btn-secondary flex-1">Cancelar</button>
-              <button onClick={handleSaveUser} disabled={saving} className="btn-primary flex-1">
+              <button onClick={handleSaveUser} disabled={saving || atUserLimit} className="btn-primary flex-1">
                 {saving ? 'Guardando...' : editUser ? 'Actualizar' : 'Crear'}
               </button>
             </div>
           </div>
         </div>
-      )}
+        )
+      })()}
 
       {/* Group modal */}
       {showGroupModal && (
@@ -1562,6 +1506,201 @@ Reglas:
           </div>
         </div>
       )}
+
+      {/* ── Security audit log tab (ISO 27001) ───────────────────────── */}
+      {activeTab === 'security' && (() => {
+        const severityBadge: Record<string, string> = {
+          info: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
+          warning: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
+          critical: 'bg-danger/10 text-danger border-danger/20',
+        }
+        const actionLabel: Record<string, string> = {
+          login_success: 'Inicio de sesión',
+          login_failed: 'Intento fallido',
+          login_blocked: 'Acceso bloqueado',
+          login_locked: 'Cuenta bloqueada',
+          account_unlocked: 'Cuenta desbloqueada',
+          user_created: 'Usuario creado',
+          user_updated: 'Usuario actualizado',
+          user_deactivated: 'Usuario desactivado',
+        }
+        const roleLabel: Record<string, string> = {
+          superadmin: 'Super Admin', subadmin: 'Sub Admin',
+          agendadora: 'Agendador/a', vendedor: 'Vendedor',
+          verificador: 'Verificador', tecnico: 'Técnico',
+        }
+        const totalPages = Math.max(1, Math.ceil(auditTotal / 50))
+        return (
+          <div className="space-y-4">
+            {/* Stats */}
+            {secStats && (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {[
+                  { label: 'Intentos fallidos (24h)', value: secStats.failed_logins_24h, color: 'text-amber-400', bg: secStats.failed_logins_24h > 0 ? 'border-amber-500/20' : '' },
+                  { label: 'Cuentas bloqueadas', value: secStats.blocked_accounts, color: secStats.blocked_accounts > 0 ? 'text-danger' : 'text-white/70', bg: secStats.blocked_accounts > 0 ? 'border-danger/20' : '' },
+                  { label: 'Eventos críticos (24h)', value: secStats.critical_events_24h, color: secStats.critical_events_24h > 0 ? 'text-red-400' : 'text-white/70', bg: secStats.critical_events_24h > 0 ? 'border-red-500/20' : '' },
+                  { label: 'Total eventos registrados', value: secStats.total_events, color: 'text-white/70', bg: '' },
+                ].map(s => (
+                  <div key={s.label} className={`bg-surface-1 rounded-xl border px-4 py-3 ${s.bg || 'border-white/[0.07]'}`}>
+                    <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
+                    <p className="text-xs text-white/42 mt-0.5">{s.label}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Cuentas bloqueadas */}
+            <div className="bg-danger/5 border border-danger/20 rounded-xl overflow-hidden">
+                <div className="flex items-center gap-2 px-5 py-3 border-b border-danger/15">
+                  <span className="w-2 h-2 rounded-full bg-danger animate-pulse" />
+                  <span className="text-sm font-semibold text-danger">
+                    {lockedUsers.length} cuenta{lockedUsers.length > 1 ? 's' : ''} bloqueada{lockedUsers.length > 1 ? 's' : ''}
+                  </span>
+                  <span className="text-xs text-danger/60 ml-1">— tras {5} intentos fallidos consecutivos</span>
+                </div>
+                <div className="divide-y divide-danger/10">
+                  {lockedUsers.length === 0 && (
+                    <div className="px-5 py-4 text-sm text-white/45">
+                      No hay cuentas bloqueadas actualmente.
+                    </div>
+                  )}
+                  {lockedUsers.map((u: any) => {
+                    const until = new Date(u.locked_until)
+                    const remaining = Math.max(0, Math.ceil((until.getTime() - Date.now()) / 60000))
+                    return (
+                      <div key={u.id} className="flex items-center gap-4 px-5 py-3">
+                        <div className="w-8 h-8 rounded-full bg-danger/15 flex items-center justify-center flex-shrink-0">
+                          <span className="text-danger font-bold text-xs">{u.name.charAt(0)}</span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-white/90">{u.name}</p>
+                          <p className="text-xs text-white/42">{u.email} · {roleLabel[u.role] ?? u.role}{u.negocio_name ? ` · ${u.negocio_name}` : ''}</p>
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <p className="text-xs text-danger/80">{remaining} min restantes</p>
+                          <p className="text-[10px] text-white/30">{u.failed_attempts} intentos</p>
+                        </div>
+                        <button
+                          onClick={() => handleUnlock(u.id, u.email)}
+                          className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-danger/15 hover:bg-danger/25 text-danger border border-danger/20 transition-colors flex-shrink-0"
+                        >
+                          Desbloquear
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+
+            {/* Filters + table */}
+            <div className="bg-surface-1 rounded-xl border border-white/[0.07] overflow-hidden">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-white/5 gap-3 flex-wrap">
+                <h2 className="font-semibold text-white/90 flex items-center gap-2">
+                  <Shield size={16} className="text-white/60" />
+                  Registro de Auditoría
+                  <span className="text-white/40 font-normal text-sm">({auditTotal} eventos de tu negocio)</span>
+                </h2>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <select
+                    value={auditAction}
+                    onChange={e => setAuditAction(e.target.value)}
+                    className="input text-xs py-1.5 px-2 h-auto"
+                  >
+                    <option value="">Todas las acciones</option>
+                    {Object.entries(actionLabel).map(([k, v]) => (
+                      <option key={k} value={k}>{v}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={auditSeverity}
+                    onChange={e => setAuditSeverity(e.target.value)}
+                    className="input text-xs py-1.5 px-2 h-auto"
+                  >
+                    <option value="">Todos los niveles</option>
+                    <option value="info">Info</option>
+                    <option value="warning">Warning</option>
+                    <option value="critical">Critical</option>
+                  </select>
+                  <button
+                    onClick={() => loadAuditLog(1)}
+                    disabled={auditLoading}
+                    className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border border-white/10 bg-surface-2 text-white/70 hover:bg-surface-3 transition-colors disabled:opacity-50"
+                  >
+                    <RefreshCw size={12} className={auditLoading ? 'animate-spin' : ''} />
+                    Actualizar
+                  </button>
+                </div>
+              </div>
+
+              {auditLoading ? (
+                <div className="py-12 text-center text-white/42 text-sm">Cargando registros...</div>
+              ) : auditLog.length === 0 ? (
+                <div className="py-12 text-center space-y-2">
+                  <Shield size={32} className="mx-auto text-white/15" />
+                  <p className="text-white/42 text-sm">Sin eventos de auditoría</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead className="bg-surface-0 border-b border-white/[0.07]">
+                      <tr>
+                        <th className="table-header">Fecha/Hora</th>
+                        <th className="table-header">Acción</th>
+                        <th className="table-header">Usuario</th>
+                        <th className="table-header">IP</th>
+                        <th className="table-header">Nivel</th>
+                        <th className="table-header">Detalle</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {auditLog.map((e: any) => (
+                        <tr key={e.id} className={`table-row ${e.severity === 'critical' ? 'bg-danger/[0.03]' : e.severity === 'warning' ? 'bg-amber-500/[0.02]' : ''}`}>
+                          <td className="table-cell text-white/42 whitespace-nowrap">
+                            {new Date(e.created_at).toLocaleString('es-CL', { dateStyle: 'short', timeStyle: 'short' })}
+                          </td>
+                          <td className="table-cell font-medium text-white/80">
+                            {actionLabel[e.action] ?? e.action}
+                          </td>
+                          <td className="table-cell text-white/60">{e.actor_email ?? '—'}</td>
+                          <td className="table-cell text-white/42 font-mono">{e.ip_address ?? '—'}</td>
+                          <td className="table-cell">
+                            <span className={`badge border text-[10px] font-semibold ${severityBadge[e.severity] ?? 'bg-surface-2 text-white/50'}`}>
+                              {e.severity}
+                            </span>
+                          </td>
+                          <td className="table-cell text-white/42 max-w-xs truncate" title={e.details ?? ''}>{e.details ?? '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between px-6 py-3 border-t border-white/[0.05] text-xs text-white/42">
+                  <span>Página {auditPage} de {totalPages} · {auditTotal} registros</span>
+                  <div className="flex gap-1.5">
+                    <button
+                      onClick={() => loadAuditLog(auditPage - 1)}
+                      disabled={auditPage <= 1 || auditLoading}
+                      className="px-3 py-1 rounded-lg border border-white/10 hover:bg-surface-2 disabled:opacity-30 transition-colors"
+                    >
+                      Anterior
+                    </button>
+                    <button
+                      onClick={() => loadAuditLog(auditPage + 1)}
+                      disabled={auditPage >= totalPages || auditLoading}
+                      className="px-3 py-1 rounded-lg border border-white/10 hover:bg-surface-2 disabled:opacity-30 transition-colors"
+                    >
+                      Siguiente
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      })()}
 
       {/* ── Agent modal — tecnico only ─────────────────────────────── */}
       {showAgentModal && isTecnico && (

@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { login as apiLogin } from '../api'
+import type { PlanLimits } from '../utils/plans'
 
 interface User {
   id: number
@@ -8,6 +9,8 @@ interface User {
   role: string
   group_id: number | null
   whatsapp_number: string | null
+  negocio_plan: string
+  negocio_plan_limits: PlanLimits | null
 }
 
 interface AuthState {

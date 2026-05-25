@@ -67,6 +67,8 @@ export interface ClientPortalSession {
   identifier: string;
   debts: SisContableDebtResponse;
   selectedContractId?: string;
+  passwordChangeRequired?: boolean;
+  payAfterPasswordChange?: boolean;
 }
 
 export interface SelectedPaymentSession {
@@ -214,7 +216,7 @@ export async function clientLogin(identifier: string, password: string): Promise
   return data;
 }
 
-export async function updateClientPassword(payload: { identifier: string; currentPassword: string; newPassword: string }) {
+export async function updateClientPassword(payload: { identifier: string; currentPassword?: string; newPassword: string }) {
   const response = await fetch(`${API_BASE_URL}/api/client/password`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...clientAuthHeaders() },
@@ -224,7 +226,7 @@ export async function updateClientPassword(payload: { identifier: string; curren
   if (!response.ok) {
     throw new Error(data.message || data.error || 'No fue posible actualizar la clave.');
   }
-  return data as { ok: true };
+  return data as { ok: true; token?: string };
 }
 
 export async function fetchClientDebts(identifier: string) {

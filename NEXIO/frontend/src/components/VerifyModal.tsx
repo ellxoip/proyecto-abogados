@@ -158,7 +158,7 @@ export default function VerifyModal({ pv, type, form, setForm, onConfirm, onClos
                   <span className="text-xs font-semibold text-white/85">{lead?.vendedor?.name}</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-xs text-white/62">Agendadora</span>
+                  <span className="text-xs text-white/62">Agendador/a</span>
                   <span className="text-xs font-semibold text-white/85">{lead?.agendadora?.name}</span>
                 </div>
                 <div className="flex items-center justify-between pt-1 border-t border-white/[0.07]">

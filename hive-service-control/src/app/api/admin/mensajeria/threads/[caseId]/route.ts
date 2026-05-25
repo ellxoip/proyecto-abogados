@@ -52,6 +52,36 @@ export async function GET(req: Request, { params }: { params: { caseId: string }
         stage: true,
         client: { select: { id: true, fullName: true, email: true } },
         categoria: { select: { id: true, name: true } },
+        jefeMesa: {
+          select: {
+            id: true,
+            fullName: true,
+            role: true,
+            email: true,
+            active: true,
+            lastSeenAt: true,
+          },
+        },
+        abogados: {
+          select: {
+            id: true,
+            fullName: true,
+            role: true,
+            email: true,
+            active: true,
+            lastSeenAt: true,
+            managedBy: {
+              select: {
+                id: true,
+                fullName: true,
+                role: true,
+                email: true,
+                active: true,
+                lastSeenAt: true,
+              },
+            },
+          },
+        },
       },
     });
     if (!kase) return null;
@@ -74,7 +104,35 @@ export async function GET(req: Request, { params }: { params: { caseId: string }
       },
     });
 
-    return { kase, comments };
+    const staffTeam = new Map<
+      string,
+      { id: string; fullName: string; role: string; email: string; lastSeenAt: string | null }
+    >();
+    const addStaff = (user: {
+      id: string;
+      fullName: string;
+      role: string;
+      email: string;
+      active: boolean;
+      lastSeenAt: Date | null;
+    } | null) => {
+      if (!user || !user.active) return;
+      staffTeam.set(user.id, {
+        id: user.id,
+        fullName: user.fullName,
+        role: user.role,
+        email: user.email,
+        lastSeenAt: user.lastSeenAt ? user.lastSeenAt.toISOString() : null,
+      });
+    };
+
+    addStaff(kase.jefeMesa);
+    for (const lawyer of kase.abogados) {
+      addStaff(lawyer.managedBy);
+      addStaff(lawyer);
+    }
+
+    return { kase, comments, staffTeam: Array.from(staffTeam.values()) };
   });
 
   if (!result) {
@@ -89,6 +147,7 @@ export async function GET(req: Request, { params }: { params: { caseId: string }
       stage: result.kase.stage,
       client: result.kase.client,
       categoria: result.kase.categoria,
+      staffTeam: result.staffTeam,
     },
     messages: result.comments.map((c) => ({
       id: c.id,

@@ -119,26 +119,22 @@ describe("advanceToInProgress", () => {
     if (!r.success) expect(r.error).toContain("No se puede avanzar");
   });
 
-  it("auto-asigna al abogado actual si el caso no tiene abogados", async () => {
+  it("rechaza iniciar desarrollo si el caso no tiene abogado asignado", async () => {
     const cliente = await seedClient();
     const abo = await seedAbogado();
     const kase = await seedCase({ clientId: cliente.id, stage: "OPEN" });
     authMock.mockResolvedValue({ user: { id: abo.id, role: "ABOGADO", name: "Juan" } });
 
     const r = await advanceToInProgress(kase.id);
-    expect(r.success).toBe(true);
+    expect(r.success).toBe(false);
+    if (!r.success) expect(r.error).toContain("abogado asignado");
 
     const after = await _prisma.case.findUnique({
       where: { id: kase.id },
       include: { abogados: { select: { id: true } } },
     });
-    expect(after!.stage).toBe("IN_PROGRESS");
-    expect(after!.abogados.map((a) => a.id)).toContain(abo.id);
-
-    const audit = await _prisma.auditLog.findFirst({
-      where: { action: "CASE_ASSIGNED", caseId: kase.id },
-    });
-    expect(audit).not.toBeNull();
+    expect(after!.stage).toBe("OPEN");
+    expect(after!.abogados).toHaveLength(0);
   });
 
   it("SUPER_ADMIN puede avanzar sin autoasignarse", async () => {

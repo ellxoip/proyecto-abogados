@@ -37,11 +37,53 @@ export function Sidebar() {
     };
   }, [isOpen]);
 
-  const items: { href: string; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  // Unread count para badge del item Mensajeria. Poll 30s + listener
+  // `messenger:unread-changed` para refrescar al instante cuando el Dock
+  // detecta mensajes nuevos.
+  const [unreadMessages, setUnreadMessages] = useState(0);
+  useEffect(() => {
+    if (!session) return;
+    let cancelled = false;
+    async function fetchUnread() {
+      try {
+        const res = await fetch("/api/admin/mensajeria/summary", { cache: "no-store" });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled) setUnreadMessages(Number(data?.unreadCount ?? 0));
+      } catch {
+        // silencio
+      }
+    }
+    fetchUnread();
+    const poll = setInterval(fetchUnread, 30_000);
+    const onChange = (ev: Event) => {
+      const detail = (ev as CustomEvent).detail as { unreadCount?: number } | undefined;
+      if (typeof detail?.unreadCount === "number") setUnreadMessages(detail.unreadCount);
+      else fetchUnread();
+    };
+    window.addEventListener("messenger:unread-changed", onChange);
+    return () => {
+      cancelled = true;
+      clearInterval(poll);
+      window.removeEventListener("messenger:unread-changed", onChange);
+    };
+  }, [session]);
+
+  const items: {
+    href: string;
+    label: string;
+    icon: React.ComponentType<{ className?: string }>;
+    badge?: number;
+  }[] = [
     { href: "/admin/bandeja", label: "Bandeja de Entrada", icon: Inbox },
     { href: "/admin/casos", label: "Mis Casos", icon: Folder },
     { href: "/admin/productividad/horas", label: "Mis Horas", icon: Clock },
-    { href: "/admin/mensajeria", label: "Mensajeria", icon: MessageSquare },
+    {
+      href: "/admin/mensajeria",
+      label: "Mensajeria",
+      icon: MessageSquare,
+      badge: unreadMessages,
+    },
   ];
 
   if (role === "SUPER_ADMIN") {
@@ -85,7 +127,7 @@ export function Sidebar() {
         <div className="text-[9px] uppercase tracking-widest px-3 mb-2" style={{ color: "var(--sidebar-text-muted)" }}>
           Operacion
         </div>
-        {items.map(({ href, label, icon: Icon }) => {
+        {items.map(({ href, label, icon: Icon, badge }) => {
           const active = pathname === href || pathname.startsWith(href + "/");
           return (
             <Link
@@ -99,7 +141,20 @@ export function Sidebar() {
               }}
             >
               <Icon className="w-4 h-4 flex-shrink-0" />
-              <span>{label}</span>
+              <span className="flex-1">{label}</span>
+              {badge !== undefined && badge > 0 && (
+                <span
+                  className="inline-flex items-center justify-center text-[10px] font-bold leading-none rounded-full min-w-[18px] h-[18px] px-1.5"
+                  style={{
+                    background: "#DC2626",
+                    color: "#FFFFFF",
+                    boxShadow: "0 0 0 2px var(--sidebar-bg)",
+                  }}
+                  title={`${badge} mensaje${badge === 1 ? "" : "s"} nuevo${badge === 1 ? "" : "s"}`}
+                >
+                  {badge > 99 ? "99+" : badge}
+                </span>
+              )}
             </Link>
           );
         })}

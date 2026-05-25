@@ -9,6 +9,7 @@ import {
   QrCode, Loader2, X, Pencil, AlertTriangle, Info, KeyRound,
 } from 'lucide-react'
 import { useAuthStore } from '../store/auth'
+import { getLimits } from '../utils/plans'
 
 type SessionStatus = 'not_started' | 'connecting' | 'qr_ready' | 'scanning' | 'connected' | 'disconnected' | 'logged_out' | 'service_unavailable'
 
@@ -409,7 +410,11 @@ export default function MisWhatsApp() {
   const [creating, setCreating] = useState(false)
   const [qrSession, setQrSession] = useState<WASession | null>(null)
 
-  const MAX = 3
+  const MAX = (() => {
+    const limit = getLimits(user?.negocio_plan ?? 'basico').max_wa_numbers
+    return limit === -1 ? Infinity : limit
+  })()
+  const maxLabel = MAX === Infinity ? 'ilimitados' : MAX
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -479,7 +484,7 @@ export default function MisWhatsApp() {
         <div>
           <h1 className="text-xl font-bold text-white">Mis WhatsApp</h1>
           <p className="text-xs text-white/45 mt-0.5">
-            {connectedCount}/{MAX} números conectados
+            {connectedCount}/{MAX === Infinity ? '∞' : MAX} números conectados
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -500,7 +505,9 @@ export default function MisWhatsApp() {
         style={{ background: 'rgba(67,97,238,0.07)', border: '1px solid rgba(67,97,238,0.16)', color: 'rgba(52,81,199,0.90)' }}>
         <Info size={14} className="flex-shrink-0 mt-0.5" style={{ color: '#4361ee' }} />
         <p>
-          Vincula hasta <strong>3 números de WhatsApp</strong> con tu cuenta. Los mensajes entrantes aparecerán automáticamente en el chat de cada lead. Un mismo número puede atender varios leads en distintas áreas.
+          Vincula hasta <strong>{maxLabel === 'ilimitados' ? 'números ilimitados' : `${maxLabel} número${maxLabel === 1 ? '' : 's'} de WhatsApp`}</strong> con tu cuenta.
+          Los mensajes entrantes aparecerán automáticamente en el chat de cada lead.
+          Un mismo número puede atender varios leads en distintas áreas.
         </p>
       </div>
 
@@ -537,11 +544,11 @@ export default function MisWhatsApp() {
               onRefresh={load}
             />
           ))}
-          {sessions.length >= MAX && (
+          {sessions.length >= MAX && MAX !== Infinity && (
             <div className="flex items-center gap-2 px-4 py-3 rounded-xl text-xs"
               style={{ background: 'rgba(255,166,0,0.07)', border: '1px solid rgba(255,166,0,0.20)', color: 'rgba(255,166,0,0.80)' }}>
               <AlertTriangle size={13} className="flex-shrink-0" />
-              Límite de {MAX} números alcanzado. Elimina uno para agregar otro.
+              Límite de {MAX} número{MAX === 1 ? '' : 's'} alcanzado según tu plan. Elimina uno para agregar otro.
             </div>
           )}
         </div>

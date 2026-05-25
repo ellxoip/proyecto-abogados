@@ -50,6 +50,7 @@ export default function Pagos() {
   const [view, setView] = useState<'kanban' | 'history'>('kanban')
   const [confirmModal, setConfirmModal] = useState<{ pv: PaymentVerification; type: 'confirm' | 'reject' | 'view' } | null>(null)
   const [reverting, setReverting] = useState<number | null>(null)
+  const [revertConfirmId, setRevertConfirmId] = useState<number | null>(null)
   const [form, setForm] = useState({ payment_amount: '', payment_method: 'transferencia', payment_date: '', payment_reference: '', invoice_url: '', notes: '' })
   const [confirming, setConfirming] = useState(false)
   const [exporting, setExporting] = useState(false)
@@ -110,7 +111,12 @@ export default function Pagos() {
   }
 
   const handleRevert = async (pvId: number) => {
-    if (!window.confirm('¿Revertir este pago confirmado a pendiente? Se notificará al vendedor/a y agendador/a.')) return
+    if (revertConfirmId !== pvId) {
+      setRevertConfirmId(pvId)
+      setTimeout(() => setRevertConfirmId(prev => prev === pvId ? null : prev), 3000)
+      return
+    }
+    setRevertConfirmId(null)
     setReverting(pvId)
     try {
       await revertPayment(pvId)
@@ -226,9 +232,9 @@ export default function Pagos() {
           <div className="w-7 h-7 border-2 border-lime border-t-transparent rounded-full animate-spin" />
         </div>
       ) : view === 'kanban' ? (
-        <KanbanView payments={payments} isDante={isDante} onAction={setConfirmModal} onRevert={handleRevert} reverting={reverting} />
+        <KanbanView payments={payments} isDante={isDante} onAction={setConfirmModal} onRevert={handleRevert} reverting={reverting} revertConfirmId={revertConfirmId} />
       ) : (
-        <HistoryView payments={payments} isDante={isDante} onAction={setConfirmModal} onRevert={handleRevert} reverting={reverting} />
+        <HistoryView payments={payments} isDante={isDante} onAction={setConfirmModal} onRevert={handleRevert} reverting={reverting} revertConfirmId={revertConfirmId} />
       )}
 
       {/* Confirm modal */}
@@ -250,12 +256,13 @@ export default function Pagos() {
 
 
 /* ── Kanban View ─────────────────────────────────────────── */
-function KanbanView({ payments, isDante, onAction, onRevert, reverting }: {
+function KanbanView({ payments, isDante, onAction, onRevert, reverting, revertConfirmId }: {
   payments: PaymentVerification[]
   isDante: boolean
   onAction: (v: any) => void
   onRevert: (id: number) => void
   reverting: number | null
+  revertConfirmId: number | null
 }) {
   const columns = [
     { status: 'pendiente', label: 'Pendiente de verificación', dot: 'bg-warn' },
@@ -280,7 +287,7 @@ function KanbanView({ payments, isDante, onAction, onRevert, reverting }: {
               {colPayments.length === 0 ? (
                 <p className="text-center text-sm text-white/52 py-8">Sin registros</p>
               ) : colPayments.map(pv => (
-                <PaymentCard key={pv.id} pv={pv} isDante={isDante} onAction={onAction} onRevert={onRevert} reverting={reverting} />
+                <PaymentCard key={pv.id} pv={pv} isDante={isDante} onAction={onAction} onRevert={onRevert} reverting={reverting} revertConfirmId={revertConfirmId} />
               ))}
             </div>
           </div>
@@ -291,12 +298,13 @@ function KanbanView({ payments, isDante, onAction, onRevert, reverting }: {
 }
 
 /* ── History View ────────────────────────────────────────── */
-function HistoryView({ payments, isDante, onAction, onRevert, reverting }: {
+function HistoryView({ payments, isDante, onAction, onRevert, reverting, revertConfirmId }: {
   payments: PaymentVerification[]
   isDante: boolean
   onAction: (v: any) => void
   onRevert: (id: number) => void
   reverting: number | null
+  revertConfirmId: number | null
 }) {
   const sorted = [...payments].sort((a, b) =>
     parseDate(b.created_at).getTime() - parseDate(a.created_at).getTime()
@@ -386,9 +394,9 @@ function HistoryView({ payments, isDante, onAction, onRevert, reverting }: {
                     <button
                       onClick={() => onRevert(pv.id)}
                       disabled={reverting === pv.id}
-                      className="flex items-center gap-1 text-xs text-warn border border-warn/25 bg-warn/10 hover:bg-warn/20 px-2.5 py-1 rounded-lg transition-colors font-medium disabled:opacity-50">
+                      className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg transition-colors font-medium disabled:opacity-50 ${revertConfirmId === pv.id ? 'bg-danger text-white border border-danger' : 'text-warn border border-warn/25 bg-warn/10 hover:bg-warn/20'}`}>
                       {reverting === pv.id ? <Loader2 size={11} className="animate-spin" /> : <Undo2 size={11} />}
-                      Revertir
+                      {revertConfirmId === pv.id ? 'Confirmar' : 'Revertir'}
                     </button>
                   )}
                 </div>
@@ -401,12 +409,13 @@ function HistoryView({ payments, isDante, onAction, onRevert, reverting }: {
   )
 }
 
-function PaymentCard({ pv, isDante, onAction, onRevert, reverting }: {
+function PaymentCard({ pv, isDante, onAction, onRevert, reverting, revertConfirmId }: {
   pv: PaymentVerification
   isDante: boolean
   onAction: (v: any) => void
   onRevert: (id: number) => void
   reverting: number | null
+  revertConfirmId: number | null
 }) {
   return (
     <div className="bg-surface-1 rounded-xl p-3.5 border border-white/[0.07] shadow-sm hover:shadow-card-lg hover:border-white/10 transition-all">
@@ -478,9 +487,9 @@ function PaymentCard({ pv, isDante, onAction, onRevert, reverting }: {
             <button
               onClick={() => onRevert(pv.id)}
               disabled={reverting === pv.id}
-              className="w-full mt-1 flex items-center justify-center gap-1.5 text-[11px] py-1.5 text-warn border border-warn/25 bg-warn/10 hover:bg-warn/20 rounded-lg transition-colors font-semibold disabled:opacity-50">
+              className={`w-full mt-1 flex items-center justify-center gap-1.5 text-[11px] py-1.5 rounded-lg transition-colors font-semibold disabled:opacity-50 ${revertConfirmId === pv.id ? 'bg-danger text-white border border-danger' : 'text-warn border border-warn/25 bg-warn/10 hover:bg-warn/20'}`}>
               {reverting === pv.id ? <Loader2 size={10} className="animate-spin" /> : <Undo2 size={10} />}
-              Revertir pago
+              {revertConfirmId === pv.id ? 'Confirmar reversión' : 'Revertir pago'}
             </button>
           )}
         </div>

@@ -6,6 +6,7 @@ import { logAudit } from "@/lib/audit";
 import { hashPassword } from "@/lib/services/credentials";
 import { verifyIntegrationAuth, getCorrelationId } from "@/lib/integration-auth";
 import { normalizeRut, normalizeEmail, normalizePhone } from "@/lib/identity";
+import { normalizePagaCuotasPortalLink } from "@/lib/pagacuotas";
 
 /**
  * POST /api/internal/integration/clients/payment-link
@@ -15,11 +16,17 @@ import { normalizeRut, normalizeEmail, normalizePhone } from "@/lib/identity";
  *   - `paymentLink` para que el portal redirija al portal de pagos correcto.
  *   - El hash de la MISMA password que financial-control generó y nexio
  *     entregará al cliente. Esa password sirve para PagaCuotas y para
- *     este portal (modelo unificado). El cliente la rotará en el primer
- *     login: marcamos `mustChangePassword = true`.
+ *     este portal (modelo unificado). El cliente ya la conoce desde
+ *     PagaCuotas, así que NO forzamos rotación al primer login
+ *     (`mustChangePassword = false`). Si desea cambiarla, puede hacerlo
+ *     voluntariamente desde el portal — el cambio se propaga a fc.
  *
- * Solo actualizamos el hash si el cliente aún no rotó su password. Si ya
- * la cambió, no la tocamos (cliente soberano).
+ * Cuando reusamos un User existente por RUT, sobrescribimos siempre
+ * passwordHash, fullName, email y phone con el payload de fc. La
+ * sincronización bidireccional con fc garantiza que el hash entrante es
+ * el vigente (rotaciones de sc ya se replicaron a fc). Sobrescribir la
+ * identidad evita que demos/seeds con mismo RUT mantengan datos viejos
+ * cuando entra el cliente real.
  *
  * Auth: `x-api-key` o `Authorization: Bearer …` = INTEGRATION_INTERNAL_API_KEY.
  */
@@ -55,7 +62,8 @@ export async function POST(req: Request) {
     );
   }
 
-  const { rut, nombre, email, telefono, payment_link, password_plain, crm_lead_id, correlation_id } = parsed.data;
+  const { rut, nombre, email, telefono, password_plain, crm_lead_id, correlation_id } = parsed.data;
+  const payment_link = normalizePagaCuotasPortalLink(parsed.data.payment_link) ?? parsed.data.payment_link;
   const corrId = getCorrelationId(req, correlation_id);
 
   try {
@@ -84,22 +92,33 @@ export async function POST(req: Request) {
             passwordHash,
             rut: normalizedRut,
             paymentLink: payment_link,
-            mustChangePassword: true,
+            mustChangePassword: false,
             active: true,
           },
         });
       } else {
-        const shouldSyncHash = client.mustChangePassword === true;
+        // Si el cliente ya rotó su clave (audit PASSWORD_CHANGED previo),
+        // la sync bidireccional mantiene fc↔sc al día — NO pisar el hash
+        // vigente con el plaintext snapshot del onboarding original.
+        const rotated = await tx.auditLog.findFirst({
+          where: { actorId: client.id, action: "PASSWORD_CHANGED" },
+          select: { id: true },
+        });
+        const updateData: Record<string, unknown> = {
+          fullName: nombre,
+          email: normalizedEmail,
+          phone: normalizedPhone,
+          rut: client.rut ?? normalizedRut,
+          paymentLink: payment_link,
+          mustChangePassword: false,
+          active: true,
+        };
+        if (!rotated) {
+          updateData.passwordHash = passwordHash;
+        }
         client = await tx.user.update({
           where: { id: client.id },
-          data: {
-            ...(shouldSyncHash ? { passwordHash } : {}),
-            fullName: client.fullName || nombre,
-            phone: client.phone || normalizedPhone,
-            rut: client.rut ?? normalizedRut,
-            paymentLink: payment_link,
-            active: true,
-          },
+          data: updateData,
         });
       }
 

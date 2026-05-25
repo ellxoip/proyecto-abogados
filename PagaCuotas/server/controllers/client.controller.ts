@@ -1,7 +1,8 @@
 import type { Request, Response } from 'express';
 import { sisContableClient } from '../clients/sisContable.client.js';
 import { hiveCrmClient } from '../clients/hiveCrm.client.js';
-import { createClientToken } from '../lib/clientAuth.js';
+import { createClientToken, normalizeIdentifier } from '../lib/clientAuth.js';
+import { hasPasswordChanged, markPasswordChanged } from '../services/crmIntegration.service.js';
 
 export class ClientController {
   async login(req: Request, res: Response) {
@@ -39,11 +40,38 @@ export class ClientController {
   async updatePassword(req: Request, res: Response) {
     const { identifier, currentPassword, newPassword } = req.body as {
       identifier: string;
-      currentPassword: string;
+      currentPassword?: string;
       newPassword: string;
     };
 
     try {
+      if (!req.client || normalizeIdentifier(req.client.sub) !== normalizeIdentifier(identifier)) {
+        res.status(403).json({ ok: false, code: 'FORBIDDEN', message: 'Acceso denegado a este identificador.' });
+        return;
+      }
+
+      const canUseAutoLoginGrant =
+        req.client.auth_method === 'magic_link' &&
+        req.client.password_change_grant === true &&
+        !(await hasPasswordChanged(identifier));
+
+      if (canUseAutoLoginGrant) {
+        await sisContableClient.setClientPasswordFromAutoLogin(identifier, newPassword);
+        await markPasswordChanged(identifier);
+        const token = createClientToken({
+          identifier,
+          cliente_contable_id: req.client.cliente_contable_id,
+          email: req.client.email || '',
+        });
+        res.json({ ok: true, token });
+        return;
+      }
+
+      if (!currentPassword) {
+        res.status(400).json({ ok: false, code: 'CURRENT_PASSWORD_REQUIRED', message: 'Debes ingresar la clave actual.' });
+        return;
+      }
+
       await sisContableClient.updateClientPassword(identifier, currentPassword, newPassword);
       res.json({ ok: true });
     } catch (error: any) {

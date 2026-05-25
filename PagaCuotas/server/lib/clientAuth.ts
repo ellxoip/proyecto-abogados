@@ -27,9 +27,17 @@ export interface ClientTokenPayload {
   email: string;
   role: 'client';
   exp: number;
+  auth_method?: 'password' | 'magic_link';
+  password_change_grant?: boolean;
 }
 
-export function createClientToken(params: { identifier: string; cliente_contable_id: string; email: string }) {
+export function createClientToken(params: {
+  identifier: string;
+  cliente_contable_id: string;
+  email: string;
+  auth_method?: 'password' | 'magic_link';
+  password_change_grant?: boolean;
+}) {
   const payload = base64Url(
     JSON.stringify({
       sub: normalizeIdentifier(params.identifier),
@@ -37,6 +45,8 @@ export function createClientToken(params: { identifier: string; cliente_contable
       email: params.email.trim().toLowerCase(),
       role: 'client',
       exp: Date.now() + TOKEN_TTL_MS,
+      auth_method: params.auth_method || 'password',
+      password_change_grant: Boolean(params.password_change_grant),
     } satisfies ClientTokenPayload)
   );
   return `${payload}.${signPayload(payload)}`;

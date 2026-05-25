@@ -441,8 +441,8 @@ export default function Dashboard() {
               <AlertBanner
                 icon={ClipboardList}
                 title={`${leadsSinOT} lead${leadsSinOT > 1 ? 's' : ''} sin Orden de Trabajo`}
-                sub="Tienes leads en Cierre o Altamente Interesado que aún no tienen OT creada"
-                to="/mi-pipeline"
+                sub="Tienes leads en Cierre sin OT — créala antes de avanzar"
+                to="/mi-pipeline?sin_ot=1"
                 color="danger"
               />
             )}
@@ -659,8 +659,8 @@ export default function Dashboard() {
               <AlertBanner
                 icon={ClipboardList}
                 title={`${leadsSinOT} lead${leadsSinOT > 1 ? 's' : ''} sin Orden de Trabajo`}
-                sub="Leads en Cierre o Altamente Interesado sin OT — notificar al vendedor"
-                to="/pipeline"
+                sub="Leads en Cierre sin OT — vendedor debe crear OT antes de avanzar"
+                to="/pipeline?sin_ot=1"
                 color="danger"
               />
             )}
@@ -959,8 +959,8 @@ export default function Dashboard() {
             <AlertBanner
               icon={ClipboardList}
               title={`${leadsSinOT} lead${leadsSinOT > 1 ? 's' : ''} sin Orden de Trabajo`}
-              sub="Leads en Cierre o Altamente Interesado sin OT — vendedores deben actuar"
-              to="/pipeline"
+              sub="Leads en Cierre sin OT — vendedores deben actuar"
+              to="/pipeline?sin_ot=1"
               color="danger"
             />
           )}

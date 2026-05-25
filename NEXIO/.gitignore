@@ -29,6 +29,10 @@ frontend/dist/
 frontend/.env
 frontend/.env.local
 frontend/.env.*.local
+whatsapp-qr-service/node_modules/
+whatsapp-qr-service/.env
+whatsapp-qr-service/.env.local
+whatsapp-qr-service/.env.*.local
 
 # Uploads (preserve folder structure, not files)
 uploads/invoices/*

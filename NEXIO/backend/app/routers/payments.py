@@ -82,7 +82,7 @@ def export_payments_excel(
 
     headers = [
         "ID", "Estado", "Cliente", "Teléfono", "RUT", "Área", "Grupo",
-        "Vendedor", "Agendadora", "Honorarios", "Monto Pagado",
+        "Vendedor", "Agendador/a", "Honorarios", "Monto Pagado",
         "Método Pago", "Fecha Pago", "Referencia", "Notas", "Creado", "Confirmado",
     ]
     STATUS_LABELS = {"pendiente": "Pendiente", "pago_exitoso": "Confirmado", "rechazado": "Rechazado"}

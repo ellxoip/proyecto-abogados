@@ -406,7 +406,26 @@ async def qr_history(body: dict, db: Session = Depends(get_db)):
             db.flush()
 
     db.commit()
+    # Notify all connected SSE clients to refresh conversations and leads list
+    if imported > 0:
+        await wa_broadcaster.broadcast("refresh", {"imported": imported})
     return {"ok": True, "imported": imported}
+
+
+@webhook_router.post("/qr-contact-pic")
+async def qr_contact_pic(body: dict, db: Session = Depends(get_db)):
+    """Update a contact's WhatsApp profile picture URL."""
+    phone = (body.get("phone") or "").strip()
+    avatar_url = (body.get("avatar_url") or "").strip()
+    if not phone or not avatar_url:
+        return {"ok": False}
+    if not phone.startswith("+"):
+        phone = "+" + phone
+    contact = db.query(models.Contact).filter(models.Contact.phone == phone).first()
+    if contact and contact.avatar_url != avatar_url:
+        contact.avatar_url = avatar_url
+        db.commit()
+    return {"ok": True}
 
 
 @webhook_router.post("/qr-chats")
@@ -505,13 +524,15 @@ async def qr_disconnected(body: dict, db: Session = Depends(get_db)):
 
 @webhook_router.post("/qr-incoming")
 async def qr_incoming(body: dict, db: Session = Depends(get_db)):
-    """Called by Node service for every incoming message received via QR session."""
+    """Called by Node service for every incoming message received via QR session.
+    Also handles outgoing messages sent from the linked phone (is_from_me=True)."""
     session_id = body.get("session_id")
     from_phone = (body.get("from_phone") or "").strip()
     content = body.get("content", "")
     message_type = body.get("message_type", "text")
     media_url = body.get("media_url")
     message_id = body.get("message_id")
+    is_from_me = bool(body.get("is_from_me", False))
 
     if not session_id or not from_phone:
         return {"ok": False}
@@ -583,8 +604,29 @@ async def qr_incoming(body: dict, db: Session = Depends(get_db)):
         .first()
     )
 
-    # Auto-create lead if none exists and we have enough context
+    # Determine if an AI Agent will handle this conversation
+    will_be_handled_by_ai = False
     if not active_lead and cfg.group_id:
+        from ..utils.agent_engine import _within_hours
+        agent = (
+            db.query(models.AIAgent)
+            .join(
+                models.ai_agent_configs,
+                models.ai_agent_configs.c.agent_id == models.AIAgent.id,
+            )
+            .filter(
+                models.ai_agent_configs.c.whatsapp_config_id == cfg.id,
+                models.AIAgent.is_active == True,
+            )
+            .first()
+        )
+        if agent and _within_hours(agent.business_hours_start, agent.business_hours_end):
+            state = db.query(models.AIAgentContactState).filter_by(agent_id=agent.id, contact_id=contact.id).first()
+            if not state or state.state not in ("paused", "handed_off"):
+                will_be_handled_by_ai = True
+
+    # Auto-create lead if none exists and we have enough context (AND AI won't handle it)
+    if not active_lead and cfg.group_id and not will_be_handled_by_ai:
         area_id = cfg.areas[0].id if cfg.areas else None
         if not area_id:
             first_area = db.query(models.Area).filter(
@@ -627,13 +669,13 @@ async def qr_incoming(body: dict, db: Session = Depends(get_db)):
         contact_id=contact.id,
         lead_id=active_lead.id if active_lead else None,
         whatsapp_config_id=cfg.id,
-        direction="in",
+        direction="out" if is_from_me else "in",
         message_type=message_type,
         content=content,
         media_url=media_url,
-        status="received",
+        status="sent" if is_from_me else "received",
         message_id=message_id,
-        is_read=False,
+        is_read=is_from_me,
     )
     db.add(msg)
 
@@ -660,15 +702,16 @@ async def qr_incoming(body: dict, db: Session = Depends(get_db)):
         },
     })
 
-    # Fire AI agent in background (non-blocking)
-    try:
-        from ..utils.agent_engine import maybe_run_agent
-        from ..database import SessionLocal
-        asyncio.create_task(
-            _run_agent_bg(int(session_id), contact.id, active_lead.id if active_lead else None, msg.id)
-        )
-    except Exception as _agent_exc:
-        logger.warning("Could not schedule agent task: %s", _agent_exc)
+    # Fire AI agent in background only for real incoming messages (not our own outgoing)
+    if not is_from_me:
+        try:
+            from ..utils.agent_engine import maybe_run_agent
+            from ..database import SessionLocal
+            asyncio.create_task(
+                _run_agent_bg(int(session_id), contact.id, active_lead.id if active_lead else None, msg.id)
+            )
+        except Exception as _agent_exc:
+            logger.warning("Could not schedule agent task: %s", _agent_exc)
 
     return {"ok": True}
 

@@ -3,6 +3,7 @@ import { X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { updateContact } from '../api'
 import type { Contact } from '../types'
+import { rutOnChange } from '../utils/rut'
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -65,10 +66,10 @@ export function EditContactModal({ contact, onClose, onSuccess }: {
               <input className="input" value={form.city} onChange={e => set('city', e.target.value)} placeholder="Ej: Providencia" />
             </Field>
             <Field label="RUT Persona">
-              <input className="input" value={form.rut_persona} onChange={e => set('rut_persona', e.target.value)} placeholder="12.345.678-9" />
+              <input className="input" value={form.rut_persona} onChange={e => set('rut_persona', rutOnChange(e.target.value))} placeholder="12.345.678-9" />
             </Field>
             <Field label="RUT Empresa">
-              <input className="input" value={form.rut_empresa} onChange={e => set('rut_empresa', e.target.value)} placeholder="76.000.000-0" />
+              <input className="input" value={form.rut_empresa} onChange={e => set('rut_empresa', rutOnChange(e.target.value))} placeholder="76.000.000-0" />
             </Field>
             <div className="col-span-2">
               <Field label="Razón Social">

@@ -6,20 +6,19 @@ Fallback policy:
 - En entornos local/dev se PERMITE el espejo en DB local SOLO si
   PAGACUOTAS_ALLOW_LOCAL_FALLBACK == "true".
 - En producción (ENVIRONMENT == "production") la creación de un espejo local
-  está PROHIBIDA por diseño: PagaCuotas es la fuente de verdad del cliente
-  de cobro. Si la API no responde, la operación falla con PagaCuotasUnavailable
-  y el caller debe encolar el evento para reintento o pedir intervención manual.
+  está PROHIBIDA: PagaCuotas es la fuente de verdad del cliente de cobro.
+  Si la API no responde, la operación falla con PagaCuotasUnavailable.
 """
 import os
 import secrets
 import logging
 import httpx
+from .pagacuotas_links import normalize_pagacuotas_portal_link
 
 logger = logging.getLogger(__name__)
 
 PAGACUOTAS_URL     = os.getenv("PAGACUOTAS_URL",     "http://localhost:4000")
-PAGACUOTAS_API_KEY = os.getenv("PAGACUOTAS_API_KEY", "")
-PAGACUOTAS_PORTAL_URL = os.getenv("PAGACUOTAS_PORTAL_URL", "http://localhost:5000")
+
 ENVIRONMENT = os.getenv("ENVIRONMENT", "local").lower()
 ALLOW_LOCAL_FALLBACK = (
     os.getenv("PAGACUOTAS_ALLOW_LOCAL_FALLBACK", "false").lower() == "true"
@@ -29,6 +28,8 @@ ALLOW_LOCAL_FALLBACK = (
 
 class PagaCuotasUnavailable(RuntimeError):
     """Se levanta cuando la API de PagaCuotas no responde y no hay fallback permitido."""
+PAGACUOTAS_API_KEY = os.getenv("PAGACUOTAS_API_KEY", "")
+PAGACUOTAS_PORTAL_URL = os.getenv("PAGACUOTAS_PORTAL_URL", "http://localhost:5000")
 
 
 def _local_token() -> str:
@@ -59,7 +60,7 @@ def _local_fallback(
         models.PagaCuotasCliente.crm_lead_id == crm_lead_id
     ).first()
     if existing:
-        link = f"{PAGACUOTAS_PORTAL_URL}/client/access/{existing.access_token}"
+        link = normalize_pagacuotas_portal_link(f"{PAGACUOTAS_PORTAL_URL}/client/access/{existing.access_token}")
         return {"id": existing.id, "payment_link": link, "whatsapp": {}}
 
     token = _local_token()
@@ -85,11 +86,16 @@ def _local_fallback(
     db.add(cliente)
     db.flush()
 
-    link = f"{PAGACUOTAS_PORTAL_URL}/client/access/{token}"
+    link = normalize_pagacuotas_portal_link(f"{PAGACUOTAS_PORTAL_URL}/client/access/{token}")
     nombre_first = nombre.split()[0] if nombre else "estimado cliente"
     wa_msg = (
         f"Hola {nombre_first}, ya puedes pagar tus cuotas en PagaCuotas.\n"
         f"Ingresa directamente aquí: {link}\n"
+        f"Este enlace es personal y seguro."
+    )
+    wa_msg = (
+        f"Hola {nombre_first}, ya puedes entrar a tu Portal PagaCuotas.\n"
+        f"Revisa tu caso y paga tus cuotas aqui: {link}\n"
         f"Este enlace es personal y seguro."
     )
     return {"id": cliente.id, "payment_link": link, "whatsapp": {"to": phone, "message": wa_msg}}
@@ -158,7 +164,7 @@ async def crear_cliente(
             resp.raise_for_status()
             data = resp.json()
 
-        payment_link = data.get("payment_link", "")
+        payment_link = normalize_pagacuotas_portal_link(data.get("payment_link", ""))
         logger.info(
             "PagaCuotas API: cliente creado para lead %s → %s",
             crm_lead_id, payment_link,

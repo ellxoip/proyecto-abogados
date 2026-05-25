@@ -6,13 +6,17 @@ from typing import List, Optional
 from datetime import datetime, timezone
 import asyncio
 import logging
+import json
+import os
 import httpx
 from ..database import get_db
 from .. import models, schemas
 from ..auth import get_current_user, get_visible_group_ids
+from ..plans import enforce_limit, _get_negocio
 from ..utils.notifications import create_notification
 from ..utils import at_informa as ati
 from ..utils import legal_finance as lf
+from ..utils import pagacuotas as pc
 
 logger = logging.getLogger(__name__)
 
@@ -30,22 +34,6 @@ STAGE_FLOW = {
     "recuperacion_cierre":           {"success": "pago_comprometido",   "failed": "recuperacion_cierre"},
     "recuperacion_pago":             {"success": "pago_comprometido",   "failed": "recuperacion_pago"},
 }
-
-
-def _cleanup_lead_delete_dependencies(db: Session, lead_id: int) -> None:
-    event_ids = [
-        event_id
-        for (event_id,) in db.query(models.CalendarEvent.id)
-        .filter(models.CalendarEvent.lead_id == lead_id)
-        .all()
-    ]
-
-    notification_filters = [models.Notification.lead_id == lead_id]
-    if event_ids:
-        notification_filters.append(models.Notification.event_id.in_(event_ids))
-
-    db.query(models.Notification).filter(or_(*notification_filters)).delete(synchronize_session=False)
-    db.query(models.AIAgentLog).filter(models.AIAgentLog.lead_id == lead_id).delete(synchronize_session=False)
 
 
 def _visible_leads(q, current_user, db=None):
@@ -293,6 +281,18 @@ def create_lead(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
+    # Plan limit: count active (non-cerrado) leads in the negocio
+    negocio = _get_negocio(db, data.group_id)
+    if negocio:
+        all_group_ids_q = db.query(models.Group.id).filter(
+            (models.Group.id == negocio.id) | (models.Group.negocio_id == negocio.id)
+        ).subquery()
+        active_count = db.query(models.Lead).filter(
+            models.Lead.group_id.in_(all_group_ids_q),
+            models.Lead.current_stage != "cerrado",
+        ).count()
+        enforce_limit(db, data.group_id, "max_leads", active_count)
+
     lead = models.Lead(**data.model_dump(), current_stage="lead")
     db.add(lead)
     db.flush()
@@ -416,7 +416,7 @@ def export_leads_csv(
         "recuperacion_pago": "Recuperación Pago",
     }
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now()
     output = io.StringIO()
     writer = csv.writer(output, delimiter=";")
 
@@ -424,13 +424,13 @@ def export_leads_csv(
         "Nombre", "Teléfono", "Correo", "RUT", "Empresa",
         "Grupo", "Área", "Etapa", "Honorarios ($)",
         "Días sin actividad", "Prioridad",
-        "Agendadora", "Vendedor", "Fecha creación",
+        "Agendador/a", "Vendedor", "Fecha creación",
     ])
 
     for lead in leads:
         c = lead.contact
         updated = lead.updated_at or lead.created_at
-        days_since = (now - updated).days if updated else 0
+        days_since = max(0, (now - updated.replace(tzinfo=None)).days) if updated else 0
         writer.writerow([
             c.name if c else "",
             c.phone if c else "",
@@ -561,9 +561,9 @@ def _dispatch_payment_link_wa(lead: models.Lead, contact: models.Contact, paymen
                 f"Hola {nombre}, tu acuerdo de pago en Abogados Tributarios fue registrado exitosamente. ✅\n\n"
                 f"💳 *Monto por cuota:* ${monto:,}\n"
                 f"📋 *Cuotas:* {lead.num_cuotas or 1}\n\n"
-                f"Usa este enlace personal para pagar tu cuota cuando quieras:\n"
+                f"Usa este enlace personal para entrar a tu Portal PagaCuotas:\n"
                 f"🔗 {payment_link}\n\n"
-                f"_Este enlace es tuyo y puedes usarlo cada vez que necesites pagar._\n"
+                f"_Este enlace es tuyo y puedes usarlo para revisar tu caso y pagar._\n"
                 f"Saludos, Abogados Tributarios."
             ).replace(",", ".")
 
@@ -598,73 +598,6 @@ def _get_negocio_tipo(lead: models.Lead, db) -> str:
     root_id = g.negocio_id if g.negocio_id else g.id
     root = db.query(models.Group).filter(models.Group.id == root_id).first()
     return (root.tipo if root and root.tipo else "abogados")
-
-
-def _require_financials_for_pago_comprometido(lead: models.Lead) -> None:
-    """
-    Gate-keeper: el sistema contable (Legal Finance / FC) necesita el
-    financiero del contrato para crearlo. Se acepta CUALQUIERA de las dos
-    "puertas" porque el usuario puede llenar uno u otro modelo:
-
-      Puerta A — total + cuota_inicial + num_cuotas
-          honorarios > 0, cuota_inicial > 0, num_cuotas >= 1
-          (el saldo financiado = honorarios - cuota_inicial)
-
-      Puerta B — total + num_cuotas + monto_cuota
-          honorarios > 0, monto_cuota > 0, num_cuotas >= 1
-          (cuota_inicial se deriva como honorarios - num_cuotas*monto_cuota,
-           o 0 si todo va financiado en cuotas iguales)
-
-    Se llama desde `advance_lead` y `move_lead_stage` ANTES de mutar el
-    stage, asegurando que el cambio sea atómico: si faltan datos, el lead
-    no avanza y el usuario recibe un error claro.
-    """
-    honorarios = float(lead.honorarios or 0)
-    cuota_inicial = float(lead.cuota_inicial or 0)
-    num_cuotas = int(lead.num_cuotas or 0)
-    monto_cuota = float(lead.monto_cuota or 0)
-
-    if honorarios <= 0:
-        raise HTTPException(
-            status_code=400,
-            detail="Para pasar a Pago Comprometido el lead debe tener Total (honorarios) definido.",
-        )
-    if num_cuotas < 1:
-        raise HTTPException(
-            status_code=400,
-            detail="Para pasar a Pago Comprometido el lead debe tener N° de cuotas (>= 1).",
-        )
-    # Cualquiera de las dos puertas habilita el cambio.
-    if cuota_inicial > 0 or monto_cuota > 0:
-        return
-    raise HTTPException(
-        status_code=400,
-        detail=(
-            "Para pasar a Pago Comprometido el lead necesita 'cuota inicial' "
-            "O 'monto cuota'. Llena uno de los dos para que el sistema contable "
-            "pueda crear el contrato."
-        ),
-    )
-
-
-def _derive_cuota_inicial(lead: models.Lead) -> float:
-    """
-    Si el lead trajo `monto_cuota` (puerta B) pero no `cuota_inicial`,
-    derivamos la cuota inicial como:
-        cuota_inicial = max(0, honorarios - num_cuotas * monto_cuota)
-    Esto permite que FC reciba un `initial_fee_amount` consistente con
-    `total_amount` y el plan de cuotas que el cliente acordó.
-    """
-    honorarios = float(lead.honorarios or 0)
-    cuota_inicial = float(lead.cuota_inicial or 0)
-    num_cuotas = int(lead.num_cuotas or 1)
-    monto_cuota = float(lead.monto_cuota or 0)
-    if cuota_inicial > 0:
-        return cuota_inicial
-    if monto_cuota > 0 and num_cuotas >= 1:
-        derived = honorarios - (num_cuotas * monto_cuota)
-        return max(0.0, round(derived, 2))
-    return 0.0
 
 
 def _fire_integrations(lead: models.Lead, new_stage: str, db=None):
@@ -740,8 +673,6 @@ def _fire_integrations(lead: models.Lead, new_stage: str, db=None):
                 email         = contact.email if contact else None,
                 phone         = contact.phone if contact else None,
                 honorarios    = float(lead.honorarios or 0),
-                # cuota_inicial puede venir directa (puerta A) o derivarse
-                # de num_cuotas*monto_cuota (puerta B).
                 cuota_inicial = _derive_cuota_inicial(lead),
                 num_cuotas    = int(lead.num_cuotas or 1),
                 tipo_servicio = lead.service_description or category,
@@ -756,8 +687,6 @@ def _fire_integrations(lead: models.Lead, new_stage: str, db=None):
                 lead.id, result.get("contratoId"),
             )
         except httpx.HTTPStatusError as exc:
-            # Log con cuerpo del error de FC para diagnóstico (antes solo se
-            # loggeaba el exc message genérico y el motivo quedaba oculto).
             body_preview = ""
             try:
                 body_preview = exc.response.text[:500]
@@ -768,10 +697,115 @@ def _fire_integrations(lead: models.Lead, new_stage: str, db=None):
                 lead.id, exc.response.status_code, body_preview,
             )
         except Exception as exc:
-            logger.error(
-                "Legal Finance push FAILED for lead %s: %s",
-                lead.id, exc, exc_info=True,
+            logger.warning("Legal Finance push failed (non-critical) for lead %s: %s", lead.id, exc)
+
+    # ── PagaCuotas: pago_comprometido stage ──────────────────────────────────
+    if new_stage == "pago_comprometido":
+        try:
+            rut = (
+                (contact.rut_persona or contact.rut_empresa) if contact else None
+            ) or f"SIN-RUT-{lead.id}"
+
+            area_name = lead.area.name if lead.area else "Sin categoría"
+            vendedor_name = lead.vendedor.name if lead.vendedor else None
+
+            result = asyncio.run(pc.crear_cliente(
+                db            = db,
+                crm_lead_id   = lead.id,
+                rut           = rut,
+                nombre        = contact.name if contact else "Cliente",
+                razon_social  = getattr(contact, "razon_social", None) if contact else None,
+                email         = contact.email if contact else None,
+                phone         = contact.phone if contact else None,
+                honorarios    = float(lead.honorarios or 0),
+                cuota_inicial = float(lead.cuota_inicial or 0),
+                num_cuotas    = int(lead.num_cuotas or 1),
+                monto_cuota   = float(lead.monto_cuota or 0),
+                tipo_servicio = lead.service_description or area_name,
+                area_name     = area_name,
+                vendedor_name = vendedor_name,
+            ))
+            if db:
+                lead.pagacuotas_cliente_id = str(result.get("id", ""))
+                lead.pagacuotas_status = "created"
+                lead.pagacuotas_link = result.get("payment_link")
+                db.commit()
+
+            # Send payment link via WhatsApp — use message from pagaCuotas if available
+            payment_link = result.get("payment_link")
+            wa_info = result.get("whatsapp", {})
+            if payment_link and contact and contact.phone:
+                _dispatch_payment_link_wa(
+                    lead, contact, payment_link, db,
+                    custom_message=wa_info.get("message"),
+                )
+
+            logger.info(
+                "PagaCuotas: cliente registrado para lead %s → %s",
+                lead.id, payment_link,
             )
+        except Exception as exc:
+            logger.warning("PagaCuotas push failed (non-critical) for lead %s: %s", lead.id, exc)
+            if db:
+                lead.pagacuotas_status = "failed"
+                db.commit()
+
+        # Empuje a hive-service-control: movido a
+        # `legal_finance_integration._handle_portal_credentials_ready`.
+        # Necesita `password_plain` (que solo aparece cuando fc/PagaCuotas
+        # generan las credenciales y NEXIO recibe el callback
+        # `pagacuotas_ready`). Antes este push se intentaba acá sin
+        # password y devolvía 422.
+
+
+def _require_financials_for_pago_comprometido(lead: models.Lead) -> None:
+    """
+    Valida que el lead tenga los datos financieros necesarios antes de avanzar
+    a Pago Comprometido. Se acepta puerta A (cuota_inicial) o puerta B (monto_cuota).
+    """
+    honorarios = float(lead.honorarios or 0)
+    cuota_inicial = float(lead.cuota_inicial or 0)
+    num_cuotas = int(lead.num_cuotas or 0)
+    monto_cuota = float(lead.monto_cuota or 0)
+
+    if honorarios <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Para pasar a Pago Comprometido el lead debe tener Total (honorarios) definido.",
+        )
+    if num_cuotas < 1:
+        raise HTTPException(
+            status_code=400,
+            detail="Para pasar a Pago Comprometido el lead debe tener N° de cuotas (>= 1).",
+        )
+    if cuota_inicial > 0 or monto_cuota > 0:
+        return
+    raise HTTPException(
+        status_code=400,
+        detail=(
+            "Para pasar a Pago Comprometido el lead necesita 'cuota inicial' "
+            "O 'monto cuota'. Llena uno de los dos para que el sistema contable "
+            "pueda crear el contrato."
+        ),
+    )
+
+
+def _derive_cuota_inicial(lead: models.Lead) -> float:
+    """
+    Puerta A: cuota_inicial directa.
+    Puerta B: deriva cuota_inicial como honorarios - num_cuotas * monto_cuota.
+    """
+    honorarios = float(lead.honorarios or 0)
+    cuota_inicial = float(lead.cuota_inicial or 0)
+    num_cuotas = int(lead.num_cuotas or 1)
+    monto_cuota = float(lead.monto_cuota or 0)
+    if cuota_inicial > 0:
+        return cuota_inicial
+    if monto_cuota > 0 and num_cuotas >= 1:
+        derived = honorarios - (num_cuotas * monto_cuota)
+        return max(0.0, round(derived, 2))
+    return 0.0
+
 
 @router.post("/{lead_id}/advance", response_model=schemas.LeadOut)
 def advance_lead(
@@ -802,7 +836,6 @@ def advance_lead(
     if new_stage == "pagado_confirmado" and current_user.role != "verificador":
         raise HTTPException(status_code=403, detail="Solo el Verificador de Pagos puede confirmar el pago")
 
-    # Gate financiero: sin honorarios+cuotas no se puede crear contrato en FC.
     if new_stage == "pago_comprometido":
         _require_financials_for_pago_comprometido(lead)
 
@@ -938,9 +971,6 @@ def move_lead_stage(
                 detail="El vendedor debe crear la Orden de Trabajo (OT) antes de mover a Pago Comprometido"
             )
 
-    # Gate financiero: honorarios + cuota_inicial + num_cuotas son requisito
-    # para crear el contrato en el sistema contable (FC). Sin esto, el lead
-    # quedaría en pago_comprometido sin reflejarse en FC.
     if data.stage == "pago_comprometido":
         _require_financials_for_pago_comprometido(lead)
 
@@ -1069,9 +1099,33 @@ def delete_lead(
     lead = db.query(models.Lead).filter(models.Lead.id == lead_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead no encontrado")
-    _cleanup_lead_delete_dependencies(db, lead_id)
-    db.delete(lead)
-    db.commit()
+
+    try:
+        # Importación explícita para evitar que Pylance de VSCode marque errores visuales (falsos positivos)
+        from ..models import (
+            WhatsAppMessage, AIAgentLog, PagaCuotasCliente, Notification,
+            CalendarEvent, PaymentVerification, WorkOrder, LeadHistory, Lead as LeadModel
+        )
+
+        # 1. Desvincular tablas donde lead_id puede ser nulo
+        db.query(WhatsAppMessage).filter(WhatsAppMessage.lead_id == lead_id).update({"lead_id": None}, synchronize_session=False)
+        db.query(AIAgentLog).filter(AIAgentLog.lead_id == lead_id).update({"lead_id": None}, synchronize_session=False)
+        db.query(PagaCuotasCliente).filter(PagaCuotasCliente.crm_lead_id == lead_id).update({"crm_lead_id": None}, synchronize_session=False)
+
+        # 2. Eliminar explícitamente entidades dependientes
+        db.query(Notification).filter(Notification.lead_id == lead_id).delete(synchronize_session=False)
+        db.query(CalendarEvent).filter(CalendarEvent.lead_id == lead_id).delete(synchronize_session=False)
+        db.query(PaymentVerification).filter(PaymentVerification.lead_id == lead_id).delete(synchronize_session=False)
+        db.query(WorkOrder).filter(WorkOrder.lead_id == lead_id).delete(synchronize_session=False)
+        db.query(LeadHistory).filter(LeadHistory.lead_id == lead_id).delete(synchronize_session=False)
+
+        # 3. Finalmente eliminar el lead
+        db.query(LeadModel).filter(LeadModel.id == lead_id).delete(synchronize_session=False)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error interno de base de datos al eliminar: {str(e)}")
+
     return {"ok": True}
 
 
@@ -1310,7 +1364,7 @@ def dashboard_stats(
         db.query(func.count(models.Lead.id))
         .outerjoin(models.WorkOrder, models.WorkOrder.lead_id == models.Lead.id)
         .filter(
-            models.Lead.current_stage.in_(["cierre", "pago_comprometido", "altamente_interesado"]),
+            models.Lead.current_stage.in_(["cierre"]),
             models.WorkOrder.id.is_(None),
         )
     )

@@ -17,9 +17,13 @@ venv/
 *.sqlite
 *.sqlite3
 *.log
+*.err
 uploads/
 **/uploads/
 *.exe
+reset_pwd.mjs
+verify_login.mjs
+e2e_*_guard.mjs
 
 # Build outputs and caches
 dist/

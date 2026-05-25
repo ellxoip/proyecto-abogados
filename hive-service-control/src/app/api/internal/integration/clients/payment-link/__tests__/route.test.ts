@@ -86,7 +86,8 @@ describe("POST /api/internal/integration/clients/payment-link", () => {
       expect(user).not.toBeNull();
       expect(user!.email).toBe("matias.villalobos@hashtagcl.com");
       expect(user!.paymentLink).toBe(validPayload.payment_link);
-      expect(user!.mustChangePassword).toBe(true);
+      // El cliente ya conoce su clave desde PagaCuotas; no se fuerza rotación.
+      expect(user!.mustChangePassword).toBe(false);
       expect(user!.active).toBe(true);
 
       const matches = await bcrypt.compare("Y732HX", user!.passwordHash);
@@ -107,35 +108,70 @@ describe("POST /api/internal/integration/clients/payment-link", () => {
   });
 
   describe("idempotency", () => {
-    it("re-syncs hash on second call when client still has temporary password", async () => {
+    it("re-syncs hash on every call (fc is source of truth via bidirectional sync)", async () => {
       await POST(buildRequest(validPayload));
       const firstHash = (await _prisma.user.findFirst({ where: { rut: "21331955-8" } }))!.passwordHash;
 
       await POST(buildRequest({ ...validPayload, password_plain: "NEWPASS9" }));
-      const second = await _prisma.user.findFirst({ where: { rut: "21331955-8" } });
+      const after = await _prisma.user.findFirst({ where: { rut: "21331955-8" } });
 
-      expect(second!.passwordHash).not.toBe(firstHash);
-      expect(await bcrypt.compare("NEWPASS9", second!.passwordHash)).toBe(true);
-      expect(second!.mustChangePassword).toBe(true);
+      expect(after!.passwordHash).not.toBe(firstHash);
+      expect(await bcrypt.compare("NEWPASS9", after!.passwordHash)).toBe(true);
+      expect(after!.mustChangePassword).toBe(false);
     });
 
-    it("DOES NOT touch hash when client already rotated password", async () => {
+    it("preserves passwordHash when User already rotated (PASSWORD_CHANGED audit exists)", async () => {
+      // Cliente onboardeado, luego rotó su clave en PagaCuotas — sync
+      // bidireccional dejó el hash vigente en sc.User. Una llamada
+      // posterior de payment-link no debe pisar ese hash con la clave
+      // ORIGINAL (snapshot que fc guarda del onboarding).
       await POST(buildRequest(validPayload));
-      // Simulamos que el cliente ya rotó su contraseña en el portal.
-      const ownHash = await bcrypt.hash("MiClaveNueva!", 12);
+      const initialUser = await _prisma.user.findFirst({ where: { rut: "21331955-8" } });
+      const rotatedHash = await bcrypt.hash("ROTADA1", 12);
       await _prisma.user.update({
-        where: { rut: "21331955-8" },
-        data: { passwordHash: ownHash, mustChangePassword: false },
+        where: { id: initialUser!.id },
+        data: { passwordHash: rotatedHash },
+      });
+      await _prisma.auditLog.create({
+        data: {
+          action: "PASSWORD_CHANGED",
+          actorId: initialUser!.id,
+          message: "Contraseña sincronizada desde PagaCuotas (auto-login).",
+        },
       });
 
-      const res = await POST(buildRequest({ ...validPayload, password_plain: "OTRA9999" }));
+      const res = await POST(buildRequest(validPayload));
       expect(res.status).toBe(200);
 
       const after = await _prisma.user.findFirst({ where: { rut: "21331955-8" } });
-      expect(after!.passwordHash).toBe(ownHash);
-      expect(after!.mustChangePassword).toBe(false);
-      // paymentLink sí se puede actualizar (no es credencial del cliente).
-      expect(after!.paymentLink).toBe(validPayload.payment_link);
+      expect(after!.passwordHash).toBe(rotatedHash);
+      expect(await bcrypt.compare("ROTADA1", after!.passwordHash)).toBe(true);
+      expect(await bcrypt.compare("Y732HX", after!.passwordHash)).toBe(false);
+    });
+
+    it("overwrites identity (fullName/email/phone) on reused RUT (e.g. demo user)", async () => {
+      // Demo/seed con mismo RUT no debe secuestrar identidad del cliente real.
+      await _prisma.user.create({
+        data: {
+          fullName: "Demo Viejo",
+          email: "demo.viejo@hivecontrol.cl",
+          phone: "+56900000000",
+          role: "CLIENTE",
+          passwordHash: await bcrypt.hash("demoseed", 12),
+          rut: "21331955-8",
+          mustChangePassword: false,
+          active: true,
+        },
+      });
+
+      const res = await POST(buildRequest(validPayload));
+      expect(res.status).toBe(200);
+
+      const user = await _prisma.user.findFirst({ where: { rut: "21331955-8" } });
+      expect(user!.fullName).toBe("Matias Villalobos");
+      expect(user!.email).toBe("matias.villalobos@hashtagcl.com");
+      expect(user!.phone).toBe("+56986173914");
+      expect(await bcrypt.compare("Y732HX", user!.passwordHash)).toBe(true);
     });
 
     it("does not duplicate users on repeated calls", async () => {

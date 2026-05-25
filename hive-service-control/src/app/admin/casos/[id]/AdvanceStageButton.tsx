@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { advanceToInProgress } from "./stage-actions";
-import { Play, Loader2 } from "lucide-react";
+import { Loader2, Play } from "lucide-react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { StatusBanner } from "@/components/StatusBanner";
 
@@ -28,7 +28,7 @@ export function AdvanceStageButton({ caseId, caseCode }: { caseId: string; caseC
               tone: "success",
               text: wasAlready
                 ? "El caso ya estaba en desarrollo."
-                : "Caso avanzado a En Proceso. Puedes comenzar a registrar avances.",
+                : "Caso avanzado a En Desarrollo. Puedes comenzar a registrar avances.",
             });
             setOpen(false);
             router.refresh();
@@ -59,7 +59,7 @@ export function AdvanceStageButton({ caseId, caseCode }: { caseId: string; caseC
         }}
       >
         {isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
-        {isPending ? "Avanzando…" : "Iniciar Desarrollo del Caso"}
+        {isPending ? "Avanzando..." : "Iniciar Desarrollo del Caso"}
       </button>
 
       {feedback && (
@@ -76,22 +76,22 @@ export function AdvanceStageButton({ caseId, caseCode }: { caseId: string; caseC
         tone="default"
         description={
           <>
-            Estás por avanzar el caso{caseCode ? (
+            Estas por avanzar el caso{caseCode ? (
               <>
                 {" "}<span className="font-mono text-[var(--text)]">{caseCode}</span>
               </>
             ) : null}{" "}
-            al estado <strong className="text-[var(--text)]">En Proceso</strong>. Esto indica que el
-            equipo legal ya está trabajando activamente en el expediente.
+            al estado <strong className="text-[var(--text)]">En Desarrollo</strong>. Esto indica que el
+            equipo legal ya esta trabajando activamente en el expediente.
           </>
         }
         bullets={[
-          "El cliente verá el caso como 'En Proceso' en su portal.",
-          "Si no hay abogado asignado, quedas tú como responsable principal.",
-          "Queda registrado en la bitácora (CASE_ASSIGNED).",
-          "Podrás registrar avances, comentarios y horas de trabajo desde ahora.",
+          "El cliente vera el caso como 'En Desarrollo' en su portal.",
+          "Debe existir un abogado asignado previamente desde la Bandeja.",
+          "Queda registrado en la bitacora (CASE_ASSIGNED).",
+          "Podras registrar avances, comentarios y horas de trabajo desde ahora.",
         ]}
-        confirmLabel="Sí, iniciar desarrollo"
+        confirmLabel="Si, iniciar desarrollo"
         cancelLabel="Cancelar"
         onConfirm={doAdvance}
         onClose={() => setOpen(false)}
