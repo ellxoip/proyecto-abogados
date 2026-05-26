@@ -1,10 +1,13 @@
 import {
+  EstadoComprobante,
   EstadoContrato,
   EstadoCuota,
   EstadoPago,
   ExternalEntityType,
   IntegrationEventStatus,
   Prisma,
+  TipoMovimientoContable,
+  TipoMovimientoTesoreria,
   type IntegrationEvent,
   type PrismaClient,
 } from "@prisma/client";
@@ -385,6 +388,19 @@ export class PagaCuotasIntegrationService {
         };
       });
 
+      if (reverseResult.reversedPagoId != null) {
+        await this.tryRegistrarAsientoTesoreria(
+          reverseResult.reversedPagoId,
+          montoReversado,
+          fechaReversa,
+          `Reversa PagaCuotas - Pago original #${originalPayment.id}`,
+          TipoMovimientoTesoreria.EGRESO,
+          "REVERSA",
+          "1201",
+          "1101",
+        );
+      }
+
       await this.integrationEventService.markProcessed(event.event.id, {
         status: "processed",
         original_pago_id: originalPayment.id,
@@ -636,6 +652,17 @@ export class PagaCuotasIntegrationService {
         }
       }
 
+      await this.tryRegistrarAsientoTesoreria(
+        pago.id,
+        monto,
+        paidAt,
+        `Cobro PagaCuotas - Pago #${pago.id}`,
+        TipoMovimientoTesoreria.INGRESO,
+        "INGRESO",
+        "1101",
+        "1201",
+      );
+
       await this.integrationEventService.markProcessed(idempotency.event.id, {
         pago_id: pago.id,
         at_informa_response: atResponse,
@@ -742,6 +769,97 @@ export class PagaCuotasIntegrationService {
     const attempt = asObject(result.attempt);
     if (!attempt.id) return null;
     return attempt;
+  }
+
+  private async tryRegistrarAsientoTesoreria(
+    pagoId: number,
+    monto: number,
+    fecha: Date,
+    descripcion: string,
+    tipoMovimiento: TipoMovimientoTesoreria,
+    tipoComprobante: "INGRESO" | "REVERSA",
+    debeCodigoCuenta: string,
+    haberCodigoCuenta: string,
+  ): Promise<void> {
+    try {
+      const cuentaBancaria = await this.db.cuentaBancaria.findFirst({
+        where: { cuenta_principal: true, activa: true },
+      });
+      if (!cuentaBancaria) return;
+
+      const [cuentaDebe, cuentaHaber, tipoComp] = await Promise.all([
+        this.db.cuentaContable.findFirst({ where: { codigo: debeCodigoCuenta } }),
+        this.db.cuentaContable.findFirst({ where: { codigo: haberCodigoCuenta } }),
+        this.db.tipoComprobanteContable.findFirst({ where: { nombre: tipoComprobante } }),
+      ]);
+      if (!cuentaDebe || !cuentaHaber || !tipoComp) return;
+
+      const periodo = `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, "0")}`;
+      const cierre = await this.db.cierreContable.findFirst({
+        where: {
+          OR: [
+            { tipo: "MENSUAL", periodo },
+            { tipo: "ANUAL", periodo: String(fecha.getFullYear()) },
+          ],
+        },
+      });
+      if (cierre) return;
+
+      await (this.db as PrismaClient).$transaction([
+        this.db.movimientoTesoreria.create({
+          data: {
+            cuenta_id: cuentaBancaria.id,
+            tipo: tipoMovimiento,
+            descripcion,
+            monto: Math.abs(monto),
+            fecha_movimiento: fecha,
+            pago_id: pagoId,
+          },
+        }),
+        this.db.comprobanteContable.create({
+          data: {
+            tipo_id: tipoComp.id,
+            numero: tipoComp.siguiente_numero,
+            fecha_comprobante: fecha,
+            descripcion,
+            estado: EstadoComprobante.APROBADO,
+            total_debe: Math.abs(monto),
+            total_haber: Math.abs(monto),
+            partidas: {
+              create: [
+                { cuenta_id: cuentaDebe.id, tipo: TipoMovimientoContable.DEBE, monto: Math.abs(monto) },
+                { cuenta_id: cuentaHaber.id, tipo: TipoMovimientoContable.HABER, monto: Math.abs(monto) },
+              ],
+            },
+          },
+        }),
+        this.db.tipoComprobanteContable.update({
+          where: { id: tipoComp.id },
+          data: { siguiente_numero: { increment: 1 } },
+        }),
+      ]);
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : "Error desconocido en asiento contable";
+      console.error(`[pagacuotas] Asiento contable no creado para pago #${pagoId}: ${errorMsg}`);
+      try {
+        await this.integrationEventService.createEvent({
+          systemCode: EXTERNAL_SYSTEM_CODES.PAGACUOTAS,
+          eventType: "accounting.posting.failed",
+          idempotencyKey: `pagacuotas:accounting:failed:${tipoComprobante}:pago:${pagoId}`,
+          payload: {
+            pago_id: pagoId,
+            monto,
+            fecha: fecha.toISOString(),
+            tipo_comprobante: tipoComprobante,
+            debe: debeCodigoCuenta,
+            haber: haberCodigoCuenta,
+            error: errorMsg,
+          } as Prisma.InputJsonValue,
+        });
+      } catch {
+        // Non-fatal: failure recorded in console at minimum
+      }
+    }
   }
 
   private async findOriginalPayment(payload: RawPayload) {

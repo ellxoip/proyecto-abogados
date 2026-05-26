@@ -8,6 +8,6 @@ export function formatCurrency(value: number) {
   }).format(value);
 }
 
-export function formatDate(value: Date) {
-  return format(value, "dd-MM-yyyy");
+export function formatDate(value: Date | string) {
+  return format(typeof value === "string" ? new Date(value) : value, "dd-MM-yyyy");
 }

@@ -1,4 +1,5 @@
 import { SignJWT, jwtVerify } from "jose";
+import type { RolUsuario } from "@prisma/client";
 
 const SESSION_COOKIE = "lf_session";
 const EXPIRATION_SECONDS = 60 * 60 * 8;
@@ -14,7 +15,7 @@ function getJwtSecret() {
 export type SessionPayload = {
   sub: string;
   email: string;
-  rol: "ADMIN" | "CONTADOR";
+  rol: RolUsuario;
 };
 
 export async function signSession(payload: SessionPayload) {
