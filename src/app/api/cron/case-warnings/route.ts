@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { runDailyCaseWarnings } from "@/lib/case-warnings";
+import { verifyIntegrationAuth } from "@/lib/integration-auth";
 
 /**
  * Cron diario de warnings de morosidad sobre Casos.
@@ -15,16 +16,8 @@ import { runDailyCaseWarnings } from "@/lib/case-warnings";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-function authorize(req: Request): boolean {
-  const expected = process.env.CRON_SECRET;
-  if (!expected) return false;
-  const headerSecret = req.headers.get("x-cron-secret");
-  const bearer = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
-  return headerSecret === expected || bearer === expected;
-}
-
 export async function POST(req: Request) {
-  if (!authorize(req)) {
+  if (!verifyIntegrationAuth(req, { kind: "cron" })) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
   try {

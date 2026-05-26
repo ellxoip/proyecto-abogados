@@ -10,7 +10,7 @@ import {
   TIMER_WARN_8H_MS,
   TIMER_WARN_10H_MS,
 } from "@/lib/productividad/timer-policy";
-import { computeCurrentDurationMs } from "@/lib/productividad/timer-state";
+import { abandonmentCutoffAt, appendEvent, computeCurrentDurationMs } from "@/lib/productividad/timer-state";
 
 /**
  * GET /api/productividad/timer
@@ -40,7 +40,62 @@ export async function GET() {
       },
       orderBy: { startedAt: "desc" },
     });
-    return open;
+    if (!open) return null;
+
+    const now = new Date();
+    const abandonedAt = abandonmentCutoffAt(
+      {
+        status: open.status,
+        lastHeartbeatAt: open.lastHeartbeatAt ?? null,
+        lastResumedAt: open.lastResumedAt ?? null,
+      },
+      now,
+    );
+    if (!abandonedAt) return open;
+
+    const cappedAccumulatedMs = computeCurrentDurationMs(
+      {
+        status: open.status,
+        accumulatedMs: open.accumulatedMs,
+        lastResumedAt: open.lastResumedAt ?? null,
+      },
+      abandonedAt,
+    );
+    const eventsJson = appendEvent(open.eventsJson, {
+      kind: "abandoned",
+      at: abandonedAt.toISOString(),
+      detail: { reason: "heartbeat_timeout", accumulatedMs: cappedAccumulatedMs },
+    });
+    const updated = await tx.timerSession.update({
+      where: { id: open.id },
+      data: {
+        status: "PENDING_CLOSE",
+        accumulatedMs: cappedAccumulatedMs,
+        lastResumedAt: null,
+        autoPausedAt: abandonedAt,
+        eventsJson,
+      },
+      include: {
+        case: { select: { id: true, code: true, stage: true, client: { select: { fullName: true } } } },
+      },
+    });
+    await tx.auditLog.create({
+      data: {
+        action: "TIMER_AUTO_PAUSED",
+        caseId: open.caseId,
+        actorId: session.user.id,
+        channel: "system",
+        template: "timer-session",
+        status: "flagged",
+        message: "Cronometro detenido automaticamente por falta de actividad/heartbeat.",
+        metadata: JSON.stringify({
+          timerSessionId: open.id,
+          accumulatedMs: cappedAccumulatedMs,
+          reason: "heartbeat_timeout",
+        }),
+      },
+    });
+    return updated;
   });
 
   if (!data) return NextResponse.json({ ok: true, session: null });

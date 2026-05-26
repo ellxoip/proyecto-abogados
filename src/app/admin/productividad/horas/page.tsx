@@ -8,6 +8,7 @@ import { ACTIVITY_LABELS } from "@/lib/productividad/metrics";
 import { HoursTableClient } from "./HoursTableClient";
 import { QuickTimeEntryLauncher } from "@/components/productividad/QuickTimeEntryLauncher";
 import { HelpTip } from "@/components/HelpTip";
+import { formatHmsFromMinutes } from "@/lib/format-duration";
 
 export default async function HorasPage() {
   const session = await auth();
@@ -125,7 +126,7 @@ export default async function HorasPage() {
           </div>
           <p className="text-sm font-medium ml-11" style={{ color: "var(--text-muted)" }}>
             {isSuperAdmin ? "Todo el equipo" : "Mis registros"} · Últimos 30 días ·{" "}
-            <strong style={{ color: "var(--gold-deep)" }}>{(grandTotal / 60).toFixed(1)} h total</strong>
+            <strong style={{ color: "var(--gold-deep)" }} className="font-mono tabular-nums">{formatHmsFromMinutes(grandTotal)} total</strong>
           </p>
         </div>
 
@@ -166,8 +167,8 @@ export default async function HorasPage() {
         {totalByCategory.map((cat) => (
           <div key={cat.category} className="kpi-card">
             <p className="kpi-label">{ACTIVITY_LABELS[cat.category]}</p>
-            <p className="text-2xl font-bold text-[var(--text)]" style={{ letterSpacing: "-0.02em" }}>
-              {((cat._sum.durationMinutes ?? 0) / 60).toFixed(1)} h
+            <p className="text-2xl font-bold font-mono tabular-nums text-[var(--text)]" style={{ letterSpacing: "-0.02em" }}>
+              {formatHmsFromMinutes(cat._sum.durationMinutes ?? 0)}
             </p>
             <p className="text-[10px] mt-0.5" style={{ color: "var(--text-muted)" }}>
               {grandTotal > 0 ? Math.round(((cat._sum.durationMinutes ?? 0) / grandTotal) * 100) : 0}% del total

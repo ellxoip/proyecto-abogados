@@ -3,35 +3,71 @@
 import Image from "next/image";
 import Link from "next/link";
 import { signIn } from "next-auth/react";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { Lock, Mail, ArrowRight, ShieldCheck, ScrollText, Briefcase, Eye, EyeOff } from "lucide-react";
+import { Lock, Mail, ArrowRight, ShieldCheck, ScrollText, Briefcase, Eye, EyeOff, Sparkles } from "lucide-react";
 import { BrandMark } from "@/components/BrandMark";
 
+const DEMO_CLIENT = {
+  email: "cliente@gmail.com",
+  password: "Cliente2026!",
+};
+const SHOW_DEMO = process.env.NEXT_PUBLIC_HIDE_DEMO_CREDS !== "true";
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const RUT_PATTERN = /^\d{1,2}\.?\d{3}\.?\d{3}-?[\dkK]$/;
+
+function validateLogin(identifier: string, password: string) {
+  const cleanIdentifier = identifier.trim();
+  if (!cleanIdentifier) return "Ingresa tu RUT o correo electronico.";
+  if (!EMAIL_PATTERN.test(cleanIdentifier) && !RUT_PATTERN.test(cleanIdentifier)) {
+    return "Ingresa un RUT o correo electronico valido.";
+  }
+  if (password.length < 6) return "La contrasena debe tener al menos 6 caracteres.";
+  return null;
+}
+
 export default function ClientLoginPage() {
-  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  async function performLogin(emailToUse: string, passwordToUse: string) {
+    const identifier = emailToUse.trim();
+    const validationError = validateLogin(identifier, passwordToUse);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
-    const res = await signIn("credentials", { email, password, redirect: false });
+    const res = await signIn("credentials", { email: identifier, password: passwordToUse, redirect: false });
 
     setLoading(false);
 
     if (res?.error) {
-      setError("Credenciales inválidas. Verifica tu email y contraseña.");
+      setError("Credenciales inválidas. Verifica tu RUT o correo y tu contraseña.");
       return;
     }
 
-    router.push("/");
-    router.refresh();
+    // Navegación dura (no router.push): fuerza un GET / completo que el
+    // middleware redirige con 307 limpio al portal/admin. Evita el loop de
+    // "Cargando/Procesando" en navegadores in-app que no siguen el redirect
+    // por streaming de un router.push.
+    window.location.assign("/");
+  }
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    await performLogin(email, password);
+  }
+
+  async function useDemo() {
+    setEmail(DEMO_CLIENT.email);
+    setPassword(DEMO_CLIENT.password);
+    await performLogin(DEMO_CLIENT.email, DEMO_CLIENT.password);
   }
 
   return (
@@ -182,24 +218,31 @@ export default function ClientLoginPage() {
             </div>
 
             <div className="mt-8 space-y-5">
-              {/* Email */}
+              {/* RUT or Email */}
               <div className="space-y-2">
                 <label className="block text-[10px] font-semibold uppercase tracking-[0.28em]" style={{ color: "var(--gold-deep)" }}>
-                  Correo Electrónico
+                  RUT o Correo Electrónico
                 </label>
                 <div className="relative">
                   <Mail aria-hidden className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2" style={{ color: "var(--gold-deep)" }} />
                   <input
-                    type="email"
+                    type="text"
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="tu@correo.com"
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      if (error) setError(null);
+                    }}
+                    placeholder="12345678-9 o tu@correo.com"
                     required
-                    autoComplete="email"
+                    aria-invalid={Boolean(error)}
+                    autoComplete="username"
                     className="w-full rounded-xl border bg-white px-4 py-3 pl-11 text-sm transition-all outline-none focus:border-[var(--gold)] focus:shadow-[var(--ring-focus)]"
                     style={{ borderColor: "#D9CFB1", color: "#1A1A1F" }}
                   />
                 </div>
+                <p className="text-[10px]" style={{ color: "#7A6E45" }}>
+                  Los clientes ingresan con su RUT y la clave que recibieron por WhatsApp.
+                </p>
               </div>
 
               {/* Password */}
@@ -212,9 +255,14 @@ export default function ClientLoginPage() {
                   <input
                     type={showPassword ? "text" : "password"}
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    onChange={(e) => {
+                      setPassword(e.target.value);
+                      if (error) setError(null);
+                    }}
                     placeholder="••••••••"
                     required
+                    minLength={6}
+                    aria-invalid={Boolean(error)}
                     autoComplete="current-password"
                     className="w-full rounded-xl border bg-white px-4 py-3 pl-11 pr-11 text-sm transition-all outline-none focus:border-[var(--gold)] focus:shadow-[var(--ring-focus)]"
                     style={{ borderColor: "#D9CFB1", color: "#1A1A1F" }}
@@ -223,6 +271,8 @@ export default function ClientLoginPage() {
                     type="button"
                     onClick={() => setShowPassword((s) => !s)}
                     aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+                    aria-pressed={showPassword}
+                    disabled={loading}
                     className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-1.5 transition-colors hover:bg-[var(--surface-2)]"
                     style={{ color: "var(--gold-deep)" }}
                   >
@@ -263,6 +313,28 @@ export default function ClientLoginPage() {
                 )}
               </button>
             </div>
+
+            {SHOW_DEMO && (
+              <div className="mt-6 rounded-xl border border-dashed p-4" style={{ borderColor: "var(--gold)", background: "rgba(201,168,76,0.05)" }}>
+                <div className="flex items-center gap-2 mb-2">
+                  <Sparkles className="h-4 w-4" style={{ color: "var(--gold-deep)" }} />
+                  <span className="text-[10px] font-bold uppercase tracking-[0.28em]" style={{ color: "var(--gold-deep)" }}>Demo cliente</span>
+                </div>
+                <div className="text-xs mb-3 space-y-0.5 font-mono" style={{ color: "#1A1A1F" }}>
+                  <p>{DEMO_CLIENT.email}</p>
+                  <p>{DEMO_CLIENT.password}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={useDemo}
+                  disabled={loading}
+                  className="w-full py-2 rounded-md text-[10px] font-semibold uppercase tracking-[0.28em] transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                  style={{ background: "rgba(201,168,76,0.15)", color: "var(--gold-deep)", border: "1px solid rgba(201,168,76,0.4)" }}
+                >
+                  {loading ? "Entrando…" : "Usar credenciales demo"}
+                </button>
+              </div>
+            )}
 
             <div className="my-8 flex items-center gap-3">
               <span className="h-px flex-1" style={{ background: "#E2DBC4" }} />

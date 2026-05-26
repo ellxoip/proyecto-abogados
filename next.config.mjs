@@ -1,5 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Habilita src/instrumentation.ts → validación fail-fast de env al boot (Next 14).
+  experimental: {
+    instrumentationHook: true,
+  },
   webpack: (config, { dev }) => {
     config.ignoreWarnings = [
       ...(config.ignoreWarnings ?? []),

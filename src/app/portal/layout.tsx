@@ -1,12 +1,23 @@
 import { redirect } from "next/navigation";
 import { auth, signOut } from "@/lib/auth";
 import Link from "next/link";
+import { CreditCard, KeyRound } from "lucide-react";
 import { BrandMark } from "@/components/BrandMark";
+import { withRls } from "@/lib/rls";
+import { ensurePagaCuotasPaymentLink } from "@/lib/pagacuotas";
 
 export default async function PortalLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
   if (!session) redirect("/login");
   if (session.user.role !== "CLIENTE") redirect("/admin");
+
+  const client = await withRls((tx) =>
+    tx.user.findUnique({
+      where: { id: session.user.id },
+      select: { id: true, rut: true, fullName: true, email: true, phone: true, paymentLink: true },
+    }),
+  );
+  const paymentLink = client ? await ensurePagaCuotasPaymentLink(client) : null;
 
   return (
     <div className="min-h-screen" style={{ background: "var(--bg)" }}>
@@ -25,6 +36,49 @@ export default async function PortalLayout({ children }: { children: React.React
         </Link>
 
         <div className="flex items-center gap-2 sm:gap-4 flex-shrink-0">
+          {paymentLink && (
+            <div className="relative group">
+              <a
+                href={paymentLink}
+                target="_blank"
+                rel="noreferrer"
+                aria-label="Abrir Portal PagaCuotas"
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-[10px] sm:text-xs font-bold uppercase tracking-widest transition-all hover:brightness-110"
+                style={{
+                  background: "linear-gradient(180deg, var(--sidebar-bg) 0%, var(--sidebar-deep) 100%)",
+                  border: "1px solid var(--gold-border)",
+                  color: "#FFFFFF",
+                }}
+              >
+                <CreditCard className="h-4 w-4" style={{ color: "var(--gold-soft)" }} />
+                <span className="hidden sm:inline">PagaCuotas</span>
+              </a>
+              <span
+                role="tooltip"
+                className="pointer-events-none absolute right-0 top-full mt-2 w-56 rounded-md px-3 py-2 text-[11px] leading-snug opacity-0 invisible group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100 transition-all z-20 shadow-lg"
+                style={{
+                  background: "var(--surface)",
+                  border: "1px solid var(--gold-border)",
+                  color: "var(--text)",
+                }}
+              >
+                Abre tu Portal PagaCuotas para revisar cuotas, estado del caso y pagos pendientes.
+              </span>
+            </div>
+          )}
+          <Link
+            href="/portal/cambiar-password"
+            aria-label="Cambiar contraseña"
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-[10px] sm:text-xs font-bold uppercase tracking-widest transition-all hover:brightness-110"
+            style={{
+              background: "var(--surface)",
+              border: "1px solid var(--border-subtle)",
+              color: "var(--text-muted)",
+            }}
+          >
+            <KeyRound className="h-4 w-4" style={{ color: "var(--gold-soft)" }} />
+            <span className="hidden sm:inline">Clave</span>
+          </Link>
           <div className="hidden md:block text-sm truncate max-w-[160px]" style={{ color: "var(--text-muted)" }}>
             {session.user.name}
           </div>
@@ -49,4 +103,3 @@ export default async function PortalLayout({ children }: { children: React.React
     </div>
   );
 }
-

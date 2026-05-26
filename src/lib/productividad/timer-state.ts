@@ -98,6 +98,17 @@ export function shouldMarkAbandoned(session: {
   return now.getTime() - reference.getTime() >= TIMER_ABANDON_HEARTBEAT_MS;
 }
 
+export function abandonmentCutoffAt(session: {
+  status: string;
+  lastHeartbeatAt: Date | null;
+  lastResumedAt: Date | null;
+}, now: Date): Date | null {
+  if (!shouldMarkAbandoned(session, now)) return null;
+  const reference = session.lastHeartbeatAt ?? session.lastResumedAt;
+  if (!reference) return null;
+  return new Date(Math.min(now.getTime(), reference.getTime() + TIMER_ABANDON_HEARTBEAT_MS));
+}
+
 /**
  * Returns the warning thresholds the session has just crossed in the current
  * active span, so the caller can mark them as fired (warned4h/warned8h/...)

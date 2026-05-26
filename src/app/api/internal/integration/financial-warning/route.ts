@@ -5,6 +5,9 @@ import { CaseStage, Role } from "@/lib/db-enums";
 import { enqueueWhatsApp, enqueueEmail } from "@/lib/notifications";
 import { forceHalt } from "@/lib/case-health";
 import { logAudit } from "@/lib/audit";
+import { verifyIntegrationAuth, getCorrelationId } from "@/lib/integration-auth";
+import { normalizeRut } from "@/lib/identity";
+import { getIdempotencyKey, withIdempotency } from "@/lib/idempotency";
 
 /**
  * POST /api/internal/integration/financial-warning
@@ -22,15 +25,6 @@ import { logAudit } from "@/lib/audit";
  * Auth: bearer/x-api-key igual a `INTEGRATION_INTERNAL_API_KEY`.
  */
 
-function assertIntegrationAuth(req: Request) {
-  const expected = process.env.INTEGRATION_INTERNAL_API_KEY ?? null;
-  if (!expected) throw new Error("INTEGRATION_INTERNAL_API_KEY no configurado.");
-  const apiKey = req.headers.get("x-api-key");
-  const auth = req.headers.get("authorization");
-  const bearer = auth?.startsWith("Bearer ") ? auth.slice(7).trim() : null;
-  if ((apiKey && apiKey === expected) || (bearer && bearer === expected)) return;
-  throw new Error("No autorizado.");
-}
 
 const schema = z.object({
   source: z.string().optional(),
@@ -58,14 +52,8 @@ const schema = z.object({
   }),
 });
 
-function normalizeRut(rut: string): string {
-  return rut.replace(/\./g, "").toLowerCase().trim();
-}
-
 export async function POST(req: Request) {
-  try {
-    assertIntegrationAuth(req);
-  } catch {
+  if (!verifyIntegrationAuth(req, { kind: "internal" })) {
     return NextResponse.json({ ok: false, error: "No autorizado." }, { status: 401 });
   }
 
@@ -86,8 +74,16 @@ export async function POST(req: Request) {
 
   const { level, dias_atraso, cliente, contrato, cuota } = parsed.data;
   const rut = normalizeRut(cliente.rut);
+  const corrId = getCorrelationId(req);
+
+  // Idempotencia opt-in: solo si el partner envía `Idempotency-Key`. La
+  // idempotencia de dominio (P2002 sobre `CuotaWarning` en financial-control,
+  // unicidad de case_code) sigue protegiendo escrituras aunque no llegue el
+  // header. Esta capa adicional evita audit rows duplicadas en retries.
+  const idempotencyKey = getIdempotencyKey(req);
 
   try {
+    const cached = await withIdempotency(idempotencyKey, async () => {
     const result = await withSystemRls(async (tx) => {
       // 1. Localizar al cliente en hive-service-control por RUT.
       const clientUser = await tx.user.findFirst({
@@ -126,6 +122,7 @@ export async function POST(req: Request) {
         cuota_id: cuota.id,
         numero_cuota: cuota.numero_cuota,
         contrato_id: contrato.id,
+        correlation_id: corrId,
       };
 
       if (level === "WARNING_10") {
@@ -184,10 +181,10 @@ export async function POST(req: Request) {
       };
     });
 
-    if (!result.matched) {
-      return NextResponse.json({ ok: true, ...result }, { status: 202 });
-    }
-    return NextResponse.json({ ok: true, ...result }, { status: 200 });
+      const status = result.matched ? 200 : 202;
+      return { status, body: { ok: true, ...result } };
+    });
+    return NextResponse.json(cached.body, { status: cached.status });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Error interno";
     return NextResponse.json({ ok: false, error: message }, { status: 500 });

@@ -11,13 +11,15 @@ import { appendEvent, computeCurrentDurationMs } from "@/lib/productividad/timer
  * snapshots it into `accumulatedMs`. Idempotent: if the session is already
  * PAUSED, returns 200 without changing state.
  */
-export async function POST() {
+export async function POST(req: Request) {
   const session = await auth();
   if (!session) return NextResponse.json({ ok: false, error: "No autorizado" }, { status: 401 });
   if (session.user.role === Role.CLIENTE) {
     return NextResponse.json({ ok: false, error: "Acceso restringido" }, { status: 403 });
   }
 
+  const body = await req.json().catch(() => null);
+  const reason = body?.reason === "idle_timeout" ? "idle_timeout" : "manual";
   const now = new Date();
   const result = await withRls(async (tx) => {
     const open = await tx.timerSession.findFirst({
@@ -45,7 +47,7 @@ export async function POST() {
         eventsJson: appendEvent(open.eventsJson, {
           kind: "paused",
           at: now.toISOString(),
-          detail: { accumulatedMs: newAccumulated },
+          detail: { accumulatedMs: newAccumulated, reason },
         }),
       },
     });
@@ -57,10 +59,14 @@ export async function POST() {
         channel: "system",
         template: "timer-session",
         status: "ok",
-        message: "Sesión de cronómetro pausada.",
+        message:
+          reason === "idle_timeout"
+            ? "Sesion de cronometro pausada automaticamente por inactividad."
+            : "Sesion de cronometro pausada.",
         metadata: JSON.stringify({
           timerSessionId: open.id,
           accumulatedMs: newAccumulated,
+          reason,
         }),
       },
     });
@@ -68,7 +74,7 @@ export async function POST() {
   });
 
   if (result.kind === "not_found") {
-    return NextResponse.json({ ok: false, error: "No hay sesión activa para pausar." }, { status: 404 });
+    return NextResponse.json({ ok: false, error: "No hay sesion activa para pausar." }, { status: 404 });
   }
   return NextResponse.json({ ok: true, session: result.session });
 }

@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, type FormEvent } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
+import { Loader2, AlertCircle, CheckCircle2, Eye, EyeOff } from "lucide-react";
 import { registerAndOpenCase, type RegisterInput } from "./actions";
 
 type Props = { categories: { id: string; name: string }[] };
@@ -12,12 +12,22 @@ const FIELD_LABEL = "block text-[11px] text-[var(--text-muted)] uppercase tracki
 const FIELD_INPUT =
   "w-full bg-[var(--bg)] border border-[var(--border-subtle)] text-[var(--text)] rounded px-4 py-3 text-sm outline-none focus:border-[var(--gold)] transition-colors placeholder:text-[var(--text-muted)] disabled:opacity-50";
 
+function validatePassword(password: string, confirmPassword: string) {
+  if (password.length < 8) return "La contrasena debe tener al menos 8 caracteres.";
+  if (!/[A-Za-z]/.test(password) || !/\d/.test(password)) return "La contrasena debe incluir letras y numeros.";
+  if (password !== confirmPassword) return "La confirmacion de contrasena no coincide.";
+  return null;
+}
+
 export function RegisterForm({ categories }: Props) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<{ message: string; field?: keyof RegisterInput } | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const [form, setForm] = useState<RegisterInput>({
     fullName: "",
@@ -33,9 +43,16 @@ export function RegisterForm({ categories }: Props) {
     if (error?.field === key) setError(null);
   }
 
-  function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+  function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
+
+    const passwordError = validatePassword(form.password, confirmPassword);
+    if (passwordError) {
+      setError({ message: passwordError, field: "password" });
+      return;
+    }
+
     setPending(true);
 
     startTransition(async () => {
@@ -46,7 +63,7 @@ export function RegisterForm({ categories }: Props) {
         return;
       }
 
-      setSuccess(`Caso ${res.caseCode} creado. Ingresándote al portal…`);
+      setSuccess(`Caso ${res.caseCode} creado. Ingresandote al portal...`);
 
       const signInRes = await signIn("credentials", {
         email: res.email,
@@ -57,7 +74,7 @@ export function RegisterForm({ categories }: Props) {
       setPending(false);
 
       if (signInRes?.error) {
-        setError({ message: "Cuenta creada, pero el ingreso automático falló. Inicia sesión manualmente." });
+        setError({ message: "Cuenta creada, pero el ingreso automatico fallo. Inicia sesion manualmente." });
         return;
       }
       router.push("/portal");
@@ -80,7 +97,7 @@ export function RegisterForm({ categories }: Props) {
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-5">
+    <form onSubmit={onSubmit} className="space-y-5" noValidate>
       <div className="space-y-2">
         <label className={FIELD_LABEL}>Nombre completo</label>
         <input
@@ -103,18 +120,23 @@ export function RegisterForm({ categories }: Props) {
             value={form.email}
             onChange={(e) => set("email", e.target.value)}
             required
+            autoComplete="email"
+            aria-invalid={error?.field === "email"}
             disabled={pending}
             className={FIELD_INPUT}
             placeholder="tu@correo.com"
           />
         </div>
         <div className="space-y-2">
-          <label className={FIELD_LABEL}>Teléfono</label>
+          <label className={FIELD_LABEL}>Telefono</label>
           <input
             type="tel"
             value={form.phone}
             onChange={(e) => set("phone", e.target.value)}
             required
+            inputMode="tel"
+            autoComplete="tel"
+            aria-invalid={error?.field === "phone"}
             disabled={pending}
             className={FIELD_INPUT}
             placeholder="+56912345678"
@@ -123,17 +145,58 @@ export function RegisterForm({ categories }: Props) {
       </div>
 
       <div className="space-y-2">
-        <label className={FIELD_LABEL}>Contraseña (mín. 8 caracteres)</label>
-        <input
-          type="password"
-          value={form.password}
-          onChange={(e) => set("password", e.target.value)}
-          required
-          minLength={8}
-          disabled={pending}
-          className={FIELD_INPUT}
-          placeholder="••••••••"
-        />
+        <label className={FIELD_LABEL}>Contrasena (min. 8 caracteres)</label>
+        <div className="relative">
+          <input
+            type={showPassword ? "text" : "password"}
+            value={form.password}
+            onChange={(e) => set("password", e.target.value)}
+            required
+            minLength={8}
+            autoComplete="new-password"
+            aria-invalid={error?.field === "password"}
+            disabled={pending}
+            className={`${FIELD_INPUT} pr-11`}
+            placeholder="********"
+          />
+          <VisibilityButton
+            visible={showPassword}
+            disabled={pending}
+            label="contrasena"
+            onClick={() => setShowPassword((visible) => !visible)}
+          />
+        </div>
+        <p className="text-[10px] text-[var(--text-muted)]">Usa al menos una letra y un numero.</p>
+      </div>
+
+      <div className="space-y-2">
+        <label className={FIELD_LABEL}>Confirmar contrasena</label>
+        <div className="relative">
+          <input
+            type={showConfirmPassword ? "text" : "password"}
+            value={confirmPassword}
+            onChange={(e) => {
+              setConfirmPassword(e.target.value);
+              if (error?.field === "password") setError(null);
+            }}
+            required
+            minLength={8}
+            autoComplete="new-password"
+            aria-invalid={confirmPassword.length > 0 && confirmPassword !== form.password}
+            disabled={pending}
+            className={`${FIELD_INPUT} pr-11`}
+            placeholder="********"
+          />
+          <VisibilityButton
+            visible={showConfirmPassword}
+            disabled={pending}
+            label="confirmacion"
+            onClick={() => setShowConfirmPassword((visible) => !visible)}
+          />
+        </div>
+        {confirmPassword.length > 0 && confirmPassword !== form.password && (
+          <p className="text-[10px] font-semibold text-[#F87171]">No coincide con la contrasena.</p>
+        )}
       </div>
 
       <div className="space-y-2">
@@ -166,7 +229,7 @@ export function RegisterForm({ categories }: Props) {
           rows={4}
           disabled={pending}
           className={FIELD_INPUT}
-          placeholder="Cuéntanos brevemente qué necesitas resolver."
+          placeholder="Cuentanos brevemente que necesitas resolver."
         />
         <p className="text-[10px] text-[var(--text-muted)]">{form.description.length} / 2000</p>
       </div>
@@ -186,12 +249,37 @@ export function RegisterForm({ categories }: Props) {
         {pending ? (
           <>
             <Loader2 className="w-4 h-4 animate-spin" />
-            Creando tu caso…
+            Creando tu caso...
           </>
         ) : (
-          "Enviar Solicitud de Asesoría"
+          "Enviar Solicitud de Asesoria"
         )}
       </button>
     </form>
+  );
+}
+
+function VisibilityButton({
+  visible,
+  disabled,
+  label,
+  onClick,
+}: {
+  visible: boolean;
+  disabled: boolean;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={visible ? `Ocultar ${label}` : `Mostrar ${label}`}
+      aria-pressed={visible}
+      disabled={disabled}
+      className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1.5 text-[var(--text-muted)] hover:bg-[var(--surface-2)] disabled:opacity-50"
+    >
+      {visible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+    </button>
   );
 }

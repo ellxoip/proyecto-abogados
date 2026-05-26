@@ -1,5 +1,4 @@
 import { Prisma } from "@prisma/client";
-import { _prisma } from "@/lib/db/_client";
 import { withSystemRls } from "@/lib/rls";
 import { enqueueWhatsApp, enqueueEmail } from "@/lib/notifications";
 import { logAudit } from "@/lib/audit";
@@ -75,21 +74,23 @@ export async function runDailyCaseWarnings(now: Date = new Date()): Promise<Case
   // Universo: casos halt o waiting con halted_at conocido. updatedAt como
   // alternativa para WAITING_CUOTAS (que no siempre setean halted_at).
   const tenDaysAgo = new Date(now.getTime() - CASE_WARNING_THRESHOLDS_DAYS.WARNING_10 * 86_400_000);
-  const cases = await _prisma.case.findMany({
-    where: {
-      OR: [
-        { stage: CaseStage.HALTED_BY_PAYMENT, halted_at: { lte: tenDaysAgo } },
-        {
-          stage: CaseStage.WAITING_CUOTAS,
-          halted_at: null,
-          updatedAt: { lte: tenDaysAgo },
-        },
-      ],
-    },
-    include: {
-      warnings: { select: { level: true } },
-    },
-  });
+  const cases = await withSystemRls((tx) =>
+    tx.case.findMany({
+      where: {
+        OR: [
+          { stage: CaseStage.HALTED_BY_PAYMENT, halted_at: { lte: tenDaysAgo } },
+          {
+            stage: CaseStage.WAITING_CUOTAS,
+            halted_at: null,
+            updatedAt: { lte: tenDaysAgo },
+          },
+        ],
+      },
+      include: {
+        warnings: { select: { level: true } },
+      },
+    }),
+  );
 
   summary.scanned = cases.length;
 
@@ -133,15 +134,17 @@ async function dispatchCaseWarning(params: {
   // Reservar slot — race-safe contra ejecuciones paralelas.
   let warning;
   try {
-    warning = await _prisma.caseWarning.create({
-      data: {
-        caseId,
-        level,
-        dias_halted_at_send: dias,
-        channel: "BOTH",
-        delivery_status: "PENDING",
-      },
-    });
+    warning = await withSystemRls((tx) =>
+      tx.caseWarning.create({
+        data: {
+          caseId,
+          level,
+          dias_halted_at_send: dias,
+          channel: "BOTH",
+          delivery_status: "PENDING",
+        },
+      }),
+    );
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") return;
     throw err;
@@ -204,15 +207,17 @@ async function dispatchCaseWarning(params: {
     result.error = err instanceof Error ? err.message : String(err);
   }
 
-  await _prisma.caseWarning.update({
-    where: { id: warning.id },
-    data: {
-      delivery_status: result.status,
-      delivery_error: result.error ?? null,
-      side_effects_applied: sideEffectsApplied,
-      sent_at: result.status === "SENT" ? now : null,
-    },
-  });
+  await withSystemRls((tx) =>
+    tx.caseWarning.update({
+      where: { id: warning.id },
+      data: {
+        delivery_status: result.status,
+        delivery_error: result.error ?? null,
+        side_effects_applied: sideEffectsApplied,
+        sent_at: result.status === "SENT" ? now : null,
+      },
+    }),
+  );
 
   if (result.status === "FAILED") throw new Error(result.error);
 }

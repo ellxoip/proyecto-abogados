@@ -12,6 +12,9 @@
     "db:seed": "ts-node --compiler-options \"{\\\"module\\\":\\\"CommonJS\\\"}\" prisma/seed.ts",
     "db:rls": "psql \"$DIRECT_URL\" -v ON_ERROR_STOP=1 -f prisma/sql/rls.sql",
     "db:studio": "prisma studio",
+    "test": "node scripts/run-tests.js run",
+    "test:watch": "node scripts/run-tests.js watch",
+    "test:postgres-restore": "node scripts/swap-schema.js postgres && prisma generate",
     "postinstall": "prisma generate"
   },
   "prisma": {
@@ -64,6 +67,8 @@
     "postcss": "^8",
     "tailwindcss": "^3.4.1",
     "ts-node": "^10.9.2",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vite-tsconfig-paths": "^5.1.4",
+    "vitest": "^2.1.9"
   }
 }

@@ -125,12 +125,15 @@ export function TimerStopDialog({ session, onClose, onSuccess }: TimerStopDialog
 
     setLoading(true);
     try {
+      // No enviamos `durationMinutes` desde el cliente: el servidor calcula
+      // la duración autoritativa con sus propios timestamps. Mandar el valor
+      // del cliente provocaba falsos positivos de DURATION_DISCREPANCY
+      // cuando el dialog quedaba abierto unos segundos (drift de red).
       const res = await fetch("/api/productividad/timer/stop", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           date: form.date,
-          durationMinutes,
           category: form.category,
           description: form.description.trim() || undefined,
           lateReason: form.lateReason.trim() || undefined,

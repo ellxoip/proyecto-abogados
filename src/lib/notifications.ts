@@ -14,7 +14,6 @@ export type WhatsAppJob =
   | { kind: "payment_receipt"; caseId: string }
   | { kind: "overdue_notice"; caseId: string }
   | { kind: "case_finished"; caseId: string }
-  | { kind: "client_credentials"; caseId: string }
   | { kind: "lead_confirmation"; leadId: string }
   | { kind: "lead_reminder"; leadId: string }
   | { kind: "lead_reassigned"; leadId: string };
@@ -27,7 +26,6 @@ export type EmailJob =
   | { kind: "payment_receipt"; caseId: string }
   | { kind: "overdue_notice"; caseId: string }
   | { kind: "case_finished"; caseId: string }
-  | { kind: "client_credentials"; caseId: string }
   | { kind: "lead_confirmation"; leadId: string }
   | { kind: "lead_reminder"; leadId: string }
   | { kind: "lead_reassigned"; leadId: string };
@@ -38,9 +36,16 @@ function shouldRunInline() {
 
 export async function enqueueWhatsApp(job: WhatsAppJob): Promise<void> {
   if (shouldRunInline()) {
-    const { processWhatsAppJob } = await import("@/lib/processing/dispatch");
-    await processWhatsAppJob(job);
-    console.info("[whatsapp:inline:processed]", job);
+    try {
+      const { processWhatsAppJob } = await import("@/lib/processing/dispatch");
+      await processWhatsAppJob(job);
+      console.info("[whatsapp:inline:processed]", job);
+    } catch (err) {
+      // Best-effort: notificaciones no deben romper la lógica de negocio
+      // que las dispara (halt, audit, etc.). El error queda registrado en
+      // AuditAction.WHATSAPP_FAILED por el dispatch.
+      console.error("[whatsapp:inline:failed]", job, err instanceof Error ? err.message : err);
+    }
     return;
   }
 
@@ -54,9 +59,13 @@ export async function enqueueWhatsApp(job: WhatsAppJob): Promise<void> {
 
 export async function enqueueEmail(job: EmailJob): Promise<void> {
   if (shouldRunInline()) {
-    const { processEmailJob } = await import("@/lib/processing/dispatch");
-    await processEmailJob(job);
-    console.info("[email:inline:processed]", job);
+    try {
+      const { processEmailJob } = await import("@/lib/processing/dispatch");
+      await processEmailJob(job);
+      console.info("[email:inline:processed]", job);
+    } catch (err) {
+      console.error("[email:inline:failed]", job, err instanceof Error ? err.message : err);
+    }
     return;
   }
 

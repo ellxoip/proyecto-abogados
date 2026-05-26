@@ -32,6 +32,8 @@ function fmt(ms: number) {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
+const IDLE_AUTO_PAUSE_MS = 30 * 60 * 1000;
+
 export function ActiveTimerWidget() {
   const { status: authStatus } = useSession();
   const pathname = usePathname();
@@ -42,12 +44,22 @@ export function ActiveTimerWidget() {
   const [collapsed, setCollapsed] = useState(false);
   const [stopOpen, setStopOpen] = useState(false);
   const lastServerSyncRef = useRef<number>(0);
+  const lastActivityRef = useRef<number>(Date.now());
+  const idlePauseTriggeredRef = useRef(false);
 
   // Hide on the public pages
   const hidden =
     authStatus !== "authenticated" ||
     pathname?.startsWith("/login") ||
     pathname?.startsWith("/registro");
+
+  // Refs para evitar closures stale entre el tick local (1s) y los
+  // refresh del server (30s). El bug previo era: el tick capturaba
+  // `session.currentDurationMs` del primer render (=0) y al hacer
+  // `lastServerSyncRef = now` en cada heartbeat, el `drift` se reseteaba
+  // a 0 → el cronómetro volvía visualmente a 00:00:00 cada 30s.
+  const baseMsRef = useRef<number>(0);
+  const isActiveRef = useRef<boolean>(false);
 
   // Poll server every 30s and on mount
   useEffect(() => {
@@ -85,22 +97,30 @@ export function ActiveTimerWidget() {
             autoPausedAt: data.session.autoPausedAt,
           };
           setSession(s);
+          // Re-sincronizar reloj local al valor autoritativo del server.
+          baseMsRef.current = s.currentDurationMs;
+          isActiveRef.current = s.status === "ACTIVE";
           setTickMs(s.currentDurationMs);
           lastServerSyncRef.current = Date.now();
         } else {
           setSession(null);
+          baseMsRef.current = 0;
+          isActiveRef.current = false;
+          setTickMs(0);
         }
       } catch {}
     }
 
     refresh("get");
-    const poll = setInterval(() => refresh(session?.status === "ACTIVE" ? "heartbeat" : "get"), 30_000);
+    const poll = setInterval(() => refresh(isActiveRef.current ? "heartbeat" : "get"), 30_000);
 
-    // Local 1s tick (only when ACTIVE) — increments based on time since last server sync
+    // Local 1s tick (only when ACTIVE) — increments based on time since
+    // last server sync. Usa refs para no capturar valores stale del
+    // primer render.
     const tick = setInterval(() => {
-      if (!session || session.status !== "ACTIVE") return;
+      if (!isActiveRef.current) return;
       const drift = Date.now() - lastServerSyncRef.current;
-      setTickMs(session.currentDurationMs + drift);
+      setTickMs(baseMsRef.current + drift);
     }, 1000);
 
     // Heartbeat on tab focus (recover from sleep / window switch)
@@ -109,14 +129,75 @@ export function ActiveTimerWidget() {
     };
     document.addEventListener("visibilitychange", onVisibility);
 
+    // Listener: cuando TimerLauncher/TimerOnboardingPrompt arrancan una
+    // sesión, refresh inmediato para que el widget aparezca sin lag.
+    const onTimerStarted = () => refresh("get");
+    window.addEventListener("timer:started", onTimerStarted);
+
     return () => {
       mounted = false;
       clearInterval(poll);
       clearInterval(tick);
       document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("timer:started", onTimerStarted);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hidden, session?.status, session?.id]);
+    // Sólo hidden importa para tear-down/setup del effect. session.status
+    // se lee via isActiveRef para evitar re-creación del interval cada
+    // pause/resume (que reiniciaba el tick).
+  }, [hidden]);
+
+  useEffect(() => {
+    if (hidden) return;
+
+    lastActivityRef.current = Date.now();
+    idlePauseTriggeredRef.current = false;
+
+    const markActivity = () => {
+      lastActivityRef.current = Date.now();
+      if (!isActiveRef.current) idlePauseTriggeredRef.current = false;
+    };
+
+    const activityEvents = ["keydown", "mousedown", "mousemove", "scroll", "touchstart", "click"];
+    activityEvents.forEach((eventName) => {
+      window.addEventListener(eventName, markActivity, { passive: true });
+    });
+
+    const idleCheck = setInterval(async () => {
+      if (!isActiveRef.current || idlePauseTriggeredRef.current) return;
+      if (Date.now() - lastActivityRef.current < IDLE_AUTO_PAUSE_MS) return;
+
+      idlePauseTriggeredRef.current = true;
+      try {
+        const res = await fetch("/api/productividad/timer/pause", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reason: "idle_timeout" }),
+        });
+        if (!res.ok) return;
+
+        const refr = await fetch("/api/productividad/timer", { cache: "no-store" });
+        const data = await refr.json();
+        if (data.session) {
+          const current = data.currentDurationMs ?? data.session.currentDurationMs ?? data.session.accumulatedMs;
+          setSession({
+            ...data.session,
+            currentDurationMs: current,
+          });
+          baseMsRef.current = current;
+          isActiveRef.current = data.session.status === "ACTIVE";
+          setTickMs(current);
+          lastServerSyncRef.current = Date.now();
+        }
+      } catch {}
+    }, 60_000);
+
+    return () => {
+      clearInterval(idleCheck);
+      activityEvents.forEach((eventName) => {
+        window.removeEventListener(eventName, markActivity);
+      });
+    };
+  }, [hidden]);
 
   async function callAction(action: "pause" | "resume") {
     setActionPending(action);
@@ -125,18 +206,33 @@ export function ActiveTimerWidget() {
       if (!res.ok) {
         const data = await res.json().catch(() => null);
         alert(data?.error ?? "No se pudo completar la acción.");
-        return;
+        // Aunque el server haya respondido error, el estado pudo cambiar
+        // (ej. HARD_CAP_REACHED escala la sesión a PENDING_CLOSE). Por eso
+        // refrescamos siempre — sin esto, el widget mostraba PAUSED
+        // mientras el backend ya marcaba PENDING_CLOSE.
       }
-      // Refresh state from server
       const refr = await fetch("/api/productividad/timer", { cache: "no-store" });
       const data = await refr.json();
       if (data.session) {
+        const current = data.currentDurationMs ?? data.session.currentDurationMs ?? data.session.accumulatedMs;
         setSession({
           ...data.session,
-          currentDurationMs: data.session.currentDurationMs ?? data.session.accumulatedMs,
+          currentDurationMs: current,
         });
-        setTickMs(data.session.currentDurationMs ?? data.session.accumulatedMs);
+        // Sincronizar refs para que el tick local arranque del valor real.
+        baseMsRef.current = current;
+        isActiveRef.current = data.session.status === "ACTIVE";
+        if (data.session.status === "ACTIVE") {
+          lastActivityRef.current = Date.now();
+          idlePauseTriggeredRef.current = false;
+        }
+        setTickMs(current);
         lastServerSyncRef.current = Date.now();
+      } else {
+        setSession(null);
+        baseMsRef.current = 0;
+        isActiveRef.current = false;
+        setTickMs(0);
       }
     } finally {
       setActionPending(null);
@@ -149,7 +245,7 @@ export function ActiveTimerWidget() {
   const isPaused = session.status === "PAUSED";
   const isPending = session.status === "PENDING_CLOSE";
   const warningLabel = isPending
-    ? "Sesión pasó del tope. Requiere cierre."
+    ? "Conteo detenido por control interno. Requiere cierre o descarte."
     : session.warned10h
     ? "Sesión sobre 10 h continuas."
     : session.warned8h

@@ -20,6 +20,7 @@ import {
   X,
   ExternalLink,
 } from "lucide-react";
+import { formatHmsFromMinutes } from "@/lib/format-duration";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 export type ActivityEvent = {
@@ -280,7 +281,7 @@ function ActivityDetailModal({
                   />
                 )}
                 {typeof durationMinutes === "number" && (
-                  <Chip label={`Duración: ${(durationMinutes / 60).toFixed(2)} h`} tone="blue" />
+                  <Chip label={`Duración: ${formatHmsFromMinutes(durationMinutes)}`} tone="blue" />
                 )}
                 {target && <Chip label={`Destino: ${target}`} tone="muted" />}
               </div>

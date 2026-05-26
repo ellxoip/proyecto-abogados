@@ -293,7 +293,7 @@ export default async function PortalCaseDetail({ params }: { params: { id: strin
         </div>
       </div>
 
-      {/* ── COMPLETION CERTIFICATE ── */}
+      {/* ── COMPLETION RESOLUTION ── */}
       {isFinished && finishUpdate?.document_url && (
         <div
           className="rounded-xl p-6 flex flex-col sm:flex-row items-center justify-between gap-5 shadow-lg"
@@ -306,17 +306,17 @@ export default async function PortalCaseDetail({ params }: { params: { id: strin
             </div>
             <div>
               <h3 className="font-bold" style={{ fontFamily: "'Playfair Display', serif", color: "var(--text)" }}>
-                Certificado de Término Disponible
+                Resolución del Caso Disponible
               </h3>
               <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>
-                Su proceso ha concluido. Descargue su documentación oficial.
+                Su proceso ha concluido. Descargue la resolución oficial.
               </p>
             </div>
           </div>
           <DocumentDownloadGate
             caseId={kase.id}
             documentUrl={finishUpdate.document_url}
-            label="Descargar Certificado"
+            label="Descargar Resolución"
             alreadyUnlocked={dlUnlocked}
           />
         </div>

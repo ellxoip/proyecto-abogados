@@ -3,7 +3,6 @@
 import Image from "next/image";
 import Link from "next/link";
 import { signIn } from "next-auth/react";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import {
   Lock,
@@ -15,29 +14,61 @@ import {
   Eye,
   EyeOff,
   ArrowLeft,
+  Sparkles,
 } from "lucide-react";
 import { BrandMark } from "@/components/BrandMark";
 
+const DEMO_TEAM = [
+  { role: "SuperAdmin", email: "jorge@atinforma.cl", password: "Admin2026!" },
+  { role: "Jefe de Grupo", email: "jefe@atinforma.cl", password: "Jefe2026!" },
+  { role: "Abogado", email: "abogado@atinforma.cl", password: "Abogado2026!" },
+];
+const SHOW_DEMO = process.env.NEXT_PUBLIC_HIDE_DEMO_CREDS !== "true";
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function validateTeamLogin(email: string, password: string) {
+  if (!EMAIL_PATTERN.test(email.trim())) return "Ingresa un correo profesional valido.";
+  if (password.length < 6) return "La contrasena debe tener al menos 6 caracteres.";
+  return null;
+}
+
 export default function EquipoLoginPage() {
-  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  async function performLogin(emailToUse: string, passwordToUse: string) {
+    const cleanEmail = emailToUse.trim().toLowerCase();
+    const validationError = validateTeamLogin(cleanEmail, passwordToUse);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
     setLoading(true);
     setError(null);
-    const res = await signIn("credentials", { email, password, redirect: false });
+    const res = await signIn("credentials", { email: cleanEmail, password: passwordToUse, redirect: false });
     setLoading(false);
     if (res?.error) {
       setError("Credenciales inválidas. Verifica tu email y contraseña.");
       return;
     }
-    router.push("/");
-    router.refresh();
+    // Navegación dura → GET / → middleware 307 → /admin. Evita el loop de
+    // streaming-redirect en navegadores in-app.
+    window.location.assign("/");
+  }
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    await performLogin(email, password);
+  }
+
+  async function applyDemoUser(u: { email: string; password: string }) {
+    setEmail(u.email);
+    setPassword(u.password);
+    await performLogin(u.email, u.password);
   }
 
   return (
@@ -207,9 +238,13 @@ export default function EquipoLoginPage() {
                   <input
                     type="email"
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      if (error) setError(null);
+                    }}
                     placeholder="abogado@estudio.cl"
                     required
+                    aria-invalid={Boolean(error)}
                     autoComplete="email"
                     className="w-full rounded-xl border bg-white px-4 py-3 pl-11 text-sm transition-all outline-none focus:border-[var(--gold)] focus:shadow-[var(--ring-focus)]"
                     style={{ borderColor: "#D9CFB1", color: "#1A1A1F" }}
@@ -233,9 +268,14 @@ export default function EquipoLoginPage() {
                   <input
                     type={showPassword ? "text" : "password"}
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    onChange={(e) => {
+                      setPassword(e.target.value);
+                      if (error) setError(null);
+                    }}
                     placeholder="••••••••"
                     required
+                    minLength={6}
+                    aria-invalid={Boolean(error)}
                     autoComplete="current-password"
                     className="w-full rounded-xl border bg-white px-4 py-3 pl-11 pr-11 text-sm transition-all outline-none focus:border-[var(--gold)] focus:shadow-[var(--ring-focus)]"
                     style={{ borderColor: "#D9CFB1", color: "#1A1A1F" }}
@@ -244,6 +284,8 @@ export default function EquipoLoginPage() {
                     type="button"
                     onClick={() => setShowPassword((s) => !s)}
                     aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+                    aria-pressed={showPassword}
+                    disabled={loading}
                     className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-1.5 transition-colors hover:bg-[var(--surface-2)]"
                     style={{ color: "var(--gold-deep)" }}
                   >
@@ -290,6 +332,34 @@ export default function EquipoLoginPage() {
                 )}
               </button>
             </div>
+
+            {SHOW_DEMO && (
+              <div className="mt-6 rounded-xl border border-dashed p-4" style={{ borderColor: "var(--gold)", background: "rgba(201,168,76,0.05)" }}>
+                <div className="flex items-center gap-2 mb-3">
+                  <Sparkles className="h-4 w-4" style={{ color: "var(--gold-deep)" }} />
+                  <span className="text-[10px] font-bold uppercase tracking-[0.28em]" style={{ color: "var(--gold-deep)" }}>Demo equipo</span>
+                </div>
+                <div className="space-y-2">
+                  {DEMO_TEAM.map((u) => (
+                    <button
+                      key={u.email}
+                      type="button"
+                      onClick={() => applyDemoUser(u)}
+                      disabled={loading}
+                      className="w-full py-2 px-3 rounded-md text-left transition-all hover:bg-[rgba(201,168,76,0.15)] disabled:opacity-60 disabled:cursor-not-allowed"
+                      style={{ background: "rgba(201,168,76,0.08)", border: "1px solid rgba(201,168,76,0.3)" }}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold uppercase tracking-[0.2em]" style={{ color: "var(--gold-deep)" }}>{u.role}</span>
+                        <span className="text-[9px]" style={{ color: "var(--gold-deep)" }}>Usar →</span>
+                      </div>
+                      <div className="text-[11px] font-mono mt-0.5" style={{ color: "#1A1A1F" }}>{u.email}</div>
+                      <div className="text-[11px] font-mono opacity-70" style={{ color: "#1A1A1F" }}>{u.password}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="my-8 flex items-center gap-3">
               <span className="h-px flex-1" style={{ background: "#E2DBC4" }} />

@@ -8,7 +8,8 @@
  *   DELETE /api/casos/test?code=AT-TEST-001 → eliminar caso
  */
 
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { requireApiKey } from "@/lib/api-auth";
 import { withSystemRls } from "@/lib/rls";
 import { CaseStage } from "@/lib/db-enums";
 import { enqueueWhatsApp } from "@/lib/notifications";
@@ -24,7 +25,10 @@ type TestCaseInput = {
   simulate_cuotas?: boolean;
 };
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
+  const authError = requireApiKey(req);
+  if (authError) return authError;
+
   try {
     const body = await req.json();
     const inputs: TestCaseInput[] = Array.isArray(body) ? body : [body];
@@ -114,7 +118,10 @@ export async function POST(req: Request) {
   }
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const authError = requireApiKey(req);
+  if (authError) return authError;
+
   try {
     const cases = await withSystemRls((tx) =>
       tx.case.findMany({
@@ -140,7 +147,10 @@ export async function GET() {
   }
 }
 
-export async function DELETE(req: Request) {
+export async function DELETE(req: NextRequest) {
+  const authError = requireApiKey(req);
+  if (authError) return authError;
+
   const { searchParams } = new URL(req.url);
   const code = searchParams.get("code");
   if (!code) {

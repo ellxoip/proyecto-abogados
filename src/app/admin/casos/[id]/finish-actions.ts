@@ -5,12 +5,20 @@ import { CaseStage, Role } from "@/lib/db-enums";
 import { auth } from "@/lib/auth";
 import { withRls } from "@/lib/rls";
 import { enqueueEmail, enqueueWhatsApp } from "@/lib/notifications";
-import crypto from "crypto";
 
-function generateSignedCertificateUrl(caseId: string): string {
-  const baseUrl = process.env.APP_URL ?? "http://localhost:3001";
-  const token = crypto.randomBytes(32).toString("hex");
-  return `${baseUrl}/portal/casos/${caseId}/certificado?token=${token}`;
+function hasDocumentUrl(url: string | null | undefined): url is string {
+  return typeof url === "string" && url.trim().length > 0;
+}
+
+function normalizeForSearch(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function isResolutionDocumentUpdate(update: { description: string; document_url: string | null }) {
+  return hasDocumentUrl(update.document_url) && normalizeForSearch(update.description).includes("resolucion final");
 }
 
 export async function finishCase(caseId: string) {
@@ -30,7 +38,10 @@ export async function finishCase(caseId: string) {
       where: { id: caseId },
       include: {
         abogados: { select: { id: true } },
-        updates: { select: { id: true, document_url: true } },
+        updates: {
+          orderBy: { createdAt: "desc" },
+          select: { id: true, description: true, document_url: true },
+        },
       },
     });
 
@@ -45,7 +56,16 @@ export async function finishCase(caseId: string) {
       return { success: false, error: "No puedes finalizar un caso que no esta asignado a ti." };
     }
 
-    const certificateUrl = generateSignedCertificateUrl(caseId);
+    const resolutionUpdate = kase.updates.find(isResolutionDocumentUpdate);
+    if (!resolutionUpdate?.document_url) {
+      return {
+        success: false,
+        error:
+          "Adjunta la resolución final del caso antes de finalizar. El cliente descargará ese documento desde su portal.",
+      };
+    }
+
+    const resolutionDocumentUrl = resolutionUpdate.document_url.trim();
 
     await tx.case.update({
       where: { id: caseId },
@@ -61,8 +81,8 @@ export async function finishCase(caseId: string) {
         caseId,
         description:
           `El caso ${kase.code} ha sido concluido exitosamente. ` +
-          "Puede descargar su Certificado de Termino en el enlace adjunto.",
-        document_url: certificateUrl,
+          "Puede descargar la resolución del caso en el documento adjunto.",
+        document_url: resolutionDocumentUrl,
       },
     });
 
@@ -78,6 +98,6 @@ export async function finishCase(caseId: string) {
     revalidatePath("/portal");
     revalidatePath(`/portal/casos/${caseId}`);
 
-    return { success: true, certificateUrl };
+    return { success: true, resolutionDocumentUrl };
   });
 }

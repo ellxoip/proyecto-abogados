@@ -1,62 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
-import { PaymentStatus } from "@/lib/db-enums";
-import { recordPaymentEvent } from "@/lib/payments";
 
 /**
- * Transbank Webpay Plus Webhook Adapter
- * 
- * Transbank redirige al usuario o envía un POST/GET con `token_ws`.
- * Este endpoint funciona como URL de Confirmación (Return URL).
- * Se debe confirmar la transacción con la API de Transbank usando el token.
+ * Transbank Webpay Plus Webhook Adapter — DISABLED
+ *
+ * Esta ruta queda intencionalmente deshabilitada hasta que se implemente la
+ * integración real:
+ *   1) Confirmar token_ws contra la API de Transbank (transbank-sdk
+ *      WebpayPlus.Transaction.commit()).
+ *   2) Validar response_code === 0 y status === "AUTHORIZED" desde la respuesta
+ *      firmada del proveedor (no desde un mock).
+ *   3) Habilitar recordPaymentEvent SOLO con buy_order/amount validados.
+ *
+ * La implementación anterior aceptaba cualquier POST y registraba PaymentEvent
+ * con datos mock hardcoded (caseId AT-MOCK-002, monto 50000). Documento en
+ * `lib/payments.ts`:
+ *   "There are NO external payment providers in this project."
+ *
+ * Si se reactiva, mover los mocks a un test fixture y NUNCA llamar
+ * recordPaymentEvent sin la respuesta firmada de Transbank.
  */
-export async function POST(req: NextRequest) {
-  try {
-    const body = await req.text();
-    const params = new URLSearchParams(body);
-    const token_ws = params.get("token_ws");
-
-    if (!token_ws) {
-      return NextResponse.json({ error: "No token_ws provided" }, { status: 400 });
-    }
-
-    // TODO: Usar transbank-sdk para confirmar la transacción:
-    // const tx = new WebpayPlus.Transaction(new Options(IntegrationCommerceCodes.WEBPAY_PLUS, IntegrationApiKeys.WEBPAY, Environment.Integration));
-    // const response = await tx.commit(token_ws);
-    
-    // Simulación de respuesta de Transbank:
-    const mockWebpayResponse = {
-      vci: "TSY",
-      amount: 50000,
-      status: "AUTHORIZED", // AUTHORIZED = Pagado
-      buy_order: "AT-MOCK-002", // Debería ser el caseId
-      session_id: "session123",
-      card_detail: { card_number: "6623" },
-      accounting_date: "0525",
-      transaction_date: "2023-05-25T15:30:00Z",
-      authorization_code: "123456",
-      payment_type_code: "VN",
-      response_code: 0, // 0 = Aprobado
-      installments_number: 0
-    };
-
-    const isApproved = mockWebpayResponse.response_code === 0 && mockWebpayResponse.status === "AUTHORIZED";
-    const paymentStatus = isApproved ? PaymentStatus.PAID : PaymentStatus.UNPAID;
-
-    if (paymentStatus === PaymentStatus.PAID) {
-      const result = await recordPaymentEvent({
-        caseId: mockWebpayResponse.buy_order,
-        status: paymentStatus,
-        amount: mockWebpayResponse.amount,
-        externalId: mockWebpayResponse.authorization_code,
-      });
-
-      console.log("[Webpay Webhook] Payment confirmed and recorded:", result);
-    }
-
-    // Retorna redirect o HTML si es el navegador del usuario, o 200 OK si es S2S
-    return NextResponse.json({ ok: true, status: mockWebpayResponse.status });
-  } catch (err) {
-    console.error("[Webpay Webhook] Error:", err);
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
-  }
+export async function POST(_req: NextRequest) {
+  console.warn("[Webpay Webhook] DISABLED — integración real pendiente. Request rechazado.");
+  return NextResponse.json(
+    { ok: false, error: "Webhook deshabilitado: integración Webpay no implementada" },
+    { status: 503 },
+  );
 }

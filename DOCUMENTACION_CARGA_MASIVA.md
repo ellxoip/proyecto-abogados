@@ -319,9 +319,11 @@ Password de todos los usuarios sembrados: `Test2026!`.
 | Rol | Email | Password |
 |---|---|---|
 | SUPER_ADMIN     | jorge@atinforma.cl    | Admin2026!   |
+| SUPER_ADMIN DEMO| superadmin.demo@hivecontrol.cl | Demo2026! |
 | JEFE_DE_MESA    | jefe@atinforma.cl     | Jefe2026!    |
 | ABOGADO         | abogado@atinforma.cl  | Abogado2026! |
 | CLIENTE         | cliente@gmail.com     | Cliente2026! |
+| CLIENTE DEMO    | cliente.demo@hivecontrol.cl | Cliente2026! |
 | SISTEMA_CUOTAS  | cuotas@atinforma.cl   | System2026!  |
 
 ---

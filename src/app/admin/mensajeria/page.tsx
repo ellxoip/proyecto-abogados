@@ -107,7 +107,7 @@ export default async function MensajeriaPage() {
   const onlineCount = teamMembers.filter((m) => isOnline(m.lastSeenAt ? new Date(m.lastSeenAt) : null)).length;
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+    <div className="min-h-[calc(100vh-5rem)] px-3 py-4 sm:px-4 lg:px-6">
       <MessengerCenter
         conversations={conversations}
         teamMembers={teamMembers}

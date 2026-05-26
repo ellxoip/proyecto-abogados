@@ -24,6 +24,10 @@
     {
       "files": ["src/lib/rls.ts", "src/lib/auth.ts"],
       "rules": { "no-restricted-imports": "off" }
+    },
+    {
+      "files": ["**/__tests__/**/*.{ts,tsx}", "**/*.test.{ts,tsx}", "**/*.e2e.test.{ts,tsx}"],
+      "rules": { "no-restricted-imports": "off" }
     }
   ]
 }

@@ -147,7 +147,13 @@ export async function POST(req: Request) {
     const category = input.category ?? ActivityCategory.OTRO;
     const dateStr = input.date ?? open.startedAt.toISOString().slice(0, 10);
     const entryDate = new Date(dateStr + "T12:00:00Z");
-    if (entryDate > now) {
+    // Comparamos por día calendario UTC, no por timestamp crudo. Antes la
+    // entryDate quedaba fijada a 12:00Z (9:00 chileno) y, si el cliente
+    // registraba antes de mediodía local, `entryDate > now` rechazaba un
+    // día que NO es futuro. Ahora `today` también se ancla a 12:00Z para
+    // un compare directo de mismo día.
+    const todayCalendarDate = new Date(now.toISOString().slice(0, 10) + "T12:00:00Z");
+    if (entryDate.getTime() > todayCalendarDate.getTime()) {
       return {
         kind: "error" as const,
         status: 400,

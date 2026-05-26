@@ -6,7 +6,6 @@ import { BandejaFilters } from "./BandejaFilters";
 import { AlertCircle, TrendingDown, Clock, Plus } from "lucide-react";
 import { generateSupabaseToken } from "@/lib/supabase-jwt";
 import { LiveInboxCounter } from "./LiveInboxCounter";
-import { BandejaHelpWidget } from "./BandejaHelpWidget";
 import { BandejaClient } from "./BandejaClient";
 
 type SearchParams = { category?: string; stage?: string; sort?: string };
@@ -235,8 +234,6 @@ export default async function BandejaPage({
         searchParams={searchParams}
       />
 
-      {/* Nueva sección para el botón de generación de autoayuda */}
-      <BandejaHelpWidget />
     </div>
   );
 }

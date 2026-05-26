@@ -11,6 +11,7 @@ import { subDays, format } from "date-fns";
 import { computeSlaStatus } from "@/lib/productividad/sla";
 import { getTeamMetrics, getActivityDistribution, detectStagnantCases, ACTIVITY_LABELS } from "@/lib/productividad/metrics";
 import { ProductividadCharts } from "./ProductividadCharts";
+import { formatHmsFromMinutes } from "@/lib/format-duration";
 
 export default async function ProductividadPage() {
   const session = await auth();
@@ -315,7 +316,7 @@ export default async function ProductividadPage() {
                       )}
                     </td>
                     <td className="px-4 py-3 text-right font-medium text-[var(--text)]">{m.casesFinished}/{m.casesAssigned}</td>
-                    <td className="px-4 py-3 text-right font-medium text-[var(--text)]">{(m.totalMinutes / 60).toFixed(0)}h</td>
+                    <td className="px-4 py-3 text-right font-medium font-mono tabular-nums text-[var(--text)]">{formatHmsFromMinutes(m.totalMinutes)}</td>
                     <td className="px-4 py-3 text-right">
                       <span
                         className="font-bold"
@@ -366,8 +367,8 @@ export default async function ProductividadPage() {
                   <div className="text-xs font-bold text-[var(--text)]">{e.case.code}</div>
                   <div className="text-[10px] text-[var(--text-muted)]">{e.lawyer.fullName} · {ACTIVITY_LABELS[e.category]}</div>
                 </div>
-                <div className="text-sm font-bold flex-shrink-0" style={{ color: "var(--gold)" }}>
-                  {(e.durationMinutes / 60).toFixed(1)}h
+                <div className="text-sm font-bold font-mono tabular-nums flex-shrink-0" style={{ color: "var(--gold)" }}>
+                  {formatHmsFromMinutes(e.durationMinutes)}
                 </div>
               </div>
             ))}

@@ -1,49 +1,42 @@
-import { withSystemRls } from "@/lib/rls";
-
-const PAGACUOTAS_API_URL = process.env.PAGACUOTAS_API_URL || "http://localhost:4000";
-const PAGACUOTAS_CRM_API_KEY = process.env.PAGACUOTAS_CRM_API_KEY || "";
+/**
+ * Resolver del enlace de PagaCuotas para mostrar en el portal del cliente.
+ *
+ * Modelo: hive-financial-control es la ÚNICA fuente de verdad. Cuando
+ * genera el enlace de PagaCuotas, lo pushea a service-control vía
+ * /api/internal/integration/clients/payment-link y nosotros lo persistimos
+ * en `User.paymentLink`. Acá solo lo leemos.
+ *
+ * No creamos enlaces desde acá: hacerlo causaba race conditions y enlaces
+ * duplicados (uno de financial, otro generado por el fallback). Si el
+ * cliente entra al portal antes que financial-control haya pusheado el
+ * link, el botón "Pagar" simplemente no aparece todavía.
+ */
 
 type PaymentLinkClient = {
-  id: string;
-  rut: string | null;
-  fullName: string;
-  phone: string;
-  email: string;
   paymentLink: string | null;
 };
 
-export async function ensurePagaCuotasPaymentLink(client: PaymentLinkClient) {
-  if (client.paymentLink) return client.paymentLink;
-  if (!client.rut || !PAGACUOTAS_CRM_API_KEY) return null;
+export function normalizePagaCuotasPortalLink(paymentLink: string | null): string | null {
+  if (!paymentLink) return null;
 
-  const response = await fetch(`${PAGACUOTAS_API_URL.replace(/\/$/, "")}/api/integration/clients/from-crm`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-crm-api-key": PAGACUOTAS_CRM_API_KEY,
-    },
-    body: JSON.stringify({
-      rut: client.rut,
-      nombre: client.fullName,
-      telefono: client.phone,
-      email: client.email,
-      fuente: "hive_service_control",
-    }),
-    cache: "no-store",
-  });
+  try {
+    const url = new URL(paymentLink);
 
-  if (!response.ok) return null;
+    if (url.pathname === "/client/payment") {
+      url.pathname = "/client/portal";
+      url.search = "";
+    }
 
-  const data = await response.json();
-  const autoLoginUrl = typeof data.autoLoginUrl === "string" ? data.autoLoginUrl : null;
-  if (!autoLoginUrl) return null;
+    if (url.pathname === "/client/auto-login") {
+      url.searchParams.delete("pay");
+    }
 
-  await withSystemRls((tx) =>
-    tx.user.update({
-      where: { id: client.id },
-      data: { paymentLink: autoLoginUrl },
-    }),
-  );
+    return url.toString();
+  } catch {
+    return paymentLink;
+  }
+}
 
-  return autoLoginUrl;
+export async function ensurePagaCuotasPaymentLink(client: PaymentLinkClient): Promise<string | null> {
+  return normalizePagaCuotasPortalLink(client.paymentLink);
 }

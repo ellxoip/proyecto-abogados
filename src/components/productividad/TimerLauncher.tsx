@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Loader2, Play, AlertTriangle } from "lucide-react";
+import { Loader2, Play, ExternalLink } from "lucide-react";
 import { StatusBanner } from "@/components/StatusBanner";
 
 interface TimerLauncherProps {
@@ -10,11 +11,18 @@ interface TimerLauncherProps {
   caseCode: string;
 }
 
+interface ConflictInfo {
+  message: string;
+  openCaseId?: string | null;
+  openCaseCode?: string | null;
+  openStatus?: string | null;
+}
+
 export function TimerLauncher({ caseId, caseCode }: TimerLauncherProps) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [conflict, setConflict] = useState<string | null>(null);
+  const [conflict, setConflict] = useState<ConflictInfo | null>(null);
 
   async function start() {
     setPending(true);
@@ -29,13 +37,21 @@ export function TimerLauncher({ caseId, caseCode }: TimerLauncherProps) {
       const data = await res.json();
       if (!res.ok) {
         if (data?.code === "ALREADY_OPEN") {
-          setConflict(data.error ?? "Ya tienes una sesión abierta.");
+          setConflict({
+            message: data.error ?? "Ya tienes una sesión abierta.",
+            openCaseId: data.openCaseId ?? null,
+            openCaseCode: data.openCaseCode ?? null,
+            openStatus: data.openStatus ?? null,
+          });
         } else {
           setError(data?.error ?? "No se pudo iniciar la sesión.");
         }
         return;
       }
-      // Trigger a refresh so the persistent widget detects the new session.
+      // Sesión arrancada (o reutilizada idempotentemente cuando el mismo
+      // caso ya tenía una activa). Notificamos al widget para que
+      // aparezca al instante sin esperar al poll de 30s.
+      window.dispatchEvent(new CustomEvent("timer:started", { detail: { caseId } }));
       router.refresh();
     } catch (e: any) {
       setError(e?.message ?? "Error de red.");
@@ -63,11 +79,21 @@ export function TimerLauncher({ caseId, caseCode }: TimerLauncherProps) {
       {conflict && (
         <div className="w-[320px]">
           <StatusBanner tone="warning" onDismiss={() => setConflict(null)}>
-            <div className="space-y-1">
-              <p>{conflict}</p>
-              <p className="text-[11px]">
-                Usa el widget flotante en la esquina inferior derecha para pausar o cerrar la sesión actual.
-              </p>
+            <div className="space-y-2">
+              <p>{conflict.message}</p>
+              {conflict.openCaseId && conflict.openCaseId !== caseId ? (
+                <Link
+                  href={`/admin/casos/${conflict.openCaseId}`}
+                  className="inline-flex items-center gap-1.5 text-[11px] font-semibold underline underline-offset-2"
+                >
+                  <ExternalLink className="h-3 w-3" />
+                  Ir al caso {conflict.openCaseCode ?? "abierto"}
+                </Link>
+              ) : (
+                <p className="text-[11px]">
+                  Usa el widget flotante en la esquina inferior derecha para pausar o cerrar la sesión actual.
+                </p>
+              )}
             </div>
           </StatusBanner>
         </div>

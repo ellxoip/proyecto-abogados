@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { NotificationType, Role } from "@/lib/db-enums";
 import { withSystemRls } from "@/lib/rls";
+import { verifyIntegrationAuth } from "@/lib/integration-auth";
 
 /**
  * POST /api/integration/payment-needed
@@ -12,13 +13,6 @@ import { withSystemRls } from "@/lib/rls";
  * Auth: x-integration-secret matching INTEGRATION_INGEST_SECRET env var.
  */
 
-function assertIntegrationAuth(req: Request) {
-  const expected = process.env.INTEGRATION_INGEST_SECRET ?? null;
-  if (!expected) throw new Error("INTEGRATION_INGEST_SECRET no configurado.");
-  const secret = req.headers.get("x-integration-secret");
-  if (secret !== expected) throw new Error("No autorizado.");
-}
-
 const schema = z.object({
   crmLeadId: z.number(),
   caseId: z.string().optional().nullable(),
@@ -28,9 +22,7 @@ const schema = z.object({
 });
 
 export async function POST(req: Request) {
-  try {
-    assertIntegrationAuth(req);
-  } catch {
+  if (!verifyIntegrationAuth(req, { kind: "ingest" })) {
     return NextResponse.json({ ok: false, error: "No autorizado." }, { status: 401 });
   }
 

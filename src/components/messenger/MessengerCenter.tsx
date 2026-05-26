@@ -12,11 +12,13 @@ import {
   type FormEvent,
 } from "react";
 import {
+  ArrowDownToLine,
   Bell,
   Check,
   CheckCheck,
-  ChevronRight,
+  ClipboardCheck,
   Clock3,
+  Copy,
   Crown,
   ExternalLink,
   Filter,
@@ -32,7 +34,10 @@ import {
   Search,
   Send,
   Shield,
+  Sparkles,
   Users,
+  X,
+  Zap,
 } from "lucide-react";
 import { CategoryBadge } from "@/components/CategoryBadge";
 import { CommentType, Role } from "@/lib/db-enums";
@@ -183,6 +188,7 @@ export function MessengerCenter({ conversations, teamMembers, onlineCount }: Pro
   const [composer, setComposer] = useState("");
   const [sending, setSending] = useState(false);
   const [composerError, setComposerError] = useState<string | null>(null);
+  const [copiedSummary, setCopiedSummary] = useState(false);
 
   // Pinned (client-side persistence)
   const [pinned, setPinned] = useState<Set<string>>(new Set());
@@ -191,6 +197,23 @@ export function MessengerCenter({ conversations, teamMembers, onlineCount }: Pro
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (!expanded) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    function handleEscape(event: globalThis.KeyboardEvent) {
+      if (event.key === "Escape") setExpanded(false);
+    }
+
+    window.addEventListener("keydown", handleEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [expanded]);
 
   // ── Load persistence on mount ──────────────────────────────────────────
   useEffect(() => {
@@ -261,6 +284,21 @@ export function MessengerCenter({ conversations, teamMembers, onlineCount }: Pro
       });
   }, [conversations, query, filter, pinned, readMarks, currentUserId]);
 
+  const filteredTeamMembers = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return teamMembers;
+    return teamMembers.filter((m) =>
+      `${m.fullName} ${m.email} ${m.phone} ${m.role}`.toLowerCase().includes(q),
+    );
+  }, [teamMembers, query]);
+
+  useEffect(() => {
+    if (mode !== "equipo" || filteredTeamMembers.length === 0) return;
+    if (!selectedMember || !filteredTeamMembers.some((m) => m.id === selectedMember)) {
+      setSelectedMember(filteredTeamMembers[0].id);
+    }
+  }, [filteredTeamMembers, mode, selectedMember]);
+
   const unreadTotal = useMemo(() => {
     return conversations.reduce((acc, c) => {
       const key = `${c.caseId}:${c.type}`;
@@ -273,14 +311,34 @@ export function MessengerCenter({ conversations, teamMembers, onlineCount }: Pro
   }, [conversations, readMarks, currentUserId]);
 
   // Active conversation
-  const activeKey = selectedKey ?? filteredConversations[0]
-    ? `${filteredConversations[0]?.caseId}:${filteredConversations[0]?.type}`
+  const fallbackActiveKey = filteredConversations[0]
+    ? `${filteredConversations[0].caseId}:${filteredConversations[0].type}`
     : null;
-  const active = activeKey ? conversationByKey.get(activeKey) ?? null : null;
-  const activeCaseId = active?.caseId ?? null;
-  const activeType = active?.type ?? null;
-  const activeIsInternal = active?.type === CommentType.INTERNAL;
+  const activeKey = selectedKey ?? fallbackActiveKey;
+  const [activeCaseIdFromKey, activeTypeFromKey] = activeKey?.split(":") ?? [];
+  const emptyChannelAt = useMemo(() => new Date().toISOString(), [activeKey]);
+  const storedActive = activeKey ? conversationByKey.get(activeKey) ?? null : null;
+  const active =
+    storedActive ??
+    (activeCaseIdFromKey && activeTypeFromKey && threadCase?.id === activeCaseIdFromKey
+      ? {
+          caseId: threadCase.id,
+          caseCode: threadCase.code,
+          categoria: threadCase.categoria,
+          clientName: threadCase.client.fullName,
+          preview: thread.at(-1)?.body ?? "Canal listo para iniciar conversación.",
+          authorId: "",
+          type: activeTypeFromKey as CommentType,
+          at: thread.at(-1)?.createdAt ?? emptyChannelAt,
+          unreadCount: 0,
+        }
+      : null);
+  const activeCaseId = active?.caseId ?? activeCaseIdFromKey ?? null;
+  const activeType = active?.type ?? (activeTypeFromKey as CommentType | undefined) ?? null;
+  const activeIsInternal = activeType === CommentType.INTERNAL;
   const activeChannelLabel = activeIsInternal ? "Equipo interno" : "Mensaje al cliente";
+  const activeHasInternalChannel = Boolean(activeCaseId);
+  const activeHasPublicChannel = Boolean(activeCaseId);
 
   // ── Fetch thread when active conversation changes ──────────────────────
   const loadThread = useCallback(
@@ -310,9 +368,9 @@ export function MessengerCenter({ conversations, teamMembers, onlineCount }: Pro
   );
 
   useEffect(() => {
-    if (!active) return;
-    loadThread(active.caseId, active.type);
-  }, [activeCaseId, activeType, loadThread, active]);
+    if (!activeCaseId || !activeType) return;
+    loadThread(activeCaseId, activeType);
+  }, [activeCaseId, activeType, loadThread]);
 
   // ── Realtime subscription (Supabase) ───────────────────────────────────
   useEffect(() => {
@@ -369,13 +427,29 @@ export function MessengerCenter({ conversations, teamMembers, onlineCount }: Pro
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [thread.length]);
 
-  // Mark conversation read when thread loads
+  // Mark conversation read when thread loads (local UI + server-side badge).
   useEffect(() => {
-    if (!active || thread.length === 0) return;
+    if (!activeCaseId || !activeType || thread.length === 0) return;
     const last = thread[thread.length - 1];
-    markRead(`${active.caseId}:${active.type}`, last.createdAt);
+    markRead(`${activeCaseId}:${activeType}`, last.createdAt);
+
+    let cancelled = false;
+    fetch("/api/admin/mensajeria/read", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ caseId: activeCaseId, type: activeType }),
+    })
+      .then(() => {
+        if (cancelled) return;
+        // Refrescar el badge global inmediatamente.
+        window.dispatchEvent(new CustomEvent("messenger:unread-changed"));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [thread, activeCaseId, activeType, active]);
+  }, [thread, activeCaseId, activeType]);
 
   // ── Send composer ──────────────────────────────────────────────────────
   async function handleSend(e?: FormEvent) {
@@ -462,12 +536,100 @@ export function MessengerCenter({ conversations, teamMembers, onlineCount }: Pro
     }
   }
 
+  function applyConversationFilter(nextFilter: ConversationFilter) {
+    setMode("mensajes");
+    setFilter(nextFilter);
+  }
+
+  function scrollThreadToBottom() {
+    scrollRef.current?.scrollTo({
+      top: scrollRef.current.scrollHeight,
+      behavior: "smooth",
+    });
+    composerRef.current?.focus();
+  }
+
+  function selectCaseChannel(type: CommentType) {
+    if (!activeCaseId) return;
+    const nextKey = `${activeCaseId}:${type}`;
+    setMode("mensajes");
+    setComposerError(null);
+    setSelectedKey(nextKey);
+  }
+
+  function applyQuickReply(text: string) {
+    setComposer((prev) => {
+      const draft = prev.trim();
+      return draft ? `${draft}\n\n${text}` : text;
+    });
+    setComposerError(null);
+    window.requestAnimationFrame(() => composerRef.current?.focus());
+  }
+
+  async function writeClipboardText(text: string) {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.setAttribute("readonly", "");
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.select();
+    const copied = document.execCommand("copy");
+    document.body.removeChild(textarea);
+    if (!copied) throw new Error("copy-failed");
+  }
+
+  async function copyConversationSummary() {
+    if (!active || !threadCase) return;
+    const summary = [
+      `Caso: ${threadCase.code}`,
+      `Cliente: ${threadCase.client.fullName}`,
+      `Canal: ${activeChannelLabel}`,
+      `Mensajes: ${thread.length}`,
+      `Actualizado: ${exactTime(active.at)}`,
+      active.preview ? `Ultimo movimiento: ${active.preview}` : null,
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    try {
+      await writeClipboardText(summary);
+      setCopiedSummary(true);
+      window.setTimeout(() => setCopiedSummary(false), 1600);
+    } catch {
+      setComposerError("No se pudo copiar el resumen al portapapeles.");
+    }
+  }
+
   // ── Stats ──────────────────────────────────────────────────────────────
   const internalCount = conversations.filter((c) => c.type === CommentType.INTERNAL).length;
   const publicCount = conversations.filter((c) => c.type === CommentType.PUBLIC).length;
   const caseCount = new Set(conversations.map((c) => c.caseId)).size;
 
-  const selectedMemberData = teamMembers.find((m) => m.id === selectedMember) ?? teamMembers[0] ?? null;
+  const selectedMemberData =
+    teamMembers.find((m) => m.id === selectedMember) ?? filteredTeamMembers[0] ?? teamMembers[0] ?? null;
+
+  const quickReplies = useMemo(() => {
+    if (!threadCase) return [];
+    const code = threadCase.code;
+    if (activeIsInternal) {
+      return [
+        { label: "Pedir apoyo", text: `Equipo, necesito apoyo con el caso ${code}: ` },
+        { label: "Actualizar estado", text: `Actualizo estado interno del caso ${code}: ` },
+        { label: "Revisar antecedente", text: `Favor revisar antecedente pendiente del caso ${code}.` },
+      ];
+    }
+    return [
+      { label: "Estado", text: "Hola, estamos revisando el avance de su caso y le compartiremos novedades apenas estén confirmadas." },
+      { label: "Documento", text: "Hola, para avanzar necesitamos que nos envíe el antecedente pendiente por este mismo canal." },
+      { label: "Agenda", text: "Hola, podemos coordinar una revisión de su caso. Indíquenos por favor un horario disponible." },
+    ];
+  }, [activeIsInternal, threadCase]);
 
   // ── Group messages by day for separator rendering ──────────────────────
   const groupedThread = useMemo(() => {
@@ -484,43 +646,78 @@ export function MessengerCenter({ conversations, teamMembers, onlineCount }: Pro
     return out;
   }, [thread]);
 
+  const shellClassName = expanded
+    ? "fixed inset-0 z-[80] flex h-[100dvh] bg-[rgba(8,12,24,0.78)] p-2 backdrop-blur-xl sm:p-4"
+    : "relative";
+  const frameClassName = [
+    "relative flex w-full min-h-0 flex-col overflow-hidden border border-[var(--border-glass)] bg-[var(--surface)]",
+    expanded
+      ? "h-full rounded-[20px] shadow-[0_28px_90px_rgba(2,6,23,0.34)]"
+      : "min-h-[calc(100vh-8rem)] rounded-[24px] shadow-[0_28px_80px_rgba(15,23,42,0.14)]",
+  ].join(" ");
+  const headerClassName = [
+    "shrink-0 border-b border-[var(--border-glass)] bg-[linear-gradient(135deg,var(--surface)_0%,var(--surface-2)_58%,var(--blue-dim)_100%)] px-4 py-4 sm:px-6",
+    expanded ? "lg:px-7" : "",
+  ].join(" ");
+  const showInsightPanel = expanded && mode === "mensajes" && Boolean(active && threadCase);
+  const layoutClassName = [
+    "grid min-h-0 flex-1",
+    showInsightPanel
+      ? "lg:grid-cols-[minmax(300px,380px)_minmax(0,1fr)] xl:grid-cols-[minmax(300px,380px)_minmax(0,1fr)_minmax(260px,320px)]"
+      : expanded
+      ? "lg:grid-cols-[minmax(300px,390px)_minmax(0,1fr)]"
+      : "lg:grid-cols-[340px_minmax(0,1fr)]",
+  ].join(" ");
+  const sidebarScrollClassName = expanded
+    ? "max-h-[42dvh] lg:max-h-[calc(100dvh-17.5rem)]"
+    : "max-h-[58vh] lg:max-h-[calc(100vh-19rem)]";
+  const threadStackClassName = [
+    "mx-auto flex flex-col gap-3",
+    expanded ? "max-w-5xl" : "max-w-4xl",
+  ].join(" ");
+
   // ── Render ─────────────────────────────────────────────────────────────
   return (
-    <div className="relative">
-      <div className="absolute inset-x-0 -top-8 h-40 rounded-full bg-[radial-gradient(circle,rgba(62,56,144,0.18),transparent_65%)] blur-3xl" />
-
+    <div className={shellClassName}>
       <div
-        className={[
-          "relative overflow-hidden rounded-[28px] border border-[var(--border-glass)] bg-[var(--surface)] shadow-[0_30px_90px_rgba(12,16,28,0.12)]",
-          expanded ? "min-h-[calc(100vh-6rem)]" : "min-h-[calc(100vh-11rem)]",
-        ].join(" ")}
+        className={frameClassName}
+        data-expanded={expanded ? "true" : "false"}
+        role={expanded ? "dialog" : undefined}
+        aria-modal={expanded ? true : undefined}
+        aria-label="Centro de mensajería"
       >
         {/* ── Header bar ─────────────────────────────────────────────── */}
-        <div className="border-b border-[var(--border-glass)] bg-[linear-gradient(180deg,var(--surface)_0%,var(--surface-2)_100%)] px-5 py-5 sm:px-6">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div className="max-w-3xl">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-[var(--text-muted)]">
+        <div className={headerClassName}>
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div className="min-w-0 max-w-4xl">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-2 rounded-full border border-[var(--card-border)] bg-[var(--surface)] px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--text-muted)]">
+                  <Sparkles className="h-3 w-3 text-[var(--gold)]" />
+                  Centro 2.0
+                </span>
+                <span className="rounded-full border border-[var(--card-border)] bg-[var(--surface-3)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-muted)]">
+                  {expanded ? "Pantalla completa" : "Modo operativo"}
+                </span>
+              </div>
+              <h1 className="mt-2 text-2xl font-bold tracking-tight text-[var(--text)] sm:text-3xl">
                 Centro de mensajería
-              </p>
-              <h1 className="mt-1 text-2xl font-bold tracking-tight text-[var(--text)] sm:text-3xl">
-                Coordinación en tiempo real
               </h1>
-              <p className="mt-1 text-sm text-[var(--text-muted)]">
-                Conversaciones del despacho con persistencia, búsqueda, atajos de teclado y actualización
-                instantánea.
+              <p className="mt-1 text-sm leading-6 text-[var(--text-muted)]">
+                Gestiona conversaciones, seguimiento interno y respuestas al cliente desde una vista amplia, clara y en tiempo real.
               </p>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <StatChip label="Casos" value={caseCount} />
-              <StatChip label="Internas" value={internalCount} />
-              <StatChip label="Cliente" value={publicCount} />
-              <StatChip label="Sin leer" value={unreadTotal} accent={unreadTotal > 0} />
+            <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+              <StatChip label="Casos" value={caseCount} active={filter === "all"} onClick={() => applyConversationFilter("all")} />
+              <StatChip label="Internas" value={internalCount} active={filter === "internal"} onClick={() => applyConversationFilter("internal")} />
+              <StatChip label="Cliente" value={publicCount} active={filter === "public"} onClick={() => applyConversationFilter("public")} />
+              <StatChip label="Sin leer" value={unreadTotal} accent={unreadTotal > 0} active={filter === "unread"} onClick={() => applyConversationFilter("unread")} />
               <button
                 type="button"
                 onClick={() => setExpanded((v) => !v)}
-                className="btn-secondary px-3 py-2 text-[11px]"
-                title={expanded ? "Contraer panel" : "Expandir panel"}
+                className={[expanded ? "btn-dark" : "btn-primary", "px-3 py-2 text-[11px]"].join(" ")}
+                title={expanded ? "Contraer pantalla completa" : "Expandir a pantalla completa"}
+                aria-pressed={expanded}
               >
                 {expanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
                 {expanded ? "Contraer" : "Expandir"}
@@ -541,7 +738,7 @@ export function MessengerCenter({ conversations, teamMembers, onlineCount }: Pro
               label="Equipo"
               onClick={() => setMode("equipo")}
             />
-            <div className="ml-auto hidden items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-[var(--text-muted)] lg:flex">
+            <div className="ml-auto hidden items-center gap-2 rounded-full border border-[var(--card-border)] bg-[var(--surface)] px-3 py-1.5 text-[10px] uppercase tracking-[0.18em] text-[var(--text-muted)] lg:flex">
               <kbd className="rounded border border-[var(--card-border)] bg-[var(--surface-3)] px-1.5 py-0.5 text-[10px]">Enter</kbd>
               <span>enviar</span>
               <span className="text-[var(--text-dim)]">·</span>
@@ -549,12 +746,36 @@ export function MessengerCenter({ conversations, teamMembers, onlineCount }: Pro
               <span>nueva línea</span>
             </div>
           </div>
+          <div className="mt-4 grid gap-2 md:grid-cols-3">
+            <SignalCard
+              icon={Bell}
+              label="Prioridad"
+              value={`${unreadTotal} sin leer`}
+              accent={unreadTotal > 0}
+              onClick={() => applyConversationFilter("unread")}
+            />
+            <SignalCard
+              icon={MessageSquare}
+              label="Canales activos"
+              value={`${internalCount} internos · ${publicCount} cliente`}
+              onClick={() => applyConversationFilter("all")}
+            />
+            <SignalCard
+              icon={Users}
+              label="Equipo conectado"
+              value={`${onlineCount} en línea`}
+              onClick={() => {
+                setMode("equipo");
+                setQuery("");
+              }}
+            />
+          </div>
         </div>
 
-        <div className="grid min-h-0 lg:grid-cols-[340px_minmax(0,1fr)]">
+        <div className={layoutClassName}>
           {/* ── Sidebar (conversation list / team) ──────────────────── */}
-          <aside className="min-h-0 border-b border-[var(--border-glass)] bg-[var(--surface-2)] lg:border-b-0 lg:border-r">
-            <div className="border-b border-[var(--border-glass)] px-4 py-3 space-y-2">
+          <aside className="flex min-h-0 flex-col border-b border-[var(--border-glass)] bg-[linear-gradient(180deg,var(--surface-2)_0%,var(--surface)_100%)] lg:border-b-0 lg:border-r">
+            <div className="border-b border-[var(--border-glass)] px-4 py-4 space-y-3">
               <div className="relative">
                 <Search
                   className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]"
@@ -563,27 +784,38 @@ export function MessengerCenter({ conversations, teamMembers, onlineCount }: Pro
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Buscar caso, cliente o contenido…"
-                  className="form-input pl-10"
+                  placeholder={mode === "mensajes" ? "Buscar caso, cliente o contenido..." : "Buscar integrante, correo o teléfono..."}
+                  className="form-input pl-10 pr-10"
                 />
+                {query && (
+                  <button
+                    type="button"
+                    onClick={() => setQuery("")}
+                    className="absolute right-2 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-[var(--text-muted)] transition-colors hover:bg-[var(--btn-ghost-hover)] hover:text-[var(--text)]"
+                    aria-label="Limpiar búsqueda"
+                    title="Limpiar búsqueda"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
               </div>
               {mode === "mensajes" && (
                 <div className="flex flex-wrap gap-1.5">
-                  <FilterChip active={filter === "all"} onClick={() => setFilter("all")} label="Todas" />
+                  <FilterChip active={filter === "all"} onClick={() => applyConversationFilter("all")} label="Todas" />
                   <FilterChip
                     active={filter === "unread"}
-                    onClick={() => setFilter("unread")}
+                    onClick={() => applyConversationFilter("unread")}
                     label={`Sin leer${unreadTotal > 0 ? ` (${unreadTotal})` : ""}`}
                     tone="red"
                   />
                   <FilterChip
                     active={filter === "internal"}
-                    onClick={() => setFilter("internal")}
+                    onClick={() => applyConversationFilter("internal")}
                     label="Internas"
                   />
                   <FilterChip
                     active={filter === "public"}
-                    onClick={() => setFilter("public")}
+                    onClick={() => applyConversationFilter("public")}
                     label="Cliente"
                   />
                 </div>
@@ -591,7 +823,7 @@ export function MessengerCenter({ conversations, teamMembers, onlineCount }: Pro
             </div>
 
             {mode === "mensajes" ? (
-              <div className="min-h-0">
+              <div className="flex min-h-0 flex-1 flex-col">
                 <div className="flex items-center justify-between px-4 py-2.5">
                   <div className="flex items-center gap-2">
                     <Filter className="h-3.5 w-3.5 text-[var(--text-muted)]" />
@@ -604,7 +836,7 @@ export function MessengerCenter({ conversations, teamMembers, onlineCount }: Pro
                   </span>
                 </div>
 
-                <div className="max-h-[58vh] overflow-y-auto divide-y divide-[var(--card-border)] lg:max-h-[calc(100vh-22rem)]">
+                <div className={["flex-1 space-y-2 overflow-y-auto p-3", sidebarScrollClassName].join(" ")}>
                   {filteredConversations.length === 0 ? (
                     <EmptyHint
                       icon={MessageSquare}
@@ -631,21 +863,44 @@ export function MessengerCenter({ conversations, teamMembers, onlineCount }: Pro
                           type="button"
                           onClick={() => setSelectedKey(key)}
                           className={[
-                            "w-full px-4 py-3.5 text-left transition-colors",
+                            "group relative w-full overflow-hidden rounded-2xl border px-3.5 py-3.5 text-left shadow-sm transition-all hover:-translate-y-0.5",
                             isActive
-                              ? "bg-[linear-gradient(180deg, var(--sidebar-bg) 0%, var(--sidebar-deep) 100%)] text-white"
+                              ? "text-white"
                               : unread
                               ? "bg-[var(--surface)]"
-                              : "hover:bg-[var(--row-hover)]",
+                              : "bg-[var(--surface)] hover:bg-[var(--row-hover)]",
                           ].join(" ")}
+                          style={
+                            isActive
+                              ? {
+                                  background:
+                                    "linear-gradient(180deg, var(--sidebar-bg) 0%, var(--sidebar-deep) 100%)",
+                                  borderColor: "var(--gold-border)",
+                                  boxShadow: "0 16px 34px -22px rgba(38,35,92,0.85)",
+                                }
+                              : {
+                                  borderColor: unread ? "var(--gold-border)" : "var(--card-border)",
+                                }
+                          }
                         >
+                          {unread && !isActive && (
+                            <span
+                              className="absolute left-0 top-4 h-9 w-1 rounded-r-full"
+                              style={{ background: "var(--gold)" }}
+                              aria-hidden
+                            />
+                          )}
                           <div className="flex items-start gap-3">
                             <div
-                              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border text-[12px] font-bold"
+                              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border text-[12px] font-bold shadow-sm"
                               style={{
-                                background: c.type === CommentType.INTERNAL ? "var(--surface-3)" : "linear-gradient(180deg, var(--sidebar-bg) 0%, var(--sidebar-deep) 100%)",
-                                borderColor: "var(--card-border)",
-                                color: "#FFFFFF",
+                                background: isActive
+                                  ? "rgba(255,255,255,0.12)"
+                                  : c.type === CommentType.INTERNAL
+                                  ? "var(--surface-3)"
+                                  : "linear-gradient(180deg, var(--sidebar-bg) 0%, var(--sidebar-deep) 100%)",
+                                borderColor: isActive ? "rgba(255,255,255,0.22)" : "var(--card-border)",
+                                color: isActive || c.type !== CommentType.INTERNAL ? "#FFFFFF" : "var(--text)",
                               }}
                               aria-hidden
                             >
@@ -656,7 +911,7 @@ export function MessengerCenter({ conversations, teamMembers, onlineCount }: Pro
                               <div className="flex items-start justify-between gap-2">
                                 <div className="min-w-0">
                                   <div className="flex items-center gap-1.5 min-w-0">
-                                    <span className="truncate text-sm font-semibold text-[var(--text)]">
+                                    <span className={["truncate text-sm font-semibold", isActive ? "text-white" : "text-[var(--text)]"].join(" ")}>
                                       {c.clientName}
                                     </span>
                                     {isPinned && (
@@ -667,16 +922,18 @@ export function MessengerCenter({ conversations, teamMembers, onlineCount }: Pro
                                       />
                                     )}
                                   </div>
-                                  <div className="mt-0.5 flex items-center gap-1.5 text-[10px] uppercase tracking-[0.16em] text-[var(--text-muted)]">
+                                  <div className={["mt-0.5 flex items-center gap-1.5 text-[10px] uppercase tracking-[0.16em]", isActive ? "text-white/70" : "text-[var(--text-muted)]"].join(" ")}>
                                     <span className="font-mono">{c.caseCode}</span>
                                     <span>·</span>
                                     <span
                                       className="inline-flex items-center gap-1"
                                       style={{
                                         color:
-                                          c.type === CommentType.INTERNAL
+                                          isActive
+                                            ? "rgba(255,255,255,0.75)"
+                                            : c.type === CommentType.INTERNAL
                                             ? "var(--text-muted)"
-                                            : "#FFFFFF",
+                                            : "var(--blue)",
                                       }}
                                     >
                                       {c.type === CommentType.INTERNAL ? (
@@ -692,16 +949,21 @@ export function MessengerCenter({ conversations, teamMembers, onlineCount }: Pro
                                   <span
                                     className="text-[10px]"
                                     title={exactTime(c.at)}
-                                    style={{ color: "var(--text-muted)" }}
+                                    style={{ color: isActive ? "rgba(255,255,255,0.72)" : "var(--text-muted)" }}
                                   >
                                     {relativeTime(c.at)}
                                   </span>
                                   {unread && (
                                     <span
-                                      className="h-2 w-2 rounded-full"
-                                      style={{ background: "var(--gold)" }}
+                                      className="rounded-full px-2 py-0.5 text-[9px] font-bold"
+                                      style={{
+                                        background: isActive ? "rgba(255,255,255,0.16)" : "var(--gold)",
+                                        color: isActive ? "#FFFFFF" : "#1F2A44",
+                                      }}
                                       aria-label="Sin leer"
-                                    />
+                                    >
+                                      {Math.max(c.unreadCount, 1)}
+                                    </span>
                                   )}
                                 </div>
                               </div>
@@ -709,7 +971,11 @@ export function MessengerCenter({ conversations, teamMembers, onlineCount }: Pro
                               <p
                                 className={[
                                   "mt-1.5 line-clamp-2 text-xs leading-5",
-                                  unread ? "text-[var(--text)] font-medium" : "text-[var(--text-muted)]",
+                                  isActive
+                                    ? "text-white/80"
+                                    : unread
+                                    ? "text-[var(--text)] font-medium"
+                                    : "text-[var(--text-muted)]",
                                 ].join(" ")}
                               >
                                 {c.preview}
@@ -724,21 +990,23 @@ export function MessengerCenter({ conversations, teamMembers, onlineCount }: Pro
               </div>
             ) : (
               <TeamList
-                teamMembers={teamMembers}
+                teamMembers={filteredTeamMembers}
                 selectedMember={selectedMember}
                 setSelectedMember={setSelectedMember}
                 onlineCount={onlineCount}
+                query={query}
+                listClassName={sidebarScrollClassName}
               />
             )}
           </aside>
 
           {/* ── Main panel ─────────────────────────────────────────── */}
-          <section className="min-h-0 bg-[var(--surface)]">
+          <section className="flex min-h-0 flex-col bg-[var(--surface)]">
             {mode === "mensajes" ? (
               active && threadCase ? (
                 <div className="flex h-full min-h-0 flex-col">
                   {/* Conversation header */}
-                  <div className="flex items-start justify-between gap-3 border-b border-[var(--card-border)] px-5 py-4 sm:px-6">
+                  <div className="flex items-start justify-between gap-3 border-b border-[var(--card-border)] bg-[var(--surface)] px-5 py-4 shadow-sm sm:px-6">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <h2 className="truncate text-xl font-bold text-[var(--text)]">
@@ -777,6 +1045,43 @@ export function MessengerCenter({ conversations, teamMembers, onlineCount }: Pro
                         <span>·</span>
                         <span title={exactTime(active.at)}>actualizado {relativeTime(active.at)}</span>
                       </div>
+                      <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                        <MiniMetric
+                          label="Canal"
+                          value={activeChannelLabel}
+                          onClick={() => selectCaseChannel(activeIsInternal ? CommentType.PUBLIC : CommentType.INTERNAL)}
+                          title="Cambiar canal"
+                        />
+                        <MiniMetric label="Etapa" value={threadCase.stage} href={`/admin/casos/${active.caseId}`} />
+                        <MiniMetric
+                          label="Mensajes"
+                          value={thread.length}
+                          onClick={scrollThreadToBottom}
+                          title="Ir al último mensaje"
+                        />
+                        <MiniMetric
+                          label="Estado"
+                          value={loadingThread ? "Sincronizando" : "Al día"}
+                          onClick={() => loadThread(active.caseId, active.type)}
+                          title="Refrescar conversación"
+                        />
+                      </div>
+                      <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                        <ChannelButton
+                          active={!activeIsInternal}
+                          disabled={!activeHasPublicChannel}
+                          icon={Mail}
+                          label="Cliente"
+                          onClick={() => selectCaseChannel(CommentType.PUBLIC)}
+                        />
+                        <ChannelButton
+                          active={activeIsInternal}
+                          disabled={!activeHasInternalChannel}
+                          icon={Shield}
+                          label="Equipo"
+                          onClick={() => selectCaseChannel(CommentType.INTERNAL)}
+                        />
+                      </div>
                     </div>
 
                     <div className="flex items-center gap-2">
@@ -785,11 +1090,12 @@ export function MessengerCenter({ conversations, teamMembers, onlineCount }: Pro
                         onClick={() => togglePinned(activeKey!)}
                         className="btn-ghost px-2.5 py-2"
                         title={pinned.has(activeKey!) ? "Quitar de fijados" : "Fijar conversación"}
+                        aria-label={pinned.has(activeKey!) ? "Quitar de fijados" : "Fijar conversación"}
                         aria-pressed={pinned.has(activeKey!)}
                       >
                         <Pin
                           className={["h-4 w-4", pinned.has(activeKey!) ? "fill-current" : ""].join(" ")}
-                          style={{ color: pinned.has(activeKey!) ? "#FFFFFF" : "var(--text-muted)" }}
+                          style={{ color: pinned.has(activeKey!) ? "var(--gold)" : "var(--text-muted)" }}
                         />
                       </button>
                       <button
@@ -797,12 +1103,36 @@ export function MessengerCenter({ conversations, teamMembers, onlineCount }: Pro
                         onClick={() => loadThread(active.caseId, active.type)}
                         className="btn-ghost px-2.5 py-2"
                         title="Refrescar conversación"
+                        aria-label="Refrescar conversación"
                         disabled={loadingThread}
                       >
                         <RefreshCw
                           className={["h-4 w-4", loadingThread ? "animate-spin" : ""].join(" ")}
                           style={{ color: "var(--text-muted)" }}
                         />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={copyConversationSummary}
+                        className="btn-ghost px-2.5 py-2"
+                        title={copiedSummary ? "Resumen copiado" : "Copiar resumen del caso"}
+                        aria-label={copiedSummary ? "Resumen copiado" : "Copiar resumen del caso"}
+                      >
+                        {copiedSummary ? (
+                          <ClipboardCheck className="h-4 w-4 text-[var(--green)]" />
+                        ) : (
+                          <Copy className="h-4 w-4 text-[var(--text-muted)]" />
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={scrollThreadToBottom}
+                        className="btn-ghost px-2.5 py-2"
+                        title="Ir al último mensaje"
+                        aria-label="Ir al último mensaje"
+                        disabled={thread.length === 0}
+                      >
+                        <ArrowDownToLine className="h-4 w-4 text-[var(--text-muted)]" />
                       </button>
                       <Link
                         href={`/admin/casos/${active.caseId}`}
@@ -818,7 +1148,12 @@ export function MessengerCenter({ conversations, teamMembers, onlineCount }: Pro
                   <div
                     ref={scrollRef}
                     className="flex-1 overflow-y-auto px-5 py-6 sm:px-6"
-                    style={{ background: "var(--surface-2)" }}
+                    style={{
+                      backgroundColor: "var(--surface-2)",
+                      backgroundImage:
+                        "linear-gradient(180deg, var(--surface-2) 0%, var(--surface) 100%), linear-gradient(90deg, rgba(37,99,235,0.045) 1px, transparent 1px), linear-gradient(180deg, rgba(217,162,27,0.045) 1px, transparent 1px)",
+                      backgroundSize: "auto, 28px 28px, 28px 28px",
+                    }}
                   >
                     {threadError ? (
                       <div className="mx-auto max-w-md">
@@ -843,7 +1178,7 @@ export function MessengerCenter({ conversations, teamMembers, onlineCount }: Pro
                         </button>
                       </div>
                     ) : loadingThread && thread.length === 0 ? (
-                      <div className="mx-auto flex max-w-3xl flex-col gap-3">
+                      <div className={threadStackClassName}>
                         {[0, 1, 2].map((i) => (
                           <div
                             key={i}
@@ -861,7 +1196,7 @@ export function MessengerCenter({ conversations, teamMembers, onlineCount }: Pro
                         Aún no hay mensajes en este canal. Sé el primero en escribir.
                       </div>
                     ) : (
-                      <div className="mx-auto flex max-w-3xl flex-col gap-3">
+                      <div className={threadStackClassName}>
                         {groupedThread.map((item) =>
                           item.kind === "sep" ? (
                             <div key={item.key} className="my-2 flex items-center justify-center gap-3">
@@ -886,8 +1221,26 @@ export function MessengerCenter({ conversations, teamMembers, onlineCount }: Pro
                   {/* Composer */}
                   <form
                     onSubmit={handleSend}
-                    className="border-t border-[var(--card-border)] bg-[var(--surface)] px-5 py-4 sm:px-6"
+                    className="shrink-0 border-t border-[var(--card-border)] bg-[linear-gradient(180deg,var(--surface)_0%,var(--surface-2)_100%)] px-5 py-4 shadow-[0_-16px_38px_rgba(15,23,42,0.06)] sm:px-6"
                   >
+                    {quickReplies.length > 0 && (
+                      <div className="mb-3 flex flex-wrap items-center gap-2">
+                        <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-[var(--text-muted)]">
+                          <Zap className="h-3 w-3 text-[var(--gold)]" />
+                          Respuestas rápidas
+                        </span>
+                        {quickReplies.map((reply) => (
+                          <button
+                            key={reply.label}
+                            type="button"
+                            onClick={() => applyQuickReply(reply.text)}
+                            className="rounded-full border border-[var(--card-border)] bg-[var(--surface-2)] px-3 py-1 text-[10px] font-semibold text-[var(--text)] transition-colors hover:border-[var(--gold-border)] hover:bg-[var(--gold-dim)]"
+                          >
+                            {reply.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                     {composerError && (
                       <div
                         className="mb-2 rounded-lg border px-3 py-2 text-xs"
@@ -902,7 +1255,7 @@ export function MessengerCenter({ conversations, teamMembers, onlineCount }: Pro
                       </div>
                     )}
                     <div
-                      className="flex items-end gap-2 rounded-2xl border px-3 py-2"
+                      className="flex items-end gap-2 rounded-[22px] border px-3 py-2 shadow-sm transition-all focus-within:-translate-y-0.5 focus-within:shadow-[0_0_0_3px_var(--gold-dim),0_18px_36px_-24px_rgba(15,23,42,0.45)]"
                       style={{
                         background: "var(--surface)",
                         borderColor: "var(--card-border)",
@@ -981,6 +1334,71 @@ export function MessengerCenter({ conversations, teamMembers, onlineCount }: Pro
               />
             )}
           </section>
+          {showInsightPanel && active && threadCase && (
+            <aside className="hidden min-h-0 flex-col border-l border-[var(--border-glass)] bg-[var(--surface-2)] xl:flex">
+              <div className="border-b border-[var(--border-glass)] px-5 py-4">
+                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--text-muted)]">
+                  Panel operativo
+                </p>
+                <h3 className="mt-1 text-lg font-bold text-[var(--text)]">{threadCase.client.fullName}</h3>
+                <p className="mt-1 font-mono text-xs text-[var(--text-muted)]">{threadCase.code}</p>
+              </div>
+              <div className="flex-1 space-y-4 overflow-y-auto p-5">
+                <div className="rounded-xl border border-[var(--card-border)] bg-[var(--surface)] p-4 shadow-sm">
+                  <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-[var(--text-muted)]">
+                    Estado del canal
+                  </div>
+                  <div className="mt-3 space-y-2 text-sm">
+                    <SummaryRow label="Canal" value={activeChannelLabel} />
+                    <SummaryRow label="Mensajes" value={thread.length} />
+                    <SummaryRow label="Última actividad" value={relativeTime(active.at)} />
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-[var(--card-border)] bg-[var(--surface)] p-4 shadow-sm">
+                  <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-[var(--text-muted)]">
+                    Acciones
+                  </div>
+                  <div className="mt-3 grid gap-2">
+                    <button type="button" onClick={copyConversationSummary} className="btn-secondary justify-center text-[11px]">
+                      {copiedSummary ? <ClipboardCheck className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                      {copiedSummary ? "Resumen copiado" : "Copiar resumen"}
+                    </button>
+                    <button type="button" onClick={scrollThreadToBottom} className="btn-secondary justify-center text-[11px]">
+                      <ArrowDownToLine className="h-3.5 w-3.5" />
+                      Último mensaje
+                    </button>
+                    <Link href={`/admin/casos/${active.caseId}`} className="btn-primary justify-center text-[11px]">
+                      <ExternalLink className="h-3.5 w-3.5" />
+                      Abrir caso
+                    </Link>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-[var(--card-border)] bg-[var(--surface)] p-4 shadow-sm">
+                  <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-[var(--text-muted)]">
+                    Canales disponibles
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <ChannelButton
+                      active={!activeIsInternal}
+                      disabled={!activeHasPublicChannel}
+                      icon={Mail}
+                      label="Cliente"
+                      onClick={() => selectCaseChannel(CommentType.PUBLIC)}
+                    />
+                    <ChannelButton
+                      active={activeIsInternal}
+                      disabled={!activeHasInternalChannel}
+                      icon={Shield}
+                      label="Equipo"
+                      onClick={() => selectCaseChannel(CommentType.INTERNAL)}
+                    />
+                  </div>
+                </div>
+              </div>
+            </aside>
+          )}
         </div>
       </div>
     </div>
@@ -991,9 +1409,26 @@ export function MessengerCenter({ conversations, teamMembers, onlineCount }: Pro
 function MessageBubble({ m, isInternal }: { m: ThreadMessage; isInternal: boolean }) {
   const audio = parseAudioMessage(m.body);
   return (
-    <div className={["flex", m.isMine ? "justify-end" : "justify-start"].join(" ")}>
+    <div className={["flex items-end gap-2", m.isMine ? "justify-end" : "justify-start"].join(" ")}>
+      {!m.isMine && (
+        <div
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-[10px] font-bold shadow-sm"
+          style={{
+            background: "var(--surface)",
+            border: "1px solid var(--card-border)",
+            color: "var(--text)",
+          }}
+          aria-hidden
+        >
+          {initialsOf(m.author.fullName || "Miembro")}
+        </div>
+      )}
       <div
-        className={["max-w-[82%] rounded-[18px] px-4 py-2.5 shadow-sm transition-opacity", m.optimistic ? "opacity-70" : ""].join(" ")}
+        className={[
+          "max-w-[min(82%,760px)] rounded-[24px] border px-4 py-3 shadow-md transition-all",
+          m.optimistic ? "opacity-70" : "",
+          m.isMine ? "rounded-br-lg" : "rounded-bl-lg",
+        ].join(" ")}
         style={
           m.isMine
             ? {
@@ -1001,28 +1436,39 @@ function MessageBubble({ m, isInternal }: { m: ThreadMessage; isInternal: boolea
                   ? "linear-gradient(180deg, var(--bg) 0%, var(--bg-deep) 100%)"
                   : "linear-gradient(180deg, var(--sidebar-bg) 0%, var(--sidebar-deep) 100%)",
                 color: "#FFFFFF",
-                borderBottomRightRadius: 6,
+                borderColor: "rgba(255,255,255,0.12)",
+                boxShadow: "0 18px 34px -24px rgba(15,23,42,0.7)",
               }
             : {
                 background: "var(--surface)",
                 color: "var(--text)",
-                border: "1px solid var(--card-border)",
-                borderBottomLeftRadius: 6,
+                borderColor: "var(--card-border)",
+                boxShadow: "0 12px 28px -24px rgba(15,23,42,0.45)",
               }
         }
       >
         {!m.isMine && (
-          <div
-            className="text-[10px] font-bold uppercase tracking-[0.18em]"
-            style={{ color: "var(--text-muted)" }}
-          >
-            {m.author.fullName || "Miembro"}
+          <div className="mb-1 flex flex-wrap items-center gap-2">
+            <span
+              className="text-[10px] font-bold uppercase tracking-[0.16em]"
+              style={{ color: "var(--text-muted)" }}
+            >
+              {m.author.fullName || "Miembro"}
+            </span>
+            {isInternal && (
+              <span
+                className="rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.12em]"
+                style={{ background: "var(--surface-3)", color: "var(--text-muted)" }}
+              >
+                Interno
+              </span>
+            )}
           </div>
         )}
         {audio ? (
           <audio controls preload="metadata" src={audio.url} className="mt-1 w-full max-w-[280px]" />
         ) : (
-          <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-6">{m.body}</p>
+          <p className="whitespace-pre-wrap break-words text-sm leading-6">{m.body}</p>
         )}
         <div
           className={[
@@ -1049,14 +1495,18 @@ function TeamList({
   selectedMember,
   setSelectedMember,
   onlineCount,
+  query,
+  listClassName,
 }: {
   teamMembers: TeamMember[];
   selectedMember: string | null;
   setSelectedMember: (id: string) => void;
   onlineCount: number;
+  query: string;
+  listClassName: string;
 }) {
   return (
-    <div className="min-h-0">
+    <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex items-center justify-between px-4 py-2.5">
         <div className="flex items-center gap-2">
           <Users className="h-3.5 w-3.5 text-[var(--text-muted)]" />
@@ -1067,9 +1517,13 @@ function TeamList({
         <span className="text-[10px] text-[var(--text-muted)]">{onlineCount} en línea</span>
       </div>
 
-      <div className="max-h-[58vh] overflow-y-auto divide-y divide-[var(--card-border)] lg:max-h-[calc(100vh-22rem)]">
+      <div className={["flex-1 space-y-2 overflow-y-auto p-3", listClassName].join(" ")}>
         {teamMembers.length === 0 ? (
-          <EmptyHint icon={Users} title="Sin miembros" body="No hay integrantes registrados." />
+          <EmptyHint
+            icon={Users}
+            title={query ? "Sin resultados" : "Sin miembros"}
+            body={query ? "Limpia la búsqueda o prueba con otro nombre, correo o teléfono." : "No hay integrantes registrados."}
+          />
         ) : (
           teamMembers.map((m) => {
             const online = isOnline(m.lastSeenAt ? new Date(m.lastSeenAt) : null);
@@ -1080,13 +1534,22 @@ function TeamList({
                 type="button"
                 onClick={() => setSelectedMember(m.id)}
                 className={[
-                  "w-full px-4 py-3.5 text-left transition-colors",
-                  active ? "bg-[linear-gradient(180deg, var(--sidebar-bg) 0%, var(--sidebar-deep) 100%)] text-white" : "hover:bg-[var(--row-hover)]",
+                  "w-full rounded-2xl border px-3.5 py-3.5 text-left shadow-sm transition-all hover:-translate-y-0.5",
+                  active ? "text-white" : "bg-[var(--surface)] hover:bg-[var(--row-hover)]",
                 ].join(" ")}
+                style={
+                  active
+                    ? {
+                        background:
+                          "linear-gradient(180deg, var(--sidebar-bg) 0%, var(--sidebar-deep) 100%)",
+                        borderColor: "var(--gold-border)",
+                      }
+                    : { borderColor: "var(--card-border)" }
+                }
               >
                 <div className="flex items-start gap-3">
-                  <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[12px] font-bold text-white"
-                    style={{ background: "linear-gradient(135deg, var(--bg) 0%, var(--bg-deep) 100%)" }}
+                  <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-[12px] font-bold text-white shadow-sm"
+                    style={{ background: active ? "rgba(255,255,255,0.12)" : "linear-gradient(135deg, var(--bg) 0%, var(--bg-deep) 100%)" }}
                   >
                     {initialsOf(m.fullName)}
                     <span
@@ -1100,10 +1563,10 @@ function TeamList({
                   <div className="min-w-0 flex-1">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <div className="truncate text-sm font-semibold text-[var(--text)]">
+                        <div className={["truncate text-sm font-semibold", active ? "text-white" : "text-[var(--text)]"].join(" ")}>
                           {m.fullName}
                         </div>
-                        <div className="mt-0.5 flex items-center gap-1.5 text-[10px] uppercase tracking-[0.16em] text-[var(--text-muted)]">
+                        <div className={["mt-0.5 flex items-center gap-1.5 text-[10px] uppercase tracking-[0.16em]", active ? "text-white/70" : "text-[var(--text-muted)]"].join(" ")}>
                           {m.role === Role.JEFE_DE_MESA ? (
                             <>
                               <Crown className="h-3 w-3" style={{ color: "var(--gold)" }} />
@@ -1117,9 +1580,9 @@ function TeamList({
                           )}
                         </div>
                       </div>
-                      <span className="text-[10px] text-[var(--text-muted)]">{m.caseCount} casos</span>
+                      <span className={["text-[10px]", active ? "text-white/70" : "text-[var(--text-muted)]"].join(" ")}>{m.caseCount} casos</span>
                     </div>
-                    <div className="mt-1 text-[10px] text-[var(--text-muted)]">
+                    <div className={["mt-1 text-[10px]", active ? "text-white/65" : "text-[var(--text-muted)]"].join(" ")}>
                       {online ? "En línea ahora" : "Desconectado"}
                     </div>
                   </div>
@@ -1176,7 +1639,9 @@ function TeamPanel({ member }: { member: TeamMember }) {
             <h3 className="text-sm font-bold uppercase tracking-[0.18em] text-[var(--text-muted)]">
               Acceso rápido
             </h3>
-            <ChevronRight className="h-4 w-4 text-[var(--text-muted)]" />
+            <span className="rounded-full bg-[var(--surface-3)] px-2.5 py-1 text-[10px] font-semibold text-[var(--text-muted)]">
+              {member.caseCount} casos
+            </span>
           </div>
           <div className="mt-4 flex flex-wrap gap-2">
             <Link
@@ -1250,16 +1715,25 @@ function ModeButton({
   icon: React.ComponentType<{ className?: string }>;
   onClick: () => void;
 }) {
+  const buttonStyle = active
+    ? {
+        background: "linear-gradient(180deg, var(--sidebar-bg) 0%, var(--sidebar-deep) 100%)",
+        borderColor: "var(--gold-border)",
+        color: "#FFFFFF",
+        boxShadow: "0 10px 22px -14px rgba(38, 35, 92, 0.8)",
+      }
+    : {
+        background: "var(--surface)",
+        borderColor: "var(--card-border)",
+        color: "var(--text)",
+      };
+
   return (
     <button
       type="button"
       onClick={onClick}
-          className={[
-            "inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors",
-            active
-          ? "border-[var(--gold-border)] bg-[linear-gradient(180deg, var(--sidebar-bg) 0%, var(--sidebar-deep) 100%)] text-white"
-          : "border-[var(--card-border)] bg-[var(--surface)] text-[var(--text-muted)] hover:text-[var(--text)]",
-      ].join(" ")}
+      className="inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] transition-all hover:-translate-y-0.5"
+      style={buttonStyle}
     >
       <Icon className="h-3.5 w-3.5" />
       {label}
@@ -1304,12 +1778,75 @@ function FilterChip({
   );
 }
 
-function StatChip({ label, value, accent }: { label: string; value: number; accent?: boolean }) {
+function ChannelButton({
+  active,
+  disabled,
+  icon: Icon,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  disabled: boolean;
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  onClick: () => void;
+}) {
+  const buttonStyle = active
+    ? {
+        background: "linear-gradient(180deg, var(--sidebar-bg) 0%, var(--sidebar-deep) 100%)",
+        borderColor: "var(--gold-border)",
+        color: "#FFFFFF",
+      }
+    : {
+        background: "var(--surface)",
+        borderColor: "var(--card-border)",
+        color: "var(--text)",
+      };
+
   return (
-    <span
-      className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]"
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-pressed={active}
+      className="inline-flex items-center justify-center gap-1.5 rounded-full border px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.14em] transition-all hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-45"
+      style={buttonStyle}
+    >
+      <Icon className="h-3 w-3" />
+      {label}
+    </button>
+  );
+}
+
+function StatChip({
+  label,
+  value,
+  accent,
+  active,
+  onClick,
+}: {
+  label: string;
+  value: number;
+  accent?: boolean;
+  active?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      title={`Filtrar por ${label.toLowerCase()}`}
+      className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] transition-all hover:-translate-y-0.5"
       style={
-        accent
+        active
+          ? {
+              background: "linear-gradient(180deg, var(--sidebar-bg) 0%, var(--sidebar-deep) 100%)",
+              borderColor: "var(--gold-border)",
+              color: "#FFFFFF",
+              boxShadow: "0 10px 24px -16px rgba(38, 35, 92, 0.95)",
+            }
+          : accent
           ? {
               background: "var(--red-dim)",
               borderColor: "var(--red-border)",
@@ -1326,14 +1863,16 @@ function StatChip({ label, value, accent }: { label: string; value: number; acce
       <span
         className="rounded-full px-2 py-0.5"
         style={
-            accent
+          active
+            ? { background: "rgba(255,255,255,0.16)", color: "#FFFFFF" }
+            : accent
             ? { background: "var(--red)", color: "#FFFFFF" }
             : { background: "linear-gradient(180deg, var(--sidebar-bg) 0%, var(--sidebar-deep) 100%)", color: "#FFFFFF" }
         }
       >
         {value}
       </span>
-    </span>
+    </button>
   );
 }
 
@@ -1346,6 +1885,104 @@ function SummaryRow({ label, value }: { label: string; value: number | string })
       <span className="text-[var(--text-muted)]">{label}</span>
       <span className="font-semibold text-[var(--text)]">{value}</span>
     </div>
+  );
+}
+
+function MiniMetric({
+  label,
+  value,
+  href,
+  onClick,
+  title,
+}: {
+  label: string;
+  value: number | string;
+  href?: string;
+  onClick?: () => void;
+  title?: string;
+}) {
+  const className = [
+    "min-w-0 rounded-xl border px-3 py-2 text-left transition-all",
+    href || onClick ? "hover:-translate-y-0.5 hover:border-[var(--gold-border)] hover:bg-[var(--gold-dim)]" : "",
+  ].join(" ");
+  const style = { background: "var(--surface-2)", borderColor: "var(--card-border)" };
+  const content = (
+    <>
+      <div className="text-[9px] font-bold uppercase tracking-[0.14em] text-[var(--text-muted)]">
+        {label}
+      </div>
+      <div className="mt-0.5 truncate text-xs font-semibold text-[var(--text)]">
+        {value}
+      </div>
+    </>
+  );
+
+  if (href) {
+    return (
+      <Link href={href} className={className} style={style} title={title ?? label}>
+        {content}
+      </Link>
+    );
+  }
+
+  if (onClick) {
+    return (
+      <button type="button" onClick={onClick} className={className} style={style} title={title ?? label}>
+        {content}
+      </button>
+    );
+  }
+
+  return (
+    <div className={className} style={style}>
+      {content}
+    </div>
+  );
+}
+
+function SignalCard({
+  icon: Icon,
+  label,
+  value,
+  accent,
+  onClick,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: string;
+  accent?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex min-w-0 items-center gap-3 rounded-2xl border px-3.5 py-3 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-[var(--gold-border)]"
+      style={{
+        background: accent ? "var(--gold-dim)" : "var(--surface)",
+        borderColor: accent ? "var(--gold-border)" : "var(--card-border)",
+      }}
+    >
+      <div
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
+        style={{
+          background: accent
+            ? "linear-gradient(180deg, var(--sidebar-bg) 0%, var(--sidebar-deep) 100%)"
+            : "var(--surface-3)",
+          color: accent ? "#FFFFFF" : "var(--text-muted)",
+        }}
+      >
+        <Icon className="h-4 w-4" />
+      </div>
+      <div className="min-w-0">
+        <div className="text-[9px] font-bold uppercase tracking-[0.16em] text-[var(--text-muted)]">
+          {label}
+        </div>
+        <div className="mt-0.5 truncate text-xs font-semibold text-[var(--text)]">
+          {value}
+        </div>
+      </div>
+    </button>
   );
 }
 

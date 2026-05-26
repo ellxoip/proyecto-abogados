@@ -6,27 +6,48 @@ type AuditParams = {
   action: AuditAction;
   caseId?: string;
   actorId?: string;
+  channel?: string;   // "whatsapp" | "email" | "chat" | "system" | …
+  template?: string;  // template/job kind name
+  status?: string;    // "ok" | "failed"
   message?: string;
   metadata?: any;
 };
 
 /**
- * Centralized audit engine. 
+ * Centralized audit engine.
  * MUST be called within an existing transaction (Prisma.TransactionClient).
  */
-export async function logAudit({ tx, action, caseId, actorId, message, metadata }: AuditParams) {
+export async function logAudit({
+  tx,
+  action,
+  caseId,
+  actorId,
+  channel,
+  template,
+  status,
+  message,
+  metadata,
+}: AuditParams) {
   try {
     await tx.auditLog.create({
       data: {
         action,
         caseId,
         actorId,
+        channel,
+        template,
+        status,
         message,
-        metadata: metadata ? JSON.parse(JSON.stringify(metadata)) : undefined,
+        metadata:
+          metadata === undefined || metadata === null
+            ? undefined
+            : typeof metadata === "string"
+              ? metadata
+              : JSON.stringify(metadata),
       }
     });
   } catch (err) {
-    // Audit should be best-effort or fail the transaction? 
+    // Audit should be best-effort or fail the transaction?
     // Usually audit is critical, so we let it throw to roll back the tx if logging fails.
     console.error("Failed to log audit:", err);
     throw err;

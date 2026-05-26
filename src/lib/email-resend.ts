@@ -19,7 +19,6 @@ export type EmailTemplate =
   | "payment_receipt"
   | "case_finished"
   | "non_payment_warning"
-  | "client_credentials"
   | "lead_confirmation"
   | "lead_reminder"
   | "lead_reassigned";
@@ -40,7 +39,6 @@ const SUBJECTS: Record<EmailTemplate, (code: string) => string> = {
   payment_receipt: (c) => `Caso ${c} — Pago confirmado`,
   case_finished: (c) => `Caso ${c} — Cierre del caso`,
   non_payment_warning: (c) => `Caso ${c} — Aviso por falta de pago`,
-  client_credentials: (c) => `Bienvenido a Hive Control — Credenciales de Acceso (${c})`,
   lead_confirmation: (c) => `Hive Control — Reunión confirmada (${c})`,
   lead_reminder: (c) => `Hive Control — Recordatorio: tu reunión empieza pronto (${c})`,
   lead_reassigned: (c) => `Hive Control — Cambio de profesional asignado (${c})`,
@@ -93,8 +91,6 @@ function defaultBody(template: EmailTemplate): string {
       return "Su caso ha sido cerrado. Gracias por confiar en Hive Control.";
     case "non_payment_warning":
       return "Su caso se encuentra detenido por falta de pago. Regularice para reactivarlo.";
-    case "client_credentials":
-      return "Se han generado sus credenciales de acceso al portal de Hive Control. Ingrese con su correo electrónico y la contraseña proporcionada para consultar el estado de su caso.";
     case "lead_confirmation":
       return "Su reunión con Hive Control fue agendada correctamente. Recibirá un recordatorio una hora antes del encuentro.";
     case "lead_reminder":

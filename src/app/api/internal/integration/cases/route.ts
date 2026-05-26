@@ -1,20 +1,44 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { CaseStage, Role } from "@/lib/db-enums";
-import bcrypt from "bcryptjs";
 import { withSystemRls } from "@/lib/rls";
 import { logAudit } from "@/lib/audit";
-import { generateClientPassword } from "@/lib/services/crm-onboarding";
-import { sendEmailTemplate } from "@/lib/email-resend";
-import { sendWhatsAppTemplate } from "@/lib/whatsapp-meta";
+import { hashPassword } from "@/lib/services/credentials";
+import { verifyIntegrationAuth, getCorrelationId } from "@/lib/integration-auth";
+import { normalizeRut, normalizeEmail, normalizePhone } from "@/lib/identity";
 
 /**
  * POST /api/internal/integration/cases
  *
- * Called by SIS.CONTABLE (Integration Layer) after a contract becomes ACTIVE
- * (initial payment confirmed). Creates the legal case in AT.Informa.
+ * Llamado por hive-financial-control cuando un contrato pasa a ACTIVE
+ * (pago inicial confirmado en PagaCuotas). Crea o reutiliza el cliente
+ * y el caso en hive-service-control.
  *
- * Auth: x-api-key or Bearer matching INTEGRATION_INTERNAL_API_KEY env var.
+ * Modelo de credenciales unificado
+ * --------------------------------
+ *  - financial-control genera UNA password al crear el enlace de
+ *    PagaCuotas y la envía al cliente vía nexio (WhatsApp + Email).
+ *  - Esa MISMA password sirve para iniciar sesión en este portal.
+ *  - El cliente ya conoce la clave (la usó en PagaCuotas), por lo
+ *    tanto no se le exige rotarla al primer login en sc. Puede
+ *    cambiarla cuando quiera desde `/portal/cambiar-password`.
+ *  - service-control NO envía credenciales (nexio ya lo hizo). Solo
+ *    sincroniza el hash recibido.
+ *
+ * Idempotencia
+ * ------------
+ *  - Caso: por `case_code` (Case.code @unique). Una segunda llamada
+ *    actualiza metadatos sin duplicar.
+ *  - Password: financial-control es la fuente de verdad del onboarding
+ *    y mantiene su hash en sincronía bidireccional con sc vía
+ *    `/api/internal/integration/clients/password-sync`. Cuando este
+ *    endpoint recibe una nueva clave, la aplicamos siempre: si el
+ *    cliente había rotado en sc, fc ya tiene esa rotación; si está
+ *    re-onboardeando con clave nueva, esta es la vigente. Identidad
+ *    (fullName/email/phone) también se sobrescribe — evita que demo
+ *    users con mismo RUT secuestren la identidad real.
+ *
+ * Auth: `x-api-key` o `Authorization: Bearer …` = INTEGRATION_INTERNAL_API_KEY.
  */
 
 function safeParseJson(value: string | null | undefined): Record<string, unknown> {
@@ -27,23 +51,16 @@ function safeParseJson(value: string | null | undefined): Record<string, unknown
   }
 }
 
-function assertIntegrationAuth(req: Request) {
-  const expected = process.env.INTEGRATION_INTERNAL_API_KEY ?? null;
-  if (!expected) throw new Error("INTEGRATION_INTERNAL_API_KEY no configurado.");
-
-  const apiKey = req.headers.get("x-api-key");
-  const auth = req.headers.get("authorization");
-  const bearer = auth?.startsWith("Bearer ") ? auth.slice(7).trim() : null;
-
-  if ((apiKey && apiKey === expected) || (bearer && bearer === expected)) return;
-  throw new Error("No autorizado.");
-}
 
 const schema = z.object({
   rut: z.string().min(1),
   nombre: z.string().min(1),
-  email: z.string().email().optional().nullable(),
-  telefono: z.string().optional().nullable(),
+  email: z.string().email(),
+  telefono: z.string().min(8),
+  // Password en plano generada por hive-financial-control.
+  // Llega por canal interno autenticado (TLS + API key) — no se persiste
+  // en plaintext, solo se hashea con bcrypt antes de guardarse.
+  password_plain: z.string().min(6),
   case_code: z.string().min(1),
   service_category: z.string().optional().nullable(),
   crm_lead_id: z.number().optional().nullable(),
@@ -75,9 +92,7 @@ const schema = z.object({
 });
 
 export async function POST(req: Request) {
-  try {
-    assertIntegrationAuth(req);
-  } catch {
+  if (!verifyIntegrationAuth(req, { kind: "internal" })) {
     return NextResponse.json({ ok: false, error: "No autorizado." }, { status: 401 });
   }
 
@@ -101,6 +116,7 @@ export async function POST(req: Request) {
     nombre,
     email,
     telefono,
+    password_plain,
     case_code,
     service_category,
     crm_lead_id,
@@ -115,65 +131,89 @@ export async function POST(req: Request) {
     work_order,
   } = parsed.data;
 
-  try {
-    const normalizedRut = rut.replace(/\./g, "").toLowerCase().trim();
-    const phone = telefono ?? "+00000000000";
-    const safeEmail = email ?? `integracion-${normalizedRut}@noreply.internal`;
-    const plainPassword = generateClientPassword(nombre, phone);
-    const passwordHash = await bcrypt.hash(plainPassword, 10);
-    const category = (service_category ?? "OTRO").toUpperCase();
+  const normalizedRut = normalizeRut(rut);
+  const normalizedEmail = normalizeEmail(email);
+  const normalizedPhone = normalizePhone(telefono);
+  const corrId = getCorrelationId(req, correlation_id);
+  const category = (service_category ?? "OTRO").toUpperCase();
 
-    const result = await withSystemRls(async (tx) => {
-      // 1. Find client by RUT, then email, then create
+  try {
+    // Hash fuera de la transacción: bcrypt cuesta ~100ms y no debe ocupar
+    // un conexión Prisma todo ese tiempo.
+    const passwordHash = await hashPassword(password_plain);
+
+    const txOutcome = await withSystemRls(async (tx) => {
+      // 1. Resolver cliente por RUT, luego por email.
       let client = await tx.user.findFirst({
         where: { rut: normalizedRut, role: Role.CLIENTE },
       });
-
-      if (!client && email) {
+      if (!client) {
         client = await tx.user.findFirst({
-          where: { email: safeEmail, role: Role.CLIENTE },
+          where: { email: normalizedEmail, role: Role.CLIENTE },
         });
       }
 
+      let wasClientCreated = false;
       if (!client) {
         client = await tx.user.create({
           data: {
             fullName: nombre,
-            email: safeEmail,
-            phone,
+            email: normalizedEmail,
+            phone: normalizedPhone,
             role: Role.CLIENTE,
             passwordHash,
             rut: normalizedRut,
             paymentLink: payment_link ?? null,
+            mustChangePassword: false,
             active: true,
           },
         });
+        wasClientCreated = true;
       } else {
-        await tx.user.update({
+        // `password_plain` que recibimos puede ser la clave ORIGINAL del
+        // onboarding (snapshot guardado en fc IntegrationEvent o callback
+        // de NEXIO), no necesariamente la vigente. Si el cliente ya rotó
+        // su clave en algún portal, la sync bidireccional dejó el hash
+        // correcto vía `/clients/password-sync`. NO debemos pisarlo con
+        // el plaintext snapshot. Identidad (fullName/email/phone) sí se
+        // actualiza siempre para que demos/seeds con mismo RUT cedan al
+        // cliente real.
+        const rotated = await tx.auditLog.findFirst({
+          where: { actorId: client.id, action: "PASSWORD_CHANGED" },
+          select: { id: true },
+        });
+        const updateData: Record<string, unknown> = {
+          fullName: nombre,
+          email: normalizedEmail,
+          phone: normalizedPhone,
+          rut: client.rut ?? normalizedRut,
+          paymentLink: payment_link ?? client.paymentLink,
+          mustChangePassword: false,
+          active: true,
+        };
+        if (!rotated) {
+          updateData.passwordHash = passwordHash;
+        }
+        client = await tx.user.update({
           where: { id: client.id },
-          data: {
-            rut: client.rut ?? normalizedRut,
-            passwordHash,
-            paymentLink: payment_link ?? client.paymentLink,
-            active: true,
-          },
+          data: updateData,
         });
       }
 
-      // 2. Resolve category (carpeta principal por área)
+      // 2. Categoría.
       const cat = await tx.category.upsert({
         where: { name: category },
         update: {},
         create: { name: category },
       });
 
-      // 3. Case — idempotente por case_code. Si ya existe, reutilizamos.
+      // 3. Caso — idempotente por case_code.
       const existingCase = await tx.case.findUnique({ where: { code: case_code } });
       const metadataPayload = {
         source: source ?? "NEXIO",
         crm_lead_id,
         crm_opportunity_id,
-        correlation_id,
+        correlation_id: corrId,
         initial_payment_amount,
         contrato_id_sis_contable,
         financials: financials ?? null,
@@ -205,9 +245,9 @@ export async function POST(req: Request) {
             },
           });
 
-      const wasCreated = !existingCase;
+      const wasCaseCreated = !existingCase;
 
-      // 4. Guardar OT como Update con document_url y subcarpeta en description
+      // 4. OT como Update con document_url y subcarpeta.
       let updateId: string | null = null;
       if (work_order) {
         const otLabel = work_order.type ?? "Orden de Trabajo";
@@ -222,7 +262,6 @@ export async function POST(req: Request) {
           work_order.created_at ?? new Date().toISOString()
         }.${fieldsSnippet}`;
 
-        // Evitar duplicar la misma OT al reintentar
         const existingUpdate = await tx.update.findFirst({
           where: {
             caseId: kase.id,
@@ -257,70 +296,30 @@ export async function POST(req: Request) {
 
       await logAudit({
         tx,
-        action: wasCreated ? "PAYMENT_RECORDED" : "PAYMENT_UPDATED",
+        action: "PAYMENT_RECORDED",
         caseId: kase.id,
-        message: wasCreated
-          ? `Caso creado desde ${source ?? "NEXIO"}. Pago comprometido confirmado.${work_order ? ` OT ${work_order.type ?? ""} adjuntada.` : ""}`
+        message: wasCaseCreated
+          ? `Caso creado desde ${source ?? "NEXIO"}. Pago inicial confirmado. Cliente reutiliza credenciales de PagaCuotas — rotación opcional.${work_order ? ` OT ${work_order.type ?? ""} adjuntada.` : ""}`
           : `Caso actualizado desde ${source ?? "NEXIO"}.${work_order ? ` OT ${work_order.type ?? ""} sincronizada.` : ""}`,
       });
 
       return {
-        caseId: kase.id,
-        clientId: client.id,
-        clientEmail: client.email,
-        clientPhone: client.phone,
-        wasCreated,
-        updateId,
+        wasClientCreated,
+        wasCaseCreated,
+        result: {
+          caseId: kase.id,
+          clientId: client.id,
+          clientEmail: client.email,
+          clientPhone: client.phone,
+          wasCreated: wasCaseCreated,
+          updateId,
+        },
       };
     });
 
-    const credentialsBody = [
-      "Tu pago fue confirmado y tu cuenta en Hive Service Control quedo activa.",
-      `Usuario: ${safeEmail}`,
-      `Contrasena temporal: ${plainPassword}`,
-      `Portal: ${process.env.APP_URL ?? process.env.NEXTAUTH_URL ?? "http://localhost:3001"}/login`,
-      "Cambia tu contrasena despues del primer acceso.",
-    ].join("\n");
-
-    // Solo notificamos credenciales la primera vez que se crea el caso
-    if (result.wasCreated) {
-      if (email) {
-        try {
-          await sendEmailTemplate({
-            toEmail: safeEmail,
-            toName: nombre,
-            caseCode: case_code,
-            template: "client_credentials",
-            body: credentialsBody,
-          });
-        } catch (e) {
-          console.warn("[integration/cases] email notify failed:", e);
-        }
-      }
-
-      if (telefono) {
-        try {
-          await sendWhatsAppTemplate({
-            toPhoneE164: telefono,
-            template: "client_credentials",
-            variables: [nombre, safeEmail, plainPassword, `${process.env.APP_URL ?? process.env.NEXTAUTH_URL ?? "http://localhost:3001"}/login`],
-          });
-        } catch (e) {
-          console.warn("[integration/cases] whatsapp notify failed:", e);
-        }
-      }
-
-      await withSystemRls((tx) =>
-        tx.user.update({
-          where: { id: result.clientId },
-          data: { credentialsSentAt: new Date() },
-        }),
-      );
-    }
-
     return NextResponse.json(
-      { ok: true, ...result },
-      { status: result.wasCreated ? 201 : 200 },
+      { ok: true, ...txOutcome.result },
+      { status: txOutcome.wasCaseCreated ? 201 : 200 },
     );
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Error interno";

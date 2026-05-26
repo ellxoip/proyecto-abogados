@@ -2,7 +2,7 @@
 
 import { auth } from "@/lib/auth";
 import { withRls } from "@/lib/rls";
-import { Role } from "@/lib/db-enums";
+import { CaseStage, Role } from "@/lib/db-enums";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { revalidatePath, revalidateTag } from "next/cache";
 import { assertCaseActive } from "@/lib/case-health";
@@ -65,8 +65,12 @@ export async function uploadDocumentAndUpdate(caseId: string, formData: FormData
 
   const description = (formData.get("description") as string)?.trim();
   const file = formData.get("document") as File | null;
+  const isCaseResolution = formData.get("isCaseResolution") === "true";
 
   if (!description) return { ok: false, error: "Debe describir la actualización" };
+  if (isCaseResolution && (!file || file.size === 0)) {
+    return { ok: false, error: "Adjunta el documento de resolución final antes de marcarlo como tal." };
+  }
 
   // Validación temprana del archivo (antes de tocar la DB)
   if (file && file.size > 0) {
@@ -86,6 +90,34 @@ export async function uploadDocumentAndUpdate(caseId: string, formData: FormData
   return await withRls(async (tx) => {
     try {
       await assertCaseActive(tx, caseId);
+
+      const kase = await tx.case.findUnique({
+        where: { id: caseId },
+        select: { stage: true },
+      });
+      if (!kase || kase.stage !== CaseStage.IN_PROGRESS) {
+        return {
+          ok: false,
+          error: "El caso debe estar En Desarrollo antes de registrar avances.",
+        };
+      }
+
+      if (session.user.role === Role.ABOGADO) {
+        const activeTimer = await tx.timerSession.findFirst({
+          where: {
+            lawyerId: session.user.id,
+            caseId,
+            status: "ACTIVE",
+          },
+          select: { id: true },
+        });
+        if (!activeTimer) {
+          return {
+            ok: false,
+            error: "Debes iniciar el conteo de horas antes de publicar avances en este expediente.",
+          };
+        }
+      }
 
       let documentUrl: string | null = null;
 
@@ -124,7 +156,7 @@ export async function uploadDocumentAndUpdate(caseId: string, formData: FormData
       const update = await tx.update.create({
         data: {
           caseId,
-          description,
+          description: isCaseResolution ? `Resolución final del caso\n\n${description}` : description,
           document_url: documentUrl,
         },
         select: { id: true, caseId: true },

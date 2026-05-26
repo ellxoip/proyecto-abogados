@@ -499,7 +499,7 @@ export function QuickIntakeForm({ categories }: { categories: Category[] }) {
           </>
         ) : (
           <>
-            Derivar al CRM (Agendadoras)
+            Derivar a NEXIO (Agendadoras)
             <Send className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
           </>
         )}

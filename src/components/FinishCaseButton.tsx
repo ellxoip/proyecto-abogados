@@ -10,33 +10,45 @@ import { StatusBanner } from "@/components/StatusBanner";
 export function FinishCaseButton({ caseId, caseCode }: { caseId: string; caseCode?: string }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ tone: "success" | "error"; text: string } | null>(
     null,
   );
 
   async function doFinish() {
     try {
+      setValidationError(null);
       const res = await finishCase(caseId);
       if (!res.success && res.error) {
-        setFeedback({ tone: "error", text: res.error });
+        setValidationError(res.error);
         return;
       }
       setFeedback({
         tone: "success",
-        text: "Caso finalizado. Se generó el certificado y se notificó al cliente.",
+        text: "Caso finalizado. Se notificó al cliente con la resolución adjunta.",
       });
       setOpen(false);
       router.refresh();
     } catch (err: any) {
-      setFeedback({ tone: "error", text: err?.message ?? "Error desconocido al finalizar el caso." });
+      setValidationError(err?.message ?? "Error desconocido al finalizar el caso.");
     }
+  }
+
+  function handleOpen() {
+    setValidationError(null);
+    setOpen(true);
+  }
+
+  function handleClose() {
+    setValidationError(null);
+    setOpen(false);
   }
 
   return (
     <div className="flex flex-col items-end gap-2">
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={handleOpen}
         className="inline-flex items-center gap-2 rounded-md px-5 py-2.5 text-[11px] font-bold uppercase tracking-widest text-white transition-all shadow-sm"
         style={{
           background: "linear-gradient(180deg, var(--green) 0%, #15803D 100%)",
@@ -67,13 +79,21 @@ export function FinishCaseButton({ caseId, caseCode }: { caseId: string; caseCod
                 {" "}(<span className="font-mono text-[var(--text)]">{caseCode}</span>)
               </>
             ) : null}
-            . Esta acción cierra el expediente y notifica al cliente con un certificado oficial de
-            término.
+            . Esta acción cierra el expediente y notifica al cliente con la resolución final marcada
+            en el caso.
+            {validationError && (
+              <div
+                role="alert"
+                className="mt-3 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-[13px] font-semibold text-red-700"
+              >
+                {validationError}
+              </div>
+            )}
           </>
         }
         bullets={[
           "El caso pasa a estado FINALIZADO y queda en modo lectura.",
-          "Se genera un Certificado de Término con URL firmada para el cliente.",
+          "Se usará el último avance marcado como resolución final para la descarga del cliente.",
           "Se notifica al cliente vía WhatsApp y Email.",
           "Queda registrado en la bitácora (CASE_FINISHED).",
           "Esta operación se puede revertir solo por SuperAdmin desde la administración.",
@@ -82,7 +102,7 @@ export function FinishCaseButton({ caseId, caseCode }: { caseId: string; caseCod
         confirmLabel="Sí, finalizar caso"
         cancelLabel="Cancelar"
         onConfirm={doFinish}
-        onClose={() => setOpen(false)}
+        onClose={handleClose}
       />
     </div>
   );

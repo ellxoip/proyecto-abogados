@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 const PUBLIC_PATHS = [
   "/login",
   "/registro",
+  "/auth/",
   "/api/auth",
   "/api/casos",
   "/api/webhooks/",
@@ -53,6 +54,15 @@ export default async function middleware(req: NextRequest) {
   }
 
   const role = token.role;
+
+  // Redirección de la raíz en el MIDDLEWARE (307 limpio) en vez de en la page
+  // server-component, que hacía redirect() dentro de Suspense → el redirect
+  // viajaba por streaming y los navegadores in-app (WhatsApp) no lo seguían,
+  // dejando al usuario en un loop infinito de "Cargando/Procesando".
+  if (pathname === "/") {
+    return NextResponse.redirect(new URL(role === "CLIENTE" ? "/portal" : "/admin", req.url));
+  }
+
   if (pathname.startsWith("/portal") && role !== "CLIENTE") {
     return NextResponse.redirect(new URL("/", req.url));
   }
@@ -67,6 +77,18 @@ export default async function middleware(req: NextRequest) {
   ) {
     return NextResponse.redirect(new URL("/admin/casos", req.url));
   }
+
+  // Command Center (/admin) restringido a SUPER_ADMIN. ABOGADO y JEFE_DE_MESA
+  // van directo a su bandeja sin pasar por la vista ejecutiva.
+  if (pathname === "/admin" && role !== "SUPER_ADMIN") {
+    return NextResponse.redirect(new URL("/admin/bandeja", req.url));
+  }
+
+  // Nota: anteriormente forzábamos rotación de contraseña al primer
+  // login (mustChangePassword=true). Hoy el cliente ya conoce su
+  // clave desde PagaCuotas, así que el cambio es voluntario desde
+  // `/portal/cambiar-password`. El flag se conserva solo para
+  // compatibilidad con datos legados — no bloquea el portal.
 
   return NextResponse.next();
 }

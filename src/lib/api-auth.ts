@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { safeEqual } from "@/lib/timing-safe";
 
 /**
  * Valida el Bearer token para acceso a la API externa (/api/v1/*).
@@ -21,12 +22,12 @@ export function requireApiKey(req: NextRequest): NextResponse | null {
   const authHeader = req.headers.get("authorization") ?? "";
   const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
 
-  if (!token || token !== expectedKey) {
+  if (!token || !safeEqual(token, expectedKey)) {
     return NextResponse.json(
       { success: false, error: "API Key inválida o faltante." },
       { status: 401 }
     );
   }
 
-  return null; // OK
+  return null;
 }

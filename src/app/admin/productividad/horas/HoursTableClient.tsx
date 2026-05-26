@@ -6,6 +6,7 @@ import { Trash2, ExternalLink } from "lucide-react";
 import Link from "next/link";
 import { ACTIVITY_LABELS } from "@/lib/productividad/metrics";
 import { ActivityCategory } from "@/lib/db-enums";
+import { formatHmsFromMinutes } from "@/lib/format-duration";
 
 interface Entry {
   id: string;
@@ -76,7 +77,7 @@ export function HoursTableClient({ entries, isManager }: { entries: Entry[]; isM
               {isManager && <th className="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-widest" style={{ color: "var(--gold)" }}>Abogado</th>}
               <th className="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-widest" style={{ color: "var(--gold)" }}>Expediente</th>
               <th className="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-widest" style={{ color: "var(--gold)" }}>Actividad</th>
-              <th className="px-4 py-3 text-right text-[10px] font-bold uppercase tracking-widest" style={{ color: "var(--gold)" }}>Horas</th>
+              <th className="px-4 py-3 text-right text-[10px] font-bold uppercase tracking-widest" style={{ color: "var(--gold)" }}>Duración</th>
               <th className="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-widest" style={{ color: "var(--gold)" }}>Descripción</th>
               <th className="px-4 py-3" />
             </tr>
@@ -108,8 +109,8 @@ export function HoursTableClient({ entries, isManager }: { entries: Entry[]; isM
                     {ACTIVITY_LABELS[e.category]}
                   </span>
                 </td>
-                <td className="px-4 py-3 text-right font-bold" style={{ color: "var(--text)" }}>
-                  {(e.durationMinutes / 60).toFixed(1)}h
+                <td className="px-4 py-3 text-right font-mono font-bold tabular-nums" style={{ color: "var(--text)" }}>
+                  {formatHmsFromMinutes(e.durationMinutes)}
                 </td>
                 <td className="px-4 py-3 text-[11px] max-w-[200px] truncate" style={{ color: "var(--text-muted)" }}>
                   {e.description || "—"}

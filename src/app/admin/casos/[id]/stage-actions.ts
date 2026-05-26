@@ -34,12 +34,18 @@ export async function advanceToInProgress(caseId: string) {
       return { success: false, error: `No se puede avanzar el caso desde el estado actual: ${kase.stage}` };
     }
 
-    // Auto-assign current user as abogado if none assigned (demo / integration flow)
     if (kase.abogados.length === 0) {
-      await tx.case.update({
-        where: { id: caseId },
-        data: { abogados: { connect: { id: session.user.id } } },
-      });
+      return {
+        success: false,
+        error: "El caso debe tener un abogado asignado antes de iniciar desarrollo.",
+      };
+    }
+
+    if (session.user.role === Role.ABOGADO && !kase.abogados.some((a) => a.id === session.user.id)) {
+      return {
+        success: false,
+        error: "No puedes iniciar desarrollo de un caso que no esta asignado a ti.",
+      };
     }
 
     await tx.case.update({

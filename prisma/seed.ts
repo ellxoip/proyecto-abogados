@@ -7,6 +7,8 @@ const prisma = new PrismaClient();
 
 async function main() {
   const hash = (pw: string) => bcrypt.hash(pw, 10);
+  const demoStaffPassword = "Demo2026!";
+  const demoClientPassword = "Cliente2026!";
 
   // ── SuperAdmin ──
   const jorge = await prisma.user.upsert({
@@ -79,6 +81,49 @@ async function main() {
     },
   });
 
+  // Demo accounts used by guided QA/demo sessions.
+  const demoSuperAdmin = await prisma.user.upsert({
+    where: { email: "superadmin.demo@hivecontrol.cl" },
+    update: {
+      role: Role.SUPER_ADMIN,
+      fullName: "SuperAdmin Demo",
+      phone: "+56955550001",
+      active: true,
+      passwordHash: await hash(demoStaffPassword),
+    },
+    create: {
+      role: Role.SUPER_ADMIN,
+      fullName: "SuperAdmin Demo",
+      email: "superadmin.demo@hivecontrol.cl",
+      phone: "+56955550001",
+      passwordHash: await hash(demoStaffPassword),
+    },
+  });
+
+  const demoCliente = await prisma.user.upsert({
+    where: { email: "cliente.demo@hivecontrol.cl" },
+    update: {
+      role: Role.CLIENTE,
+      fullName: "Cliente Demo",
+      phone: "+56955550002",
+      rut: "16798821-0",
+      active: true,
+      passwordHash: await hash(demoClientPassword),
+      paymentLink: "http://localhost:3002",
+    },
+    create: {
+      role: Role.CLIENTE,
+      fullName: "Cliente Demo",
+      email: "cliente.demo@hivecontrol.cl",
+      phone: "+56955550002",
+      rut: "16798821-0",
+      active: true,
+      passwordHash: await hash(demoClientPassword),
+      paymentLink: "http://localhost:3002",
+      managedById: demoSuperAdmin.id,
+    },
+  });
+
   // ── Categories ──
   const tributario = await prisma.category.upsert({
     where: { name: "TRIBUTARIO" },
@@ -119,12 +164,35 @@ async function main() {
     },
   });
 
+  await prisma.case.upsert({
+    where: { code: "AT-DEMO-001" },
+    update: {
+      client_id: demoCliente.id,
+      jefe_mesa_id: jefe.id,
+      stage: CaseStage.IN_PROGRESS,
+      is_paid: true,
+      categoryId: tributario.id,
+    },
+    create: {
+      code: "AT-DEMO-001",
+      client_id: demoCliente.id,
+      jefe_mesa_id: jefe.id,
+      abogados: { connect: [{ id: abogado.id }] },
+      stage: CaseStage.IN_PROGRESS,
+      is_paid: true,
+      categoryId: tributario.id,
+      metadata: JSON.stringify({ source: "DEMO_SEED", pagacuotas_rut: "16.798.821-0" }),
+    },
+  });
+
 
   console.log("✅ Seed complete. Users created:");
   console.log("  SuperAdmin:    jorge@atinforma.cl     / Admin2026!");
   console.log("  Jefe de Grupo:  jefe@atinforma.cl      / Jefe2026!");
   console.log("  Abogado:       abogado@atinforma.cl   / Abogado2026!");
   console.log("  Cliente:       cliente@gmail.com      / Cliente2026!");
+  console.log("  Demo Admin:    superadmin.demo@hivecontrol.cl / Demo2026!");
+  console.log("  Demo Cliente:  cliente.demo@hivecontrol.cl    / Cliente2026!");
 }
 
 main()

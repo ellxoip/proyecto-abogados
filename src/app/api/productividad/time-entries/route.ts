@@ -108,7 +108,11 @@ export async function POST(req: Request) {
 
     const now = new Date();
     const entryDate = new Date(date + "T12:00:00Z");
-    if (entryDate > now) {
+    // Comparamos por día calendario UTC: ambos anchorados a 12:00Z para
+    // que la fecha "hoy" no se rechace si el cliente registra antes de
+    // mediodía local (Chile = UTC-3, 12:00Z = 9:00 local).
+    const todayCalendarDate = new Date(now.toISOString().slice(0, 10) + "T12:00:00Z");
+    if (entryDate.getTime() > todayCalendarDate.getTime()) {
       return NextResponse.json(
         { error: "La fecha no puede ser futura.", code: "FUTURE_DATE" },
         { status: 400 },

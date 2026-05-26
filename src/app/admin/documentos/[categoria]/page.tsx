@@ -24,6 +24,11 @@ export default async function CategoriaDocumentosPage({
 
   const categoryName = decodeURIComponent(params.categoria);
 
+  // Mismas reglas que el índice: SOLO OT entregadas desde NEXIO. El
+  // prefijo `[OT/...]` lo escribe `cases/route.ts` en la descripción del
+  // Update al recibir el work_order. Otros artefactos (comprobantes,
+  // resoluciones, subidas manuales) no aparecen aquí.
+  const OT_PREFIX = "[OT/";
   const data = await withRls(async (tx) => {
     const category = await tx.category.findUnique({ where: { name: categoryName } });
     if (!category) return null;
@@ -31,13 +36,21 @@ export default async function CategoriaDocumentosPage({
     const cases = await tx.case.findMany({
       where: {
         categoryId: category.id,
-        updates: { some: { document_url: { not: null } } },
+        updates: {
+          some: {
+            document_url: { not: null },
+            description: { startsWith: OT_PREFIX },
+          },
+        },
       },
       orderBy: { updatedAt: "desc" },
       include: {
         client: { select: { fullName: true } },
         updates: {
-          where: { document_url: { not: null } },
+          where: {
+            document_url: { not: null },
+            description: { startsWith: OT_PREFIX },
+          },
           orderBy: { createdAt: "desc" },
           select: {
             id: true,

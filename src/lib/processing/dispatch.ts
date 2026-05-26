@@ -19,7 +19,6 @@ const WHATSAPP_TEMPLATE_FOR_KIND: Record<WhatsAppJob["kind"], WhatsAppTemplate> 
   payment_receipt: "payment_receipt",
   case_finished: "case_finished",
   non_payment_warning: "non_payment_warning",
-  client_credentials: "client_credentials",
   lead_confirmation: "lead_confirmation",
   lead_reminder: "lead_reminder",
   lead_reassigned: "lead_reassigned",
@@ -33,7 +32,6 @@ const EMAIL_TEMPLATE_FOR_KIND: Record<EmailJob["kind"], EmailTemplate> = {
   payment_receipt: "payment_receipt",
   case_finished: "case_finished",
   non_payment_warning: "non_payment_warning",
-  client_credentials: "client_credentials",
   lead_confirmation: "lead_confirmation",
   lead_reminder: "lead_reminder",
   lead_reassigned: "lead_reassigned",
@@ -61,16 +59,7 @@ export async function processWhatsAppJob(payload: WhatsAppJob) {
     throw new Error(`case ${caseId} not found`);
   }
 
-  let variables: string[];
-  if (payload.kind === "client_credentials") {
-    const { generateClientPassword } = await import("@/lib/services/crm-onboarding");
-    const firstName = ctx.client.fullName.split(" ")[0];
-    const password = generateClientPassword(ctx.client.fullName, ctx.client.phone);
-    const APP_URL = process.env.APP_URL ?? "http://localhost:3001";
-    variables = [firstName, password, ctx.code, APP_URL + "/login"];
-  } else {
-    variables = [ctx.client.fullName, ctx.code];
-  }
+  const variables: string[] = [ctx.client.fullName, ctx.code];
 
   const result = await sendWhatsAppTemplate({
     toPhoneE164: ctx.client.phone,
@@ -110,12 +99,7 @@ export async function processEmailJob(payload: EmailJob) {
     if (!c) return null;
 
     let body: string | undefined;
-    if (payload.kind === "client_credentials") {
-      const { generateClientPassword } = await import("@/lib/services/crm-onboarding");
-      const password = generateClientPassword(c.client.fullName, c.client.phone ?? "");
-      const APP_URL = process.env.APP_URL ?? "http://localhost:3001";
-      body = `Sus credenciales de acceso al portal Hive Control:\nEmail: ${c.client.email}\nContraseña: ${password}\n\nPortal de seguimiento: ${APP_URL}/login\n\nGuarde esta información de forma segura. Con estas credenciales podrá consultar su caso y descargar los documentos adjuntos.`;
-    } else if (payload.kind === "case_update" && "updateId" in payload) {
+    if (payload.kind === "case_update" && "updateId" in payload) {
       const u = await tx.update.findUnique({
         where: { id: payload.updateId },
         select: { description: true, document_url: true },

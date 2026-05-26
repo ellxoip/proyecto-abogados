@@ -62,3 +62,11 @@ Content-Type: application/json
   "estado": "PAID",
   "monto": 100000
 }
+
+### 8. GET /case-updates/:identifier - avances del caso por RUT
+GET {{baseUrl}}/case-updates/16.798.821-0
+Authorization: Bearer {{apiKey}}
+
+### 8b. GET /case-updates/:identifier - con RUT inexistente
+GET {{baseUrl}}/case-updates/99.999.999-K
+Authorization: Bearer {{apiKey}}
