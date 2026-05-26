@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   X, Sparkles, Download, Save, Loader2, Trash2,
-  ChevronLeft, FileText, CheckCircle, Plus, Minus, Eye,
+  ChevronLeft, FileText, CheckCircle, Plus, Minus, Eye, AlertCircle,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { rutOnChange } from '../utils/rut'
@@ -14,7 +14,7 @@ import {
 
 interface OTType { key: string; label: string; subtitle: string; icon: string; has_diagnosis: boolean; ai_fields: string[] }
 interface WorkOrder { id: number; lead_id: number; ot_type: string; fields_json: Record<string, any>; status: string; is_copy: boolean; created_by: number; created_at: string; updated_at?: string; ot_label: string }
-interface Props { leadId: number; onClose: () => void; onSaved?: () => void; autoOpen?: boolean }
+interface Props { leadId: number; onClose: () => void; onSaved?: () => void; autoOpen?: boolean; honorarios?: number }
 
 // ── Document primitives ────────────────────────────────────────────────────────
 
@@ -692,7 +692,7 @@ function FullDocument({ otType, otTitle, otSubtitle, fields, onChange, docRef }:
 
 // ── Main Modal ──────────────────────────────────────────────────────────────────
 
-export function WorkOrderModal({ leadId, onClose, onSaved, autoOpen }: Props) {
+export function WorkOrderModal({ leadId, onClose, onSaved, autoOpen, honorarios }: Props) {
   const [step, setStep] = useState<'list' | 'select' | 'form'>('list')
   const [otTypes, setOtTypes] = useState<OTType[]>([])
   const [otList, setOtList] = useState<WorkOrder[]>([])
@@ -936,17 +936,36 @@ export function WorkOrderModal({ leadId, onClose, onSaved, autoOpen }: Props) {
     </Shell>
   )
 
+  const noHonorarios = honorarios !== undefined && honorarios <= 0
+
   if (step === 'list') return (
     <Shell onClose={onClose} title="Órdenes de Trabajo"
       headerRight={
-        <button onClick={() => setStep('select')}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
-          style={{ background: '#4361ee', color: '#fff', boxShadow: '0 2px 8px rgba(67,97,238,0.25)' }}
-          onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#3451d1'}
-          onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = '#4361ee'}>
-          <Plus size={12} /> Nueva OT
-        </button>
+        <div className="relative group/ot">
+          <button
+            onClick={() => { if (noHonorarios) { toast.error('Debes ingresar los honorarios del lead antes de crear una OT'); return } setStep('select') }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
+            style={noHonorarios
+              ? { background: 'rgba(239,35,60,0.10)', color: '#ef233c', border: '1.5px solid rgba(239,35,60,0.30)', cursor: 'not-allowed', opacity: 0.85 }
+              : { background: '#4361ee', color: '#fff', boxShadow: '0 2px 8px rgba(67,97,238,0.25)' }}
+            onMouseEnter={e => { if (!noHonorarios) (e.currentTarget as HTMLElement).style.background = '#3451d1' }}
+            onMouseLeave={e => { if (!noHonorarios) (e.currentTarget as HTMLElement).style.background = '#4361ee' }}>
+            <Plus size={12} /> Nueva OT
+          </button>
+        </div>
       }>
+      {noHonorarios && (
+        <div className="flex items-start gap-3 px-4 py-3 rounded-xl mb-4"
+          style={{ background: 'rgba(239,35,60,0.06)', border: '1.5px solid rgba(239,35,60,0.28)' }}>
+          <AlertCircle size={15} style={{ color: '#ef233c', flexShrink: 0, marginTop: 1 }} />
+          <div>
+            <p className="text-sm font-bold" style={{ color: '#ef233c' }}>Honorarios requeridos</p>
+            <p className="text-xs mt-0.5" style={{ color: 'rgba(239,35,60,0.75)' }}>
+              Ingresa los honorarios del lead antes de crear una Orden de Trabajo. Ve al lead y completa el campo Honorarios.
+            </p>
+          </div>
+        </div>
+      )}
       {otList.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 gap-4">
           <div className="w-16 h-16 rounded-2xl flex items-center justify-center"

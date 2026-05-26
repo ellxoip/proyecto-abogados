@@ -392,7 +392,7 @@ export default function VendorPipeline() {
   const [loading, setLoading]   = useState(true)
   const [selectedEvent, setSelectedEvent] = useState<any>(null)
   const [showModal, setShowModal]         = useState(false)
-  const [otLeadId, setOtLeadId]           = useState<number | null>(null)
+  const [otLead, setOtLead] = useState<{ id: number; honorarios: number } | null>(null)
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
@@ -547,7 +547,7 @@ export default function VendorPipeline() {
                     Sin leads
                   </div>
                 ) : col.items.map((lead: any) => (
-                  <LeadPipelineCard key={lead.lead_id} lead={lead} onOT={id => setOtLeadId(id)} />
+                  <LeadPipelineCard key={lead.lead_id} lead={lead} onOT={id => setOtLead({ id, honorarios: lead.honorarios ?? 0 })} />
                 ))}
               </div>
             </div>
@@ -592,8 +592,8 @@ export default function VendorPipeline() {
         />
       )}
 
-      {otLeadId !== null && (
-        <WorkOrderModal leadId={otLeadId} onClose={() => { setOtLeadId(null); load(true) }} />
+      {otLead !== null && (
+        <WorkOrderModal leadId={otLead.id} honorarios={otLead.honorarios} onClose={() => { setOtLead(null); load(true) }} />
       )}
     </div>
   )
