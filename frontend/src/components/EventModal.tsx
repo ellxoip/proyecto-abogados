@@ -216,29 +216,6 @@ export function EventModal({
             </div>
           </div>
 
-          {event && isVendedor && (
-            <div className="pt-2 border-t border-white/[0.07]">
-              <p className="text-xs font-semibold text-white/52 uppercase tracking-wide mb-2">Resultado de la reunión</p>
-              <div className="grid grid-cols-2 gap-2">
-                <button type="button" onClick={() => handleVendorStatus('sin_exito')} disabled={updatingStatus}
-                  className={`flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border text-sm font-medium transition-all ${
-                    event.vendor_status === 'sin_exito'
-                      ? 'bg-danger/15 border-danger/30 text-danger'
-                      : 'border-white/10 text-white/78 hover:bg-danger/10 hover:border-danger/30'
-                  }`}>
-                  <XCircle size={16} /> Sin éxito
-                </button>
-                <button type="button" onClick={() => handleVendorStatus('altamente_interesado')} disabled={updatingStatus}
-                  className={`flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border text-sm font-medium transition-all ${
-                    event.vendor_status === 'altamente_interesado'
-                      ? 'bg-lime/15 border-lime/30 text-lime'
-                      : 'border-white/10 text-white/78 hover:bg-lime/10 hover:border-lime/20'
-                  }`}>
-                  <ThumbsUp size={16} /> Exitoso
-                </button>
-              </div>
-            </div>
-          )}
 
           <div className="flex gap-3 pt-4 sticky bottom-0 bg-surface-1 border-t border-white/[0.07]">
             {event && (
