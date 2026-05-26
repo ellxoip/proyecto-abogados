@@ -358,13 +358,6 @@ function LeadCard({ lead, canMove, showGroup, labels, canConfirmPago, onMoved, u
               onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#f8fafc'; (e.currentTarget as HTMLElement).style.color = 'rgba(26,32,53,0.60)' }}>
               <Eye size={11} /> Lead
             </Link>
-            <button onClick={() => setShowOTModal(true)}
-              className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-[10px] font-semibold transition-all"
-              style={{ background: '#f8fafc', color: 'rgba(26,32,53,0.60)', border: '1px solid #e2e8f0' }}
-              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#edf2f7'; (e.currentTarget as HTMLElement).style.color = '#1a2035' }}
-              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#f8fafc'; (e.currentTarget as HTMLElement).style.color = 'rgba(26,32,53,0.60)' }}>
-              <ClipboardList size={11} /> OT
-            </button>
             {canShowBack && (
               <button onClick={() => setShowMoveModal({ target: prevStage })}
                 className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-[10px] font-semibold transition-all"
