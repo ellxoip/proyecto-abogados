@@ -1,7 +1,9 @@
 ﻿import {
   EstadoCuota,
+  NaturalezaCuenta,
   PrismaClient,
   RolUsuario,
+  TipoCuentaContable,
   TipoCliente,
   TipoModificacion,
 } from "@prisma/client";
@@ -148,6 +150,77 @@ async function main() {
       motivo: "Cliente solicito mover vencimiento por flujo de caja",
     },
   });
+
+  // ── Empresa default ───────────────────────────────────────────────
+  const empresaExiste = await prisma.empresa.findFirst();
+  if (!empresaExiste) {
+    await prisma.empresa.create({
+      data: {
+        nombre: "Estudio Jurídico",
+        rut: "76000000-0",
+        razon_social: "Estudio Jurídico SpA",
+        giro: "Servicios jurídicos",
+        activa: true,
+      },
+    });
+  }
+
+  // ── Plan de cuentas base ──────────────────────────────────────────
+  const cuentas = [
+    { codigo: "1101", nombre: "Banco / Cuentas Corrientes",              tipo: TipoCuentaContable.ACTIVO,     naturaleza: NaturalezaCuenta.DEUDORA },
+    { codigo: "1102", nombre: "Caja",                                     tipo: TipoCuentaContable.ACTIVO,     naturaleza: NaturalezaCuenta.DEUDORA },
+    { codigo: "1103", nombre: "Caja chica",                               tipo: TipoCuentaContable.ACTIVO,     naturaleza: NaturalezaCuenta.DEUDORA },
+    { codigo: "1104", nombre: "IVA crédito fiscal",                       tipo: TipoCuentaContable.ACTIVO,     naturaleza: NaturalezaCuenta.DEUDORA },
+    { codigo: "1201", nombre: "Clientes / CxC",                           tipo: TipoCuentaContable.ACTIVO,     naturaleza: NaturalezaCuenta.DEUDORA },
+    { codigo: "2101", nombre: "Proveedores / CxP",                        tipo: TipoCuentaContable.PASIVO,     naturaleza: NaturalezaCuenta.ACREEDORA },
+    { codigo: "2102", nombre: "Retenciones por pagar",                    tipo: TipoCuentaContable.PASIVO,     naturaleza: NaturalezaCuenta.ACREEDORA },
+    { codigo: "2103", nombre: "IVA débito fiscal",                        tipo: TipoCuentaContable.PASIVO,     naturaleza: NaturalezaCuenta.ACREEDORA },
+    { codigo: "3101", nombre: "Capital",                                  tipo: TipoCuentaContable.PATRIMONIO, naturaleza: NaturalezaCuenta.ACREEDORA },
+    { codigo: "4101", nombre: "Ingresos por servicios legales",           tipo: TipoCuentaContable.INGRESO,    naturaleza: NaturalezaCuenta.ACREEDORA },
+    { codigo: "4102", nombre: "Otros Ingresos",                           tipo: TipoCuentaContable.INGRESO,    naturaleza: NaturalezaCuenta.ACREEDORA },
+    { codigo: "5101", nombre: "Gastos operacionales",                     tipo: TipoCuentaContable.GASTO,      naturaleza: NaturalezaCuenta.DEUDORA },
+    { codigo: "5102", nombre: "Honorarios profesionales",                 tipo: TipoCuentaContable.GASTO,      naturaleza: NaturalezaCuenta.DEUDORA },
+    { codigo: "5201", nombre: "Descuentos / condonaciones / incobrables", tipo: TipoCuentaContable.GASTO,      naturaleza: NaturalezaCuenta.DEUDORA },
+  ];
+
+  for (const c of cuentas) {
+    const existe = await prisma.cuentaContable.findFirst({ where: { codigo: c.codigo, empresa_id: null } });
+    if (!existe) {
+      await prisma.cuentaContable.create({ data: { ...c, empresa_id: null, nivel: 1, acepta_movimientos: true, activa: true } });
+    }
+  }
+
+  // ── Tipos de comprobante ──────────────────────────────────────────
+  const tipos = [
+    { nombre: "INGRESO",  prefijo: "ING" },
+    { nombre: "EGRESO",   prefijo: "EGR" },
+    { nombre: "VENTA",    prefijo: "VTA" },
+    { nombre: "COMPRA",   prefijo: "CMP" },
+    { nombre: "AJUSTE",   prefijo: "AJU" },
+    { nombre: "REVERSA",  prefijo: "REV" },
+    { nombre: "TRASPASO", prefijo: "TRP" },
+  ];
+
+  for (const t of tipos) {
+    const existe = await prisma.tipoComprobanteContable.findFirst({ where: { nombre: t.nombre } });
+    if (!existe) {
+      await prisma.tipoComprobanteContable.create({ data: { ...t, siguiente_numero: 1, activo: true } });
+    }
+  }
+
+  // ── Impuestos base ────────────────────────────────────────────────
+  const impuestos = [
+    { nombre: "IVA 19%",                    tipo: "IVA",                  tasa: 0.19  },
+    { nombre: "Exento",                      tipo: "EXENTO",               tasa: 0.0   },
+    { nombre: "Retención honorarios 14.5%", tipo: "RETENCION_HONORARIOS", tasa: 0.145 },
+  ];
+
+  for (const imp of impuestos) {
+    const existe = await prisma.impuesto.findFirst({ where: { tipo: imp.tipo, empresa_id: null } });
+    if (!existe) {
+      await prisma.impuesto.create({ data: { ...imp, empresa_id: null, activo: true } });
+    }
+  }
 
   console.log("Seed completado.");
   console.log("Admin: admin@legalfinance.local / Admin123!");
