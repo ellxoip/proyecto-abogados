@@ -69,6 +69,7 @@ type NormalizedContract = {
   servicio: string;
   area: string | null;
   montoTotal: number;
+  pagoInicial: number;
   cantidadCuotas: number;
   fechaInicio: string;
   estadoContrato: EstadoContrato;
@@ -457,10 +458,13 @@ function inferTipoClienteFromRut(rut: string | null): TipoCliente | null {
 }
 
 function mapEstadoCliente(value: unknown): EstadoCliente | null {
-  const text = normalizeText(value).toLowerCase();
+  const text = normalizeText(value)
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "");
   if (!text) return null;
   if (text === "activo") return EstadoCliente.ACTIVO;
-  if (text === "al dia" || text === "al dÃ­a") return EstadoCliente.AL_DIA;
+  if (text === "al dia") return EstadoCliente.AL_DIA;
   if (text === "moroso") return EstadoCliente.MOROSO;
   if (text === "finalizado") return EstadoCliente.FINALIZADO;
   if (text === "anulado" || text === "inactivo") return EstadoCliente.ANULADO;
@@ -481,7 +485,7 @@ function mapEstadoContrato(value: unknown): { value: EstadoContrato; warning?: I
       value: EstadoContrato.ACTIVO,
       warning: {
         code: "CONTRACT_STATUS_DEFAULTED",
-        message: "Estado de contrato 'Pendiente' se normalizÃ³ a ACTIVO.",
+        message: "Estado de contrato 'Pendiente' se normalizo a ACTIVO.",
         severity: "warning",
       },
     };
@@ -1042,6 +1046,8 @@ export function buildPreviewFromRows(
     const area = normalizeMaybe(pickValue(row.data, ["area", "area *"]));
     const montoTotalField = pickValueWithMeta(row, ["monto_total", "monto_total *"]);
     const montoTotal = parseNumberValue(montoTotalField.value);
+    const pagoInicialRaw = parseNumberValue(pickValue(row.data, ["pago_inicial", "monto_pago_inicial"]));
+    const pagoInicial = pagoInicialRaw !== null && pagoInicialRaw > 0 ? pagoInicialRaw : 0;
     const cantidadCuotasRaw = parseNumberValue(
       pickValue(row.data, ["cantidad_cuotas", "cantidad_cuotas *"]),
     );
@@ -1082,6 +1088,21 @@ export function buildPreviewFromRows(
       issues.push({
         code: "INVALID_TOTAL_AMOUNT",
         message: `Contrato debe tener monto_total mayor a 0. header=${montoTotalField.headerDetected ?? "NO_DETECTADO"} rawValue=${formatRawValue(montoTotalField.value)}.`,
+        severity: "error",
+      });
+    }
+
+    if (pagoInicial < 0) {
+      issues.push({
+        code: "INVALID_INITIAL_PAYMENT_NEGATIVE",
+        message: "pago_inicial no puede ser negativo.",
+        severity: "error",
+      });
+    }
+    if (montoTotal && pagoInicial >= montoTotal) {
+      issues.push({
+        code: "INVALID_INITIAL_PAYMENT_EXCEEDS_TOTAL",
+        message: `pago_inicial (${formatIssueCurrency(pagoInicial)}) no puede ser igual o mayor al monto_total del contrato.`,
         severity: "error",
       });
     }
@@ -1127,6 +1148,7 @@ export function buildPreviewFromRows(
             servicio,
             area,
             montoTotal,
+            pagoInicial,
             cantidadCuotas,
             fechaInicio: toIsoDate(fechaInicio),
             estadoContrato: estadoContrato.value,
@@ -1488,13 +1510,13 @@ export function buildPreviewFromRows(
       (acc, installment) => acc + (installment.normalizedData?.monto ?? 0),
       0,
     );
-    const expectedAmount = contract.normalizedData.montoTotal;
-    const amountDifference = Math.abs(amountSum - expectedAmount);
+    const saldoFinanciado = contract.normalizedData.montoTotal - (contract.normalizedData.pagoInicial ?? 0);
+    const amountDifference = Math.abs(amountSum - saldoFinanciado);
 
     if (amountDifference > CONTRACT_INSTALLMENTS_AMOUNT_TOLERANCE) {
       appendIssueOnce(contract.issues, {
         code: "CONTRACT_INSTALLMENTS_AMOUNT_MISMATCH",
-        message: `La suma de cuotas (${formatIssueCurrency(amountSum)}) no coincide con el monto del contrato (${formatIssueCurrency(expectedAmount)}). Diferencia: ${formatIssueCurrency(Math.abs(amountSum - expectedAmount))}.`,
+        message: `La suma de cuotas (${formatIssueCurrency(amountSum)}) no coincide con el saldo financiado del contrato (${formatIssueCurrency(saldoFinanciado)}). Diferencia: ${formatIssueCurrency(Math.abs(amountSum - saldoFinanciado))}.`,
         severity: "error",
       });
     }
@@ -1862,12 +1884,10 @@ export class ClientImportService {
     const importableContractItems = contractItems.filter((item) =>
       isStatusImportable(item.status, policy),
     );
-    const chunkSize = 20;
+    const IMPORT_CONCURRENCY = 3;
+    const contractQueue = [...importableContractItems];
 
-    for (let i = 0; i < importableContractItems.length; i += chunkSize) {
-      const chunk = importableContractItems.slice(i, i + chunkSize);
-
-      for (const contractItem of chunk) {
+    const processContract = async (contractItem: (typeof importableContractItems)[number]) => {
         const normalizedContract = contractItem.normalized_data as NormalizedContract | null;
         const contractIssues = parseIssues(contractItem.errors);
 
@@ -1886,7 +1906,7 @@ export class ClientImportService {
               ]),
             },
           });
-          continue;
+          return;
         }
 
         const relatedInstallments = [
@@ -1950,7 +1970,7 @@ export class ClientImportService {
               },
             });
           }
-          continue;
+          return;
         }
 
         try {
@@ -2131,8 +2151,8 @@ export class ClientImportService {
                   tipo_servicio: normalizedContract.servicio,
                   fecha_contrato: new Date(normalizedContract.fechaInicio),
                   monto_ccto: normalizedContract.montoTotal,
-                  monto_pago_inicial: 0,
-                  saldo_financiado: normalizedContract.montoTotal,
+                  monto_pago_inicial: normalizedContract.pagoInicial,
+                  saldo_financiado: normalizedContract.montoTotal - normalizedContract.pagoInicial,
                   cantidad_cuotas_original: normalizedContract.cantidadCuotas,
                   estado: normalizedContract.estadoContrato,
                   observaciones:
@@ -2145,6 +2165,28 @@ export class ClientImportService {
                 },
                 select: { id: true, fecha_contrato: true },
               });
+
+              if (!existing && normalizedContract.pagoInicial > 0) {
+                const pagoInicialRef = `MIGRACION_PAGO_INICIAL:${normalizedContract.externalContractId ?? contrato.id}`;
+                const existingPagoInicial = await tx.pago.findFirst({
+                  where: { contrato_id: contrato.id, referencia: pagoInicialRef },
+                  select: { id: true },
+                });
+                if (!existingPagoInicial) {
+                  await tx.pago.create({
+                    data: {
+                      cliente_id: cliente.id,
+                      contrato_id: contrato.id,
+                      fecha_pago: new Date(normalizedContract.fechaInicio),
+                      monto_pagado: normalizedContract.pagoInicial,
+                      estado: EstadoPago.CONFIRMADO,
+                      medio_pago: "MIGRACION",
+                      referencia: pagoInicialRef,
+                      observacion: "Pago inicial historico migrado desde importacion",
+                    },
+                  });
+                }
+              }
 
               await tx.contractImportItem.update({
                 where: { id: contractItem.id },
@@ -2380,7 +2422,7 @@ export class ClientImportService {
                 });
               }
             },
-            { maxWait: 10000, timeout: 30000 },
+            { maxWait: 20000, timeout: 120000 },
           );
         } catch (error) {
           const errorMessage =
@@ -2400,16 +2442,34 @@ export class ClientImportService {
             },
           });
         }
-      }
-    }
+    };
 
-    await this.db.clientImportBatch.update({
-      where: { id: batchId },
-      data: {
-        status: ImportBatchStatus.CONFIRMED,
-        confirmed_at: new Date(),
-      },
-    });
+    try {
+      await Promise.all(
+        Array.from({ length: IMPORT_CONCURRENCY }, async () => {
+          while (contractQueue.length > 0) {
+            const contractItem = contractQueue.shift();
+            if (!contractItem) return;
+            await processContract(contractItem);
+          }
+        }),
+      );
+
+      await this.db.clientImportBatch.update({
+        where: { id: batchId },
+        data: {
+          status: ImportBatchStatus.CONFIRMED,
+          confirmed_at: new Date(),
+        },
+      });
+    } catch (error) {
+      // Never leave the batch stuck in PROCESSING: mark FAILED so it can be retried.
+      await this.db.clientImportBatch.update({
+        where: { id: batchId },
+        data: { status: ImportBatchStatus.FAILED },
+      });
+      throw error;
+    }
 
     return this.getBatchReport(batchId);
   }
@@ -2523,6 +2583,171 @@ export class ClientImportService {
 
   async getBatchReport(batchId: number) {
     return this.getBatchReportFromTx(this.db, batchId);
+  }
+
+  async getPendientes() {
+    const PENDING_STATUSES = ["ERROR", "REVIEW"] as const;
+    const [clientErrors, contractErrors] = await Promise.all([
+      this.db.clientImportItem.findMany({
+        where: {
+          status: { in: [...PENDING_STATUSES] },
+          batch: { status: ImportBatchStatus.CONFIRMED },
+        },
+        include: { batch: { select: { id: true, filename: true, confirmed_at: true } } },
+        orderBy: { created_at: "desc" },
+        take: 500,
+      }),
+      this.db.contractImportItem.findMany({
+        where: {
+          status: { in: [...PENDING_STATUSES] },
+          batch: { status: ImportBatchStatus.CONFIRMED },
+        },
+        include: { batch: { select: { id: true, filename: true, confirmed_at: true } } },
+        orderBy: { created_at: "desc" },
+        take: 500,
+      }),
+    ]);
+    return {
+      clientErrors: clientErrors.map((item) => ({
+        id: item.id,
+        batchId: item.batch_id,
+        batchFilename: item.batch.filename,
+        batchConfirmedAt: item.batch.confirmed_at,
+        rowNumber: item.row_number,
+        rut: item.rut,
+        nombreRazonSocial: item.nombre_razon_social,
+        tipoPersona: item.tipo_persona,
+        estadoCliente: item.estado_cliente,
+        fechaIngreso: item.fecha_ingreso,
+        status: item.status,
+        errors: parseIssues(item.errors),
+        normalizedData: item.normalized_data,
+        rawData: item.raw_data,
+      })),
+      contractErrors: contractErrors.map((item) => ({
+        id: item.id,
+        batchId: item.batch_id,
+        batchFilename: item.batch.filename,
+        batchConfirmedAt: item.batch.confirmed_at,
+        rowNumber: item.row_number,
+        clienteRut: item.cliente_rut,
+        servicio: item.servicio,
+        area: item.area,
+        montoTotal: item.monto_total ? Number(item.monto_total) : null,
+        cantidadCuotas: item.cantidad_cuotas,
+        fechaInicio: item.fecha_inicio,
+        estadoContrato: item.estado_contrato,
+        status: item.status,
+        errors: parseIssues(item.errors),
+        normalizedData: item.normalized_data as NormalizedContract | null,
+      })),
+      total: clientErrors.length + contractErrors.length,
+    };
+  }
+
+  async corregirContratoItem(
+    contractItemId: number,
+    action: "manual",
+    manualMontoTotal?: number,
+  ) {
+    const MISMATCH_CODES = [
+      "CONTRACT_INSTALLMENTS_AMOUNT_MISMATCH",
+      "CONTRACT_INSTALLMENTS_COUNT_MISMATCH",
+      "CONTRACT_FINANCIAL_VALIDATION_FAILED",
+    ];
+
+    const item = await this.db.contractImportItem.findUnique({
+      where: { id: contractItemId },
+      select: {
+        id: true,
+        batch_id: true,
+        row_number: true,
+        errors: true,
+        normalized_data: true,
+        status: true,
+      },
+    });
+
+    if (!item) throw new Error("Item no encontrado.");
+    if (item.status !== "ERROR" && item.status !== "REVIEW") {
+      throw new Error(`Item en estado ${item.status} no puede ser corregido.`);
+    }
+
+    const normalized = item.normalized_data as NormalizedContract | null;
+    if (!normalized) throw new Error("Item sin datos normalizados.");
+
+    const currentIssues = parseIssues(item.errors);
+
+    if (action === "manual") {
+      if (manualMontoTotal === undefined || manualMontoTotal <= 0) {
+        throw new Error("manualMontoTotal debe ser mayor a 0.");
+      }
+      if (normalized.pagoInicial >= manualMontoTotal) {
+        throw new Error("El monto total debe ser mayor al pago inicial.");
+      }
+
+      const newNormalized: NormalizedContract = {
+        ...normalized,
+        montoTotal: manualMontoTotal,
+      };
+
+      const remainingIssues = currentIssues.filter(
+        (issue) => !MISMATCH_CODES.includes(issue.code),
+      );
+      const newStatus = asImportStatus(remainingIssues);
+
+      await this.db.contractImportItem.update({
+        where: { id: contractItemId },
+        data: {
+          normalized_data: toPrismaJson(newNormalized),
+          monto_total: manualMontoTotal,
+          errors: toPrismaJson(remainingIssues),
+          status: newStatus,
+        },
+      });
+
+      // Unblock related installments that were only blocked by financial mismatch.
+      // Scope strictly to installments linked to THIS contract (by row number or
+      // external id) so correcting one contract does not unblock another's cuotas.
+      const contractExternalKey = normalized.externalContractId
+        ? normalized.externalContractId.trim().toUpperCase()
+        : null;
+      const candidateInstallments = await this.db.installmentImportItem.findMany({
+        where: { batch_id: item.batch_id, status: { in: ["ERROR", "REVIEW"] } },
+        select: { id: true, errors: true, status: true, normalized_data: true },
+      });
+      const relatedInstallments = candidateInstallments.filter((installment) => {
+        const ni = installment.normalized_data as NormalizedInstallment | null;
+        if (!ni) return false;
+        if (ni.contractRowNumber === item.row_number) return true;
+        if (
+          contractExternalKey &&
+          ni.contractExternalId &&
+          ni.contractExternalId.trim().toUpperCase() === contractExternalKey
+        ) {
+          return true;
+        }
+        return false;
+      });
+
+      for (const installment of relatedInstallments) {
+        const instIssues = parseIssues(installment.errors);
+        const hasOnlyMismatch = instIssues.every((i) => MISMATCH_CODES.includes(i.code));
+        if (!hasOnlyMismatch) continue;
+        const cleanedIssues = instIssues.filter((i) => !MISMATCH_CODES.includes(i.code));
+        await this.db.installmentImportItem.update({
+          where: { id: installment.id },
+          data: {
+            errors: toPrismaJson(cleanedIssues),
+            status: asImportStatus(cleanedIssues),
+          },
+        });
+      }
+
+      return { newStatus, newMontoTotal: manualMontoTotal };
+    }
+
+    throw new Error(`Accion desconocida: ${action}`);
   }
 }
 
