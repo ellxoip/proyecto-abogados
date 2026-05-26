@@ -7,7 +7,7 @@ import { Link, useNavigate, useLocation } from 'react-router-dom'
 import {
   RefreshCw, Eye, FileText, AlertTriangle, Lock,
   Loader2, ChevronDown, ChevronRight, X, ArrowRight, Info, Clock,
-  WifiOff, XCircle, CalendarPlus, Search, ClipboardList,
+  WifiOff, XCircle, CalendarPlus, Search, ClipboardList, MessageSquare, User,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useAuthStore } from '../store/auth'
@@ -349,14 +349,14 @@ function LeadCard({ lead, canMove, showGroup, labels, canConfirmPago, onMoved, u
               style={{ background: '#f8fafc', color: 'rgba(26,32,53,0.60)', border: '1px solid #e2e8f0' }}
               onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = palette.tagBg; (e.currentTarget as HTMLElement).style.color = palette.tagColor }}
               onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#f8fafc'; (e.currentTarget as HTMLElement).style.color = 'rgba(26,32,53,0.60)' }}>
-              <Eye size={11} /> Chat
+              <MessageSquare size={11} /> Chat
             </button>
             <Link to={`/leads/${lead.id}`} onClick={handleVerClick}
               className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-[10px] font-semibold transition-all"
               style={{ background: '#f8fafc', color: 'rgba(26,32,53,0.60)', border: '1px solid #e2e8f0' }}
               onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#edf2f7'; (e.currentTarget as HTMLElement).style.color = '#1a2035' }}
               onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#f8fafc'; (e.currentTarget as HTMLElement).style.color = 'rgba(26,32,53,0.60)' }}>
-              <Eye size={11} /> Lead
+              <User size={11} /> Lead
             </Link>
             {canShowBack && (
               <button onClick={() => setShowMoveModal({ target: prevStage })}
