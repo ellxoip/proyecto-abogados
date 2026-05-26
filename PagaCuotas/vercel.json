@@ -17,11 +17,5 @@
       "source": "/(.*)",
       "destination": "/index.html"
     }
-  ],
-  "crons": [
-    {
-      "path": "/api/cron/process-outbox",
-      "schedule": "*/5 * * * *"
-    }
   ]
 }

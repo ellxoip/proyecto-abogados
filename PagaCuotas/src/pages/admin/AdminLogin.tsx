@@ -1,44 +1,27 @@
 import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Eye, LogIn, Lock, Mail, ShieldCheck, Wallet, Sparkles } from 'lucide-react';
+import { Eye, LogIn, Lock, Mail, ShieldCheck, Wallet } from 'lucide-react';
 import { adminLogin } from '../../lib/adminApi';
-
-const DEMO_ADMIN = {
-  email: 'superadmin@pagacuotas.demo',
-  password: 'Demo2026!',
-};
-
-const SHOW_DEMO = import.meta.env.VITE_HIDE_DEMO_CREDS !== 'true';
 
 export default function AdminLogin() {
   const navigate = useNavigate();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  const performLogin = async (emailToUse: string, passwordToUse: string) => {
+  const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
     setErrorMessage('');
     setIsLoading(true);
+
+    const form = new FormData(event.currentTarget);
     try {
-      await adminLogin(emailToUse, passwordToUse);
+      await adminLogin(String(form.get('email') || ''), String(form.get('password') || ''));
       navigate('/admin/dashboard');
     } catch (error: any) {
       setErrorMessage(error.message || 'No fue posible iniciar sesion.');
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    await performLogin(email, password);
-  };
-
-  const useDemo = async () => {
-    setEmail(DEMO_ADMIN.email);
-    setPassword(DEMO_ADMIN.password);
-    await performLogin(DEMO_ADMIN.email, DEMO_ADMIN.password);
   };
 
   return (
@@ -64,15 +47,7 @@ export default function AdminLogin() {
                 <span className="block text-label-caps uppercase text-on-surface-variant mb-2">Correo electronico</span>
                 <div className="relative">
                   <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-outline-variant" />
-                  <input
-                    className="w-full pl-10 pr-4 py-3 bg-surface-container-low border border-border-subtle rounded-lg focus:ring-2 focus:ring-secondary focus:border-secondary transition-all text-body-base outline-none"
-                    name="email"
-                    placeholder="admin@pagacuotas.local"
-                    required
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                  />
+                  <input className="w-full pl-10 pr-4 py-3 bg-surface-container-low border border-border-subtle rounded-lg focus:ring-2 focus:ring-secondary focus:border-secondary transition-all text-body-base outline-none" name="email" placeholder="admin@pagacuotas.local" required type="email" />
                 </div>
               </label>
 
@@ -80,14 +55,7 @@ export default function AdminLogin() {
                 <span className="block text-label-caps uppercase text-on-surface-variant mb-2">Contrasena</span>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-outline-variant" />
-                  <input
-                    className="w-full pl-10 pr-12 py-3 bg-surface-container-low border border-border-subtle rounded-lg focus:ring-2 focus:ring-secondary focus:border-secondary transition-all text-body-base outline-none"
-                    name="password"
-                    required
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                  />
+                  <input className="w-full pl-10 pr-12 py-3 bg-surface-container-low border border-border-subtle rounded-lg focus:ring-2 focus:ring-secondary focus:border-secondary transition-all text-body-base outline-none" name="password" required type="password" />
                   <Eye className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-outline-variant" />
                 </div>
               </label>
@@ -103,27 +71,6 @@ export default function AdminLogin() {
                 <LogIn className="w-5 h-5" />
               </button>
             </form>
-
-            {SHOW_DEMO && (
-              <div className="mt-6 rounded-lg border border-dashed border-secondary/40 bg-secondary/5 p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <Sparkles className="w-4 h-4 text-secondary" />
-                  <span className="text-xs font-bold uppercase tracking-wide text-secondary">Demo</span>
-                </div>
-                <div className="text-xs text-on-surface-variant mb-3 space-y-0.5">
-                  <p><span className="font-mono">{DEMO_ADMIN.email}</span></p>
-                  <p><span className="font-mono">{DEMO_ADMIN.password}</span></p>
-                </div>
-                <button
-                  type="button"
-                  onClick={useDemo}
-                  disabled={isLoading}
-                  className="w-full py-2 bg-secondary/10 hover:bg-secondary/20 text-secondary border border-secondary/30 rounded-md text-xs font-semibold transition-all disabled:opacity-60 disabled:cursor-not-allowed"
-                >
-                  {isLoading ? 'Entrando…' : 'Usar credenciales demo'}
-                </button>
-              </div>
-            )}
 
             <div className="mt-8 pt-6 border-t border-border-subtle flex flex-col items-center">
               <div className="flex items-center gap-2 px-3 py-1.5 bg-surface-container-high rounded-full">

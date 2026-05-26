@@ -67,8 +67,6 @@ export interface ClientPortalSession {
   identifier: string;
   debts: SisContableDebtResponse;
   selectedContractId?: string;
-  passwordChangeRequired?: boolean;
-  payAfterPasswordChange?: boolean;
 }
 
 export interface SelectedPaymentSession {
@@ -216,7 +214,7 @@ export async function clientLogin(identifier: string, password: string): Promise
   return data;
 }
 
-export async function updateClientPassword(payload: { identifier: string; currentPassword?: string; newPassword: string }) {
+export async function updateClientPassword(payload: { identifier: string; currentPassword: string; newPassword: string }) {
   const response = await fetch(`${API_BASE_URL}/api/client/password`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...clientAuthHeaders() },
@@ -226,7 +224,7 @@ export async function updateClientPassword(payload: { identifier: string; curren
   if (!response.ok) {
     throw new Error(data.message || data.error || 'No fue posible actualizar la clave.');
   }
-  return data as { ok: true; token?: string };
+  return data as { ok: true };
 }
 
 export async function fetchClientDebts(identifier: string) {
@@ -272,36 +270,4 @@ export function createSupportTicket(payload: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
-}
-
-// ============================================================
-// Case Updates (from hive-service-control via PagaCuotas API)
-// ============================================================
-
-export interface CaseUpdateItem {
-  id: string;
-  description: string;
-  document_url: string | null;
-  created_at: string;
-}
-
-export interface CaseWithUpdates {
-  id: string;
-  code: string;
-  stage: string;
-  categoria: string | null;
-  abogados: Array<{ id: string; nombre: string }>;
-  created_at: string;
-  updated_at: string;
-  total_updates: number;
-  updates: CaseUpdateItem[];
-}
-
-export interface CaseUpdatesResponse {
-  ok: boolean;
-  cases: CaseWithUpdates[];
-}
-
-export async function fetchCaseUpdates() {
-  return requestJson<CaseUpdatesResponse>(`${API_BASE_URL}/api/client/case-updates`);
 }

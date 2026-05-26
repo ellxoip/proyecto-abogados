@@ -1,12 +1,10 @@
 import prisma from '../lib/prisma.js';
-import type { Prisma } from '@prisma/client';
 import { sisContableClient } from '../clients/sisContable.client.js';
 import { crmClient } from '../clients/crm.client.js';
 import { providerRegistry } from '../providers/index.js';
 import { outboxService } from './outbox.service.js';
 import { billingService } from './billing.service.js';
 import { logger } from '../lib/logger.js';
-import { generateFictionalReceipt, type GeneratedReceipt } from './paymentReceipt.service.js';
 import type { IPaymentProvider, ProviderName } from '../providers/types.js';
 import type {
   CreatePaymentIntentRequest,
@@ -110,7 +108,7 @@ export class PaymentService {
         cliente_identifier: data.identifier,
         cliente_contable_id: data.cliente_contable_id,
         contrato_contable_id: data.contrato_contable_id,
-        cuota_ids_json: data.cuota_ids,
+        cuota_ids_json: JSON.stringify(data.cuota_ids),
         amount: data.amount,
         provider: provider.name,
         status: 'iniciado',
@@ -118,7 +116,7 @@ export class PaymentService {
         validation_expires_at: validation.expires_at ? new Date(validation.expires_at) : null,
         sis_contable_sync_status: 'synced',
         provider_transaction_id: providerResponse.provider_transaction_id,
-        request_payload_json: providerResponse.raw_response ?? null,
+        request_payload_json: JSON.stringify(providerResponse.raw_response),
       },
     });
 
@@ -187,7 +185,7 @@ export class PaymentService {
     await prisma.paymentAttempt.update({
       where: { id: attempt.id },
       data: {
-        response_payload_json: confirmation.raw_response ?? null,
+        response_payload_json: JSON.stringify(confirmation.raw_response),
         method: confirmation.payment_method || null,
       },
     });
@@ -262,7 +260,7 @@ export class PaymentService {
       where: { id: attempt.id },
       data: {
         provider_transaction_id: confirmation.provider_transaction_id,
-        response_payload_json: confirmation.raw_response ?? null,
+        response_payload_json: JSON.stringify(confirmation.raw_response),
         method: confirmation.payment_method || null,
       },
     });
@@ -311,19 +309,18 @@ export class PaymentService {
         status: 'confirmado',
         provider_transaction_id: providerData.provider_transaction_id,
         method: providerData.method || null,
-        provider_payload_json: providerData as unknown as Prisma.InputJsonValue,
+        provider_payload_json: JSON.stringify(providerData),
       },
     });
 
     const external_payment_id = `pc_pay_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
-    const cuotaIds = attempt.cuota_ids_json as string[];
+    const cuotaIds: string[] = JSON.parse(attempt.cuota_ids_json);
 
     const transactionNumber = providerData.authorization_code || providerData.provider_transaction_id;
-    const providerReceiptUrl = attempt.provider === 'mercadopago'
+    const receiptUrl = attempt.provider === 'mercadopago'
       ? `https://www.mercadopago.cl/payments/${providerData.provider_transaction_id}/ticket`
       : null;
 
-    const paidAt = new Date();
     const payment = await prisma.payment.create({
       data: {
         external_payment_id,
@@ -336,63 +333,11 @@ export class PaymentService {
         amount: attempt.amount,
         method: providerData.method || null,
         status: 'confirmado',
-        paid_at: paidAt,
-        receipt_url: providerReceiptUrl,
-        raw_provider_payload_json: providerData as unknown as Prisma.InputJsonValue,
+        paid_at: new Date(),
+        receipt_url: receiptUrl,
+        raw_provider_payload_json: JSON.stringify(providerData),
       },
     });
-
-    // Fictional receipt — always generated. For real providers (e.g. mercadopago)
-    // it complements the provider's ticket; for simulator it IS the comprobante.
-    let receipt: GeneratedReceipt | null = null;
-    try {
-      const debts = await sisContableClient
-        .getDebtsByIdentifier(attempt.cliente_identifier || attempt.cliente_contable_id)
-        .catch(() => null);
-      const contrato = debts?.contratos?.find((c: any) => c.id === attempt.contrato_contable_id) ?? null;
-      const cuotasDetalle = (debts?.contratos ?? [])
-        .flatMap((c: any) => c.cuotas ?? [])
-        .filter((cuota: any) => cuotaIds.includes(String(cuota.id)))
-        .map((cuota: any) => ({
-          numero: cuota.numero ?? null,
-          descripcion: cuota.descripcion ?? null,
-          monto: Number(cuota.monto ?? cuota.saldo ?? 0),
-        }));
-
-      receipt = await generateFictionalReceipt({
-        externalPaymentId: external_payment_id,
-        provider: attempt.provider,
-        method: providerData.method || null,
-        paidAt,
-        amount: Number(attempt.amount),
-        cliente: {
-          rut: debts?.cliente?.rut || attempt.cliente_identifier || attempt.cliente_contable_id,
-          nombre: debts?.cliente?.nombre || 'Cliente',
-          email: debts?.cliente?.email ?? null,
-        },
-        contrato: {
-          contableId: String(attempt.contrato_contable_id),
-          servicio: contrato?.servicio ?? null,
-        },
-        cuotas: cuotasDetalle,
-        transactionNumber: transactionNumber ?? null,
-      });
-
-      // Only overwrite receipt_url when we don't already have a provider-issued
-      // ticket. Provider receipts (mercadopago, webpay) are authoritative.
-      if (!providerReceiptUrl) {
-        await prisma.payment.update({
-          where: { id: payment.id },
-          data: { receipt_url: receipt.url },
-        });
-        (payment as any).receipt_url = receipt.url;
-      }
-    } catch (err: any) {
-      logger.error('Fictional receipt generation failed (non-blocking)', {
-        externalPaymentId: external_payment_id,
-        error: err?.message ?? String(err),
-      });
-    }
 
     // Non-blocking syncs
     outboxService.enqueue({
@@ -430,11 +375,11 @@ export class PaymentService {
       data: {
         status: 'rechazado',
         provider_transaction_id: providerData.provider_transaction_id || null,
-        provider_payload_json: providerData as unknown as Prisma.InputJsonValue,
+        provider_payload_json: JSON.stringify(providerData),
       },
     });
 
-    const cuotaIds = attempt.cuota_ids_json as string[];
+    const cuotaIds: string[] = JSON.parse(attempt.cuota_ids_json);
 
     const payload: PaymentRejectedPayload = {
       external_attempt_id: attempt.external_attempt_id,
@@ -490,7 +435,7 @@ export class PaymentService {
     });
     if (existing) return existing;
 
-    const cuotaIds = payment.attempt.cuota_ids_json as string[];
+    const cuotaIds: string[] = JSON.parse(payment.attempt.cuota_ids_json);
     const external_reversal_id = `pc_rev_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
 
     await prisma.payment.update({ where: { id: payment.id }, data: { status: 'reversado' } });
@@ -505,7 +450,7 @@ export class PaymentService {
         cliente_contable_id: payment.cliente_contable_id,
         contrato_contable_id: payment.contrato_contable_id,
         provider: payment.provider,
-        cuota_ids_json: cuotaIds,
+        cuota_ids_json: JSON.stringify(cuotaIds),
         amount_reversed: amount,
         reason,
         provider_reversal_code: provider_reversal_code || null,
@@ -560,7 +505,7 @@ export class PaymentService {
   // Sync: Payment → SIS.CONTABLE
   // ===========================================================
   async syncPaymentWithSisContable(payment: any, attempt: any, cuotaIds?: string[]) {
-    const ids = cuotaIds || attempt.cuota_ids_json as string[];
+    const ids = cuotaIds || JSON.parse(attempt.cuota_ids_json);
 
     const payload: PaymentConfirmedPayload = {
       external_payment_id: payment.external_payment_id,
@@ -572,7 +517,6 @@ export class PaymentService {
       cuota_ids: ids,
       monto_pagado: Number(payment.amount),
       fecha_pago: payment.paid_at?.toISOString() || new Date().toISOString(),
-      comprobante_url: payment.receipt_url ?? null,
       metadata: { provider_transaction_id: payment.provider_transaction_id, method: payment.method },
     };
 
@@ -605,7 +549,7 @@ export class PaymentService {
         servicio = contrato?.servicio || '';
       } catch { /* non-critical */ }
 
-      const cuotaIds = attempt.cuota_ids_json as string[];
+      const cuotaIds: string[] = JSON.parse(attempt.cuota_ids_json);
 
       const notification: CrmPaymentNotification = {
         external_payment_id: payment.external_payment_id,

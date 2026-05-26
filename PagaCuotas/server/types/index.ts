@@ -147,7 +147,6 @@ export interface PaymentConfirmedPayload {
   cuota_ids: string[];
   monto_pagado: number;
   fecha_pago: string;
-  comprobante_url?: string | null;
   metadata?: Record<string, any>;
 }
 
@@ -214,34 +213,6 @@ export interface PaymentReversedResponse {
     saldo_pendiente: number;
     cuotas_pendientes: number;
   };
-}
-
-// --- Case Updates (from hive-service-control) ---
-
-export interface CaseUpdateItem {
-  id: string;
-  description: string;
-  document_url: string | null;
-  created_at: string;
-}
-
-export interface CaseWithUpdates {
-  id: string;
-  code: string;
-  stage: string;
-  categoria: string | null;
-  abogados: Array<{ id: string; nombre: string }>;
-  created_at: string;
-  updated_at: string;
-  total_updates: number;
-  updates: CaseUpdateItem[];
-}
-
-export interface CaseUpdatesResponse {
-  success: boolean;
-  identifier: string;
-  cliente: { id: string; nombre: string; email: string } | null;
-  cases: CaseWithUpdates[];
 }
 
 // ============================================================

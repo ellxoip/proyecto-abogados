@@ -13,14 +13,11 @@ import type {
 
 const CLIENT_ID = 'cli_16798821_0';
 const CONTRACT_ID = 'cont_credito_personal_16798821_0';
-export const LOCAL_CLIENT_DEMO_PASSWORD = 'DEMO26';
 const CLIENT_IDENTIFIERS = new Set([
   '16798821-0',
   '167988210-0',
   '167988210',
   '16.798.821-0',
-  'cliente.demo@pagacuotas.cl',
-  'cliente@pagacuotas.cl',
 ]);
 
 const normalizeIdentifier = (identifier: string) => identifier.trim().toLowerCase().replace(/\s/g, '');
@@ -30,7 +27,7 @@ export const localDebt: SisContableDebtResponse = {
     id: CLIENT_ID,
     rut: '16.798.821-0',
     nombre: 'Carlos Munoz',
-    email: 'cliente.demo@pagacuotas.cl',
+    email: 'cliente@pagacuotas.cl',
     telefono: '+56 9 6798 8210',
   },
   resumen: {
@@ -128,16 +125,6 @@ export const localInstallments: SisContableInstallmentsResponse = {
 
 export function findLocalDebt(identifier: string) {
   return CLIENT_IDENTIFIERS.has(normalizeIdentifier(identifier)) ? localDebt : null;
-}
-
-export function authenticateLocalClient(identifier: string, password: string) {
-  const debt = findLocalDebt(identifier);
-  if (!debt || password !== LOCAL_CLIENT_DEMO_PASSWORD) return null;
-  return { cliente: debt.cliente, debts: debt };
-}
-
-export function updateLocalClientPassword(identifier: string, currentPassword: string) {
-  return Boolean(findLocalDebt(identifier) && currentPassword === LOCAL_CLIENT_DEMO_PASSWORD);
 }
 
 export function findLocalInstallments(contractId: string) {

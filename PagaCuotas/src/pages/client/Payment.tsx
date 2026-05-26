@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
   CreditCard,
   FileText,
@@ -7,9 +7,7 @@ import {
   ShieldCheck,
   TicketPercent,
   Wallet,
-  CheckCircle2,
 } from 'lucide-react';
-import { useSearchParams } from 'react-router-dom';
 import { cn } from '../../lib/utils';
 import { createPaymentIntent, formatCurrency, getSelectedPayment } from '../../lib/clientPortal';
 
@@ -45,7 +43,6 @@ const paymentMethods = [
 
 export default function Payment() {
   const selectedPayment = getSelectedPayment();
-  const [searchParams] = useSearchParams();
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethodId>('transbank');
   const [walletEmail, setWalletEmail] = useState('');
   const [selectedCountry, setSelectedCountry] = useState('Chile');
@@ -56,35 +53,10 @@ export default function Payment() {
   const [discount, setDiscount] = useState(0);
   const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>('idle');
   const [paymentMessage, setPaymentMessage] = useState('');
-  const [successBanner, setSuccessBanner] = useState('');
 
   const selectedPaymentMethod = paymentMethods.find((method) => method.id === selectedMethod) ?? paymentMethods[0];
   const amount = selectedPayment?.amount || 0;
   const totalAmount = amount;
-
-  useEffect(() => {
-    const result = searchParams.get('result');
-    const provider = searchParams.get('provider');
-    const source = searchParams.get('source');
-    const simulated = searchParams.get('simulated') === 'true';
-
-    if (result === 'success' && provider === 'mercadopago' && simulated) {
-      setSuccessBanner('Pago exitoso simulado por MercadoPago.');
-      return;
-    }
-
-    if (result === 'success' && provider === 'mercadopago' && source === 'mercadopago') {
-      setSuccessBanner('Pago exitoso de prueba por MercadoPago.');
-      return;
-    }
-
-    if (result === 'success' && provider === 'mercadopago') {
-      setSuccessBanner('Pago exitoso por MercadoPago.');
-      return;
-    }
-
-    setSuccessBanner('');
-  }, [searchParams]);
 
   const handleMethodChange = (methodId: PaymentMethodId) => {
     setSelectedMethod(methodId);
@@ -173,14 +145,6 @@ export default function Payment() {
       <section className="relative mx-auto max-w-[1180px] overflow-hidden rounded-[18px] bg-white shadow-[0_22px_55px_rgba(15,23,42,0.14)]">
         <div className="grid gap-8 p-5 md:p-7 lg:grid-cols-[1fr_374px] lg:p-8">
           <div className="min-w-0">
-            {successBanner && (
-              <div className="mb-5 rounded-md border border-[#b9ddb0] bg-[#f3fbf1] px-4 py-3 text-sm font-semibold text-[#3d8736]">
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="h-5 w-5 shrink-0" />
-                  <span>{successBanner}</span>
-                </div>
-              </div>
-            )}
             <div className="mb-7 grid overflow-hidden rounded-md border border-[#d6d9dd] bg-[#eeeeef] shadow-inner sm:grid-cols-3">
               {[
                 ['1', 'Datos personales', 'complete'],

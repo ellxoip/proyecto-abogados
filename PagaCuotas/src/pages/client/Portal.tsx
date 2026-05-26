@@ -1,29 +1,25 @@
 import { useEffect, useMemo, useState } from 'react';
+import type { FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Calendar, Verified, Check, Flag, Wallet, CheckCircle2, Clock, Lock, MoreHorizontal, ChevronDown, Loader2, AlertCircle, FileText } from 'lucide-react';
-import CaseUrgencyBanner from '../../components/client/CaseUrgencyBanner';
-import CaseUpdates from '../../components/client/CaseUpdates';
-import PasswordChangeForm from '../../components/client/PasswordChangeForm';
 import {
   daysUntil,
   fetchBillingDocuments,
-  fetchCaseUpdates,
   fetchContractInstallments,
   formatCurrency,
   formatDate,
   getClientSession,
   saveClientSession,
   saveSelectedPayment,
+  updateClientPassword,
   type SisContableContrato,
   type SisContableCuota,
   type SisContableInstallmentsResponse,
   type BillingDocumentSummary,
-  type CaseWithUpdates,
 } from '../../lib/clientPortal';
 import { cn } from '../../lib/utils';
 
 const payableStatuses = ['PENDIENTE', 'VENCIDA', 'POR_VENCER', 'PAGO_PENDIENTE'];
-type LatestCaseUpdate = { caseItem: CaseWithUpdates; update: CaseWithUpdates['updates'][number] };
 
 function getFirstName(fullName?: string) {
   return fullName?.trim().split(/\s+/)[0] || 'Cliente';
@@ -59,10 +55,10 @@ export default function Portal() {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [billingDocuments, setBillingDocuments] = useState<BillingDocumentSummary[]>([]);
-  const [caseUpdates, setCaseUpdates] = useState<CaseWithUpdates[]>([]);
-  const [caseUpdatesLoading, setCaseUpdatesLoading] = useState(false);
-  const [caseUpdatesError, setCaseUpdatesError] = useState('');
-  const passwordChangeRequired = Boolean(session?.passwordChangeRequired);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [passwordMessage, setPasswordMessage] = useState('');
+  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
 
   const selectedContract = useMemo(
     () => session?.debts.contratos.find((contract) => contract.id === selectedContractId),
@@ -79,21 +75,6 @@ export default function Portal() {
   const progress = installments?.resumen.total_cuotas
     ? Math.round((installments.resumen.cuotas_pagadas / installments.resumen.total_cuotas) * 100)
     : 0;
-  const overdueInstallmentsCount = installments?.resumen.cuotas_vencidas ?? selectedContract?.cuotas_vencidas ?? 0;
-  const overdueAmount = selectedContract?.monto_vencido ?? session?.debts.resumen.total_vencido ?? 0;
-  const latestCaseUpdate = useMemo<LatestCaseUpdate | null>(() => {
-    let latest: LatestCaseUpdate | null = null;
-
-    for (const caseItem of caseUpdates) {
-      for (const update of caseItem.updates) {
-        const currentTime = new Date(update.created_at).getTime();
-        const latestTime = latest ? new Date(latest.update.created_at).getTime() : Number.NEGATIVE_INFINITY;
-        if (!latest || currentTime > latestTime) latest = { caseItem, update };
-      }
-    }
-
-    return latest;
-  }, [caseUpdates]);
 
   useEffect(() => {
     if (!session) {
@@ -137,37 +118,6 @@ export default function Portal() {
       .catch(() => setBillingDocuments([]));
   }, [session]);
 
-  useEffect(() => {
-    if (!session) {
-      setCaseUpdates([]);
-      setCaseUpdatesError('');
-      setCaseUpdatesLoading(false);
-      return;
-    }
-
-    let cancelled = false;
-    setCaseUpdatesLoading(true);
-    setCaseUpdatesError('');
-
-    fetchCaseUpdates()
-      .then((data) => {
-        if (cancelled) return;
-        setCaseUpdates(data.cases || []);
-      })
-      .catch((error: any) => {
-        if (cancelled) return;
-        setCaseUpdates([]);
-        setCaseUpdatesError(error.message || '');
-      })
-      .finally(() => {
-        if (!cancelled) setCaseUpdatesLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [session?.identifier]);
-
   const handleContractChange = (contractId: string) => {
     setSelectedContractId(contractId);
     if (session) {
@@ -192,6 +142,33 @@ export default function Portal() {
     });
 
     navigate('/client/payment');
+  };
+
+  const handlePasswordUpdate = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!session) return;
+
+    if (!/^[a-zA-Z0-9]{6}$/.test(currentPassword) || !/^[a-zA-Z0-9]{6}$/.test(newPassword)) {
+      setPasswordMessage('Las claves deben tener 6 caracteres alfanumericos.');
+      return;
+    }
+
+    setIsUpdatingPassword(true);
+    setPasswordMessage('');
+    try {
+      await updateClientPassword({
+        identifier: session.identifier,
+        currentPassword,
+        newPassword,
+      });
+      setCurrentPassword('');
+      setNewPassword('');
+      setPasswordMessage('Clave actualizada correctamente.');
+    } catch (error: any) {
+      setPasswordMessage(error.message || 'No fue posible actualizar la clave.');
+    } finally {
+      setIsUpdatingPassword(false);
+    }
   };
 
   if (!session) return null;
@@ -226,22 +203,37 @@ export default function Portal() {
         )}
       </section>
 
-      {passwordChangeRequired && (
-        <section className="bg-white p-5 rounded-xl border border-secondary shadow-sm space-y-4">
-          <h2 className="font-label-caps text-label-caps text-on-primary-container font-bold">
-            CAMBIO DE CLAVE REQUERIDO
-          </h2>
-          <p className="text-sm font-semibold text-on-surface-variant">
-            Crea tu clave personal de 6 caracteres antes de continuar.
-          </p>
-          <PasswordChangeForm
-            forced
-            onSuccess={() => {
-              setSession((prev) => (prev ? { ...prev, passwordChangeRequired: false, payAfterPasswordChange: false } : prev));
-            }}
-          />
-        </section>
-      )}
+      <section className="bg-white p-5 rounded-xl border border-border-subtle shadow-sm">
+        <h2 className="font-label-caps text-label-caps text-on-primary-container mb-4 font-bold">SEGURIDAD DE ACCESO</h2>
+        <form className="grid gap-3" onSubmit={handlePasswordUpdate}>
+          <div className="grid grid-cols-2 gap-3">
+            <input
+              className="h-11 rounded-lg border border-border-subtle px-3 text-sm outline-none focus:border-secondary"
+              type="password"
+              maxLength={6}
+              placeholder="Clave actual"
+              value={currentPassword}
+              onChange={(event) => setCurrentPassword(event.target.value.toUpperCase())}
+            />
+            <input
+              className="h-11 rounded-lg border border-border-subtle px-3 text-sm outline-none focus:border-secondary"
+              type="password"
+              maxLength={6}
+              placeholder="Nueva clave"
+              value={newPassword}
+              onChange={(event) => setNewPassword(event.target.value.toUpperCase())}
+            />
+          </div>
+          <button
+            className="h-11 rounded-lg bg-primary-container text-sm font-semibold text-white disabled:opacity-60"
+            disabled={isUpdatingPassword}
+            type="submit"
+          >
+            {isUpdatingPassword ? 'Actualizando...' : 'Cambiar clave'}
+          </button>
+          {passwordMessage && <p className="text-xs font-semibold text-on-surface-variant">{passwordMessage}</p>}
+        </form>
+      </section>
 
       <section className="bg-white p-6 rounded-xl border border-border-subtle shadow-sm">
         <h2 className="font-label-caps text-label-caps text-on-primary-container mb-6 font-bold">ESTADO DEL CONTRATO</h2>
@@ -275,9 +267,6 @@ export default function Portal() {
         </div>
       </section>
 
-      {/* Avances del caso legal desde hive-service-control */}
-      <CaseUpdates cases={caseUpdates} isLoading={caseUpdatesLoading} error={caseUpdatesError} />
-
       {errorMessage && (
         <section className="rounded-xl border border-error-red/30 bg-error-red/10 p-4 text-error-red">
           <div className="flex gap-3">
@@ -285,17 +274,6 @@ export default function Portal() {
             <p className="text-sm font-semibold">{errorMessage}</p>
           </div>
         </section>
-      )}
-
-      {overdueInstallmentsCount > 0 && (
-        <CaseUrgencyBanner
-          cases={caseUpdates}
-          cuotasVencidas={overdueInstallmentsCount}
-          montoVencido={overdueAmount}
-          nextInstallment={nextInstallment}
-          onPay={handlePayInstallment}
-          disabled={isLoading || passwordChangeRequired}
-        />
       )}
 
       <section className="bg-primary-container text-white p-8 rounded-xl relative overflow-hidden shadow-lg border-t-4 border-secondary">
@@ -323,28 +301,14 @@ export default function Portal() {
               <span className="font-body-sm text-on-primary-container font-medium">CLP</span>
             </div>
           </div>
-          {latestCaseUpdate && (
-            <div className="rounded-lg border border-white/15 bg-white/10 p-3">
-              <div className="flex items-center gap-2 text-on-primary-container">
-                <FileText className="h-4 w-4" />
-                <p className="font-label-caps text-[11px] font-bold">ULTIMO AVANCE DEL CASO</p>
-              </div>
-              <p className="mt-1 text-sm font-bold text-white">
-                {latestCaseUpdate.caseItem.code} - {formatDate(latestCaseUpdate.update.created_at)}
-              </p>
-              <p className="mt-1 line-clamp-2 text-sm leading-relaxed text-on-primary-container">
-                {latestCaseUpdate.update.description}
-              </p>
-            </div>
-          )}
           <button
             type="button"
             onClick={handlePayInstallment}
-            disabled={!nextInstallment || isLoading || passwordChangeRequired}
+            disabled={!nextInstallment || isLoading}
             className="w-full bg-secondary hover:bg-secondary/90 text-white font-headline-md py-4 rounded-xl shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2 font-bold text-lg disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isLoading ? <Loader2 className="w-6 h-6 animate-spin" /> : <Wallet className="w-6 h-6" />}
-            {passwordChangeRequired ? 'Cambia tu clave para pagar' : 'Pagar Cuota Ahora'}
+            Pagar Cuota Ahora
           </button>
         </div>
       </section>

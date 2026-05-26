@@ -1,5 +1,4 @@
 import prisma from '../lib/prisma.js';
-import type { Prisma } from '@prisma/client';
 import { sisContableClient } from '../clients/sisContable.client.js';
 import { billingProviderRegistry } from '../billing/index.js';
 import { logger } from '../lib/logger.js';
@@ -52,7 +51,7 @@ export class BillingService {
         external_attempt_id: payment.attempt.external_attempt_id,
         provider_transaction_id: payment.provider_transaction_id,
         contrato_id: payment.contrato_contable_id,
-        cuota_ids: payment.attempt.cuota_ids_json as string[],
+        cuota_ids: JSON.parse(payment.attempt.cuota_ids_json),
       },
     };
 
@@ -69,7 +68,7 @@ export class BillingService {
         net_amount: amounts.net,
         tax_amount: amounts.tax,
         total_amount: amounts.total,
-        request_payload_json: request as unknown as Prisma.InputJsonValue,
+        request_payload_json: JSON.stringify(request),
       },
     });
 
@@ -89,7 +88,7 @@ export class BillingService {
           status: response.status,
           pdf_url: response.pdf_url || null,
           xml_url: response.xml_url || null,
-          response_payload_json: response.raw_response ?? null,
+          response_payload_json: JSON.stringify(response.raw_response),
           issued_at: response.issued_at ? new Date(response.issued_at) : new Date(),
           accepted_at: response.accepted_at ? new Date(response.accepted_at) : null,
         },
@@ -153,8 +152,8 @@ export class BillingService {
         xml_url: status.xml_url || document.xml_url,
         accepted_at: status.accepted_at ? new Date(status.accepted_at) : document.accepted_at,
         error_message: status.error_message || null,
-        provider_payload_json: body,
-        response_payload_json: status.raw_response ?? null,
+        provider_payload_json: JSON.stringify(body),
+        response_payload_json: JSON.stringify(status.raw_response),
       },
     });
 

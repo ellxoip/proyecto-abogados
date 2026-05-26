@@ -118,7 +118,7 @@ export class PaymentNotificationService {
           provider: reversal.provider,
           cliente_id: reversal.cliente_contable_id,
           contrato_id: reversal.contrato_contable_id,
-          cuota_ids: reversal.cuota_ids_json as string[],
+          cuota_ids: JSON.parse(reversal.cuota_ids_json),
           monto_reversado: Number(reversal.amount_reversed),
           fecha_reversa: reversal.reversed_at.toISOString(),
           reason: reversal.reason || 'Retry',

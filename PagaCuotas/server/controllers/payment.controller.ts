@@ -275,8 +275,6 @@ export class PaymentController {
       // MercadoPago uses payment_id/preference_id
       const token = (req.query.payment_id || req.query.preference_id || req.query.token || req.query.token_ws) as string;
       const providerName = req.query.provider as string | undefined;
-      const source = String(req.query.source || '');
-      const simulated = String(req.query.simulated || '') === 'true';
 
       if (!token) {
         res.status(400).json({ ok: false, code: 'MISSING_TOKEN', message: 'No payment token received' });
@@ -286,18 +284,9 @@ export class PaymentController {
       const result = await paymentService.processProviderCallback(token, providerName);
       // Redirect to client portal with result
       const status = (result as any)?.status === 'confirmado' ? 'success' : 'failed';
-      const query = new URLSearchParams({
-        result: status,
-        payment_id: (result as any)?.external_payment_id || '',
-      });
-      if (providerName) query.set('provider', providerName);
-      if (source) query.set('source', source);
-      if (simulated) query.set('simulated', 'true');
-      const portalBase = (process.env.CLIENT_PORTAL_BASE_URL || 'http://localhost:3002').replace(/\/+$/, '');
-      res.redirect(`${portalBase}/client/payment?${query.toString()}`);
+      res.redirect(`/client/payment?result=${status}&payment_id=${(result as any)?.external_payment_id || ''}`);
     } catch (error: any) {
-      const portalBase = (process.env.CLIENT_PORTAL_BASE_URL || 'http://localhost:3002').replace(/\/+$/, '');
-      res.redirect(`${portalBase}/client/payment?result=error&message=${encodeURIComponent(error.message)}`);
+      res.redirect(`/client/payment?result=error&message=${encodeURIComponent(error.message)}`);
     }
   }
 
