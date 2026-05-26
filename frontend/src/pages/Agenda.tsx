@@ -7,7 +7,7 @@ import interactionPlugin from '@fullcalendar/interaction'
 import {
   getCalendarEvents, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent,
   getGroupVendors, getGoogleStatus, getGoogleAuthUrl, disconnectGoogle, syncAllToGoogle, getGoogleEvents,
-  syncEventToGoogle, updateVendorStatus,
+  syncEventToGoogle,
 } from '../api'
 import type { CalendarEvent } from '../types'
 import { useAuthStore } from '../store/auth'
@@ -15,7 +15,7 @@ import toast from 'react-hot-toast'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { parseLocalDate } from '../utils/dates'
-import { Plus, X, Link2, Link2Off, RefreshCw, Clock, User, ThumbsUp, XCircle, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Plus, X, Link2, Link2Off, RefreshCw, Clock, User, ChevronLeft, ChevronRight } from 'lucide-react'
 
 const GC_CSS = `
 .fc {
@@ -242,7 +242,6 @@ function EventModal({
     assigned_to: event?.assigned_to?.toString() ?? (vendors[0]?.id?.toString() ?? ''),
   })
   const [saving, setSaving] = useState(false)
-  const [updatingStatus, setUpdatingStatus] = useState(false)
 
   const set = (k: string, v: string) => setForm(f => {
     const updated = { ...f, [k]: v }
@@ -250,23 +249,10 @@ function EventModal({
     return updated
   })
 
-  const isVendedor = me?.role === 'vendedor'
-
   useEffect(() => {
     const found = EVENT_TYPES.find(t => t.value === form.event_type)
     if (found) set('color', found.color)
   }, [form.event_type])
-
-  const handleVendorStatus = async (status: string) => {
-    if (!event) return
-    setUpdatingStatus(true)
-    try {
-      await updateVendorStatus(event.id, status)
-      toast.success(status === 'altamente_interesado' ? 'Marcado como exitoso' : 'Estado actualizado')
-      onSaved()
-    } catch { toast.error('Error actualizando estado') }
-    finally { setUpdatingStatus(false) }
-  }
 
   const toUtcIso = (localStr: string): string => {
     if (!localStr) return localStr
@@ -403,29 +389,6 @@ function EventModal({
             </div>
           </div>
 
-          {event && isVendedor && (
-            <div className="pt-2 border-t border-white/[0.07]">
-              <p className="text-xs font-semibold text-white/45 uppercase tracking-wide mb-2">Resultado de la reunión</p>
-              <div className="grid grid-cols-2 gap-2">
-                <button type="button" onClick={() => handleVendorStatus('sin_exito')} disabled={updatingStatus}
-                  className={`flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border text-sm font-medium transition-all ${
-                    event.vendor_status === 'sin_exito'
-                      ? 'bg-danger/15 border-danger/30 text-danger'
-                      : 'border-white/10 text-white/72 hover:bg-danger/10 hover:border-danger/25'
-                  }`}>
-                  <XCircle size={14} /> Sin éxito
-                </button>
-                <button type="button" onClick={() => handleVendorStatus('altamente_interesado')} disabled={updatingStatus}
-                  className={`flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border text-sm font-medium transition-all ${
-                    event.vendor_status === 'altamente_interesado'
-                      ? 'bg-lime/15 border-lime/30 text-lime'
-                      : 'border-white/10 text-white/72 hover:bg-lime/10 hover:border-lime/20'
-                  }`}>
-                  <ThumbsUp size={14} /> Exitoso
-                </button>
-              </div>
-            </div>
-          )}
 
           <div className="flex gap-3 pt-2">
             {event && (
