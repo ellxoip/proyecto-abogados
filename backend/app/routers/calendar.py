@@ -187,18 +187,17 @@ def get_vendor_pipeline(
 
     events = q.all()
 
-    # Include leads in ALL pipeline stages for this vendedor
+    # Also include leads in cierre / pago_comprometido for this vendedor
     leads_q = db.query(models.Lead).options(
         joinedload(models.Lead.contact),
         joinedload(models.Lead.work_orders),
     ).filter(
         models.Lead.vendedor_id == current_user.id,
-        models.Lead.current_stage.in_([
-            "lead", "reunion", "altamente_interesado", "cierre", "pago_comprometido"
-        ]),
+        models.Lead.current_stage.in_(["cierre", "pago_comprometido"]),
     ).order_by(models.Lead.updated_at.desc()).all()
 
-    stage_buckets: dict = {"lead": [], "reunion": [], "altamente_interesado": [], "cierre": [], "pago_comprometido": []}
+    cierre_leads = []
+    pago_leads = []
     for lead in leads_q:
         entry = {
             "lead_id": lead.id,
@@ -207,18 +206,16 @@ def get_vendor_pipeline(
             "honorarios": lead.honorarios,
             "num_cuotas": lead.num_cuotas,
             "monto_cuota": lead.monto_cuota,
-            "cuota_inicial": lead.cuota_inicial,
             "has_ot": bool(lead.work_orders),
             "current_stage": lead.current_stage,
-            "created_at": lead.created_at.isoformat() if lead.created_at else None,
         }
-        if lead.current_stage in stage_buckets:
-            stage_buckets[lead.current_stage].append(entry)
+        if lead.current_stage == "cierre":
+            cierre_leads.append(entry)
+        else:
+            pago_leads.append(entry)
 
-    result = {
-        "espera_cliente": [], "sin_exito": [], "altamente_interesado_events": [], "no_show": [], "historial": [],
-        **stage_buckets,
-    }
+    result = {"espera_cliente": [], "sin_exito": [], "altamente_interesado": [], "no_show": [], "historial": [],
+              "cierre": cierre_leads, "pago_comprometido": pago_leads}
 
     def _contact_key(value: str | None):
         if not value:
@@ -268,8 +265,6 @@ def get_vendor_pipeline(
 
         if is_resolved and is_old:
             result["historial"].append(entry)
-        elif status == "altamente_interesado":
-            result["altamente_interesado_events"].append(entry)
         elif status in result:
             result[status].append(entry)
 
