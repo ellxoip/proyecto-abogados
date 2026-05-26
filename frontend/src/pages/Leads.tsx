@@ -274,20 +274,20 @@ function FillContactSplit({ messages, lead, onSave, onClose }: {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[60] flex items-stretch p-5">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[60] flex items-stretch p-2 sm:p-5">
       <div className="bg-surface-1 rounded-2xl shadow-2xl w-full max-w-5xl mx-auto flex overflow-hidden border border-white/[0.07]">
 
         {/* LEFT — form */}
-        <div className="w-[440px] flex-shrink-0 flex flex-col border-r border-white/[0.07]">
-          <div className="px-6 py-4 border-b border-white/[0.07] flex items-center justify-between flex-shrink-0">
+        <div className="w-full sm:w-[440px] flex-shrink-0 flex flex-col border-r border-white/[0.07]">
+          <div className="px-4 sm:px-6 py-4 border-b border-white/[0.07] flex items-center justify-between flex-shrink-0">
             <div>
               <h3 className="font-bold text-white/90">Completar datos del lead</h3>
-              <p className="text-xs text-white/45 mt-0.5">Rellena mirando el chat a la derecha</p>
+              <p className="text-xs text-white/45 mt-0.5 hidden sm:block">Rellena mirando el chat a la derecha</p>
             </div>
             <button onClick={onClose} className="p-2 hover:bg-surface-2 rounded-xl text-white/45"><XIcon size={18} /></button>
           </div>
 
-          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+          <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 space-y-4">
             <p className="text-[10px] font-bold text-white/38 uppercase tracking-widest">Contacto</p>
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -363,7 +363,7 @@ function FillContactSplit({ messages, lead, onSave, onClose }: {
             </div>
           </div>
 
-          <div className="px-6 py-4 border-t border-white/[0.07] flex gap-3 flex-shrink-0">
+          <div className="px-4 sm:px-6 py-4 border-t border-white/[0.07] flex gap-3 flex-shrink-0">
             <button onClick={onClose} className="btn-secondary flex-1">Cancelar</button>
             <button onClick={handleSave} disabled={saving}
               className="flex-1 btn-primary disabled:opacity-40">
@@ -372,8 +372,8 @@ function FillContactSplit({ messages, lead, onSave, onClose }: {
           </div>
         </div>
 
-        {/* RIGHT — chat (read-only), dark WA style */}
-        <div className="flex-1 flex flex-col min-w-0">
+        {/* RIGHT — chat (read-only), dark WA style — hidden on mobile */}
+        <div className="hidden sm:flex flex-1 flex-col min-w-0">
           {/* Header */}
           <div className="px-4 py-2.5 flex-shrink-0 border-b border-white/[0.07] flex items-center gap-3 bg-surface-0">
             {lead.contact?.avatar_url ? (
