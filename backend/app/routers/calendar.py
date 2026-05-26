@@ -3,12 +3,14 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import or_
 from typing import List, Optional
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from ..database import get_db
 from .. import models, schemas
 from ..auth import get_current_user, get_visible_group_ids
 from ..utils.notifications import create_notification
 
 router = APIRouter(prefix="/api/calendar", tags=["calendar"])
+_TZ_CHILE = ZoneInfo("America/Santiago")
 
 
 @router.get("", response_model=List[schemas.CalendarEventOut])
@@ -304,7 +306,12 @@ def create_event(
 
     if data.assigned_to and data.assigned_to != current_user.id:
         try:
-            start_fmt = event.start_time.strftime("%d/%m %H:%M") if event.start_time else ""
+            _st = event.start_time
+            if _st:
+                if _st.tzinfo is None:
+                    _st = _st.replace(tzinfo=timezone.utc)
+                _st = _st.astimezone(_TZ_CHILE)
+            start_fmt = _st.strftime("%d/%m %H:%M") if _st else ""
             create_notification(
                 db=db,
                 user_id=data.assigned_to,

@@ -358,8 +358,16 @@ export default function Contactos() {
     if (!confirm(`¿Eliminar ${selectedIds.size} contacto${selectedIds.size > 1 ? 's' : ''}? Esta acción no se puede deshacer.`)) return
     setBulkLoading(true)
     try {
-      await Promise.all(Array.from(selectedIds).map(id => deleteContact(id, true)))
-      toast.success(`${selectedIds.size} contacto${selectedIds.size > 1 ? 's eliminados' : ' eliminado'}`)
+      const results = await Promise.allSettled(Array.from(selectedIds).map(id => deleteContact(id, true)))
+      const failed = results.filter(r => r.status === 'rejected' && r.reason?.response?.status !== 404)
+      const deleted = results.filter(r => r.status === 'fulfilled' || r.reason?.response?.status === 404).length
+      if (deleted > 0) {
+        toast.success(`${deleted} contacto${deleted > 1 ? 's eliminados' : ' eliminado'}`)
+      }
+      if (failed.length > 0) {
+        const detail = failed[0].status === 'rejected' ? (failed[0].reason?.response?.data?.detail || 'Error al eliminar') : ''
+        toast.error(`${failed.length} contacto${failed.length > 1 ? 's no pudieron eliminarse' : ' no pudo eliminarse'}: ${detail}`)
+      }
       setSelectedIds(new Set())
       load(page)
     } catch (err: any) {

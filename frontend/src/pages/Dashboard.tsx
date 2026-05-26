@@ -550,27 +550,28 @@ export default function Dashboard() {
                 </Link>
               </div>
               <div className="space-y-2">
-                <Link to="/mi-pipeline" className="flex items-center justify-between px-3 py-2.5 rounded-xl bg-surface-0 border border-white/[0.07] hover:bg-surface-2 transition-colors">
-                  <div className="flex items-center gap-2">
-                    <Clock size={13} className="text-white/52" />
-                    <span className="text-xs font-semibold text-white/85">Espera del Cliente</span>
-                  </div>
-                  <span className="text-sm font-bold text-white/85">{espera}</span>
-                </Link>
-                <Link to="/mi-pipeline" className="flex items-center justify-between px-3 py-2.5 rounded-xl bg-surface-0 border border-white/[0.07] hover:bg-surface-2 transition-colors">
-                  <div className="flex items-center gap-2">
-                    <ThumbsUp size={13} className="text-white/52" />
-                    <span className="text-xs font-semibold text-white/85">Altamente Interesado</span>
-                  </div>
-                  <span className="text-sm font-bold text-white/85">{vendorPipeline?.altamente_interesado?.length ?? 0}</span>
-                </Link>
-                <Link to="/mi-pipeline" className="flex items-center justify-between px-3 py-2.5 rounded-xl bg-surface-0 border border-white/[0.07] hover:bg-surface-2 transition-colors">
-                  <div className="flex items-center gap-2">
-                    <XCircle size={13} className="text-white/52" />
-                    <span className="text-xs font-semibold text-white/85">Sin Exito</span>
-                  </div>
-                  <span className="text-sm font-bold text-white/85">{vendorPipeline?.sin_exito?.length ?? 0}</span>
-                </Link>
+                {(['lead','reunion','altamente_interesado','cierre','pago_comprometido'] as const).map(stage => {
+                  const count = by[stage] ?? 0
+                  const dotColor = stage === 'pago_comprometido' ? 'bg-neon' : stage === 'cierre' ? 'bg-cyan-400' : stage === 'altamente_interesado' ? 'bg-violet-400' : stage === 'reunion' ? 'bg-blue-400' : 'bg-white/35'
+                  return (
+                    <Link key={stage} to="/pipeline" className="flex items-center justify-between px-3 py-2.5 rounded-xl bg-surface-0 border border-white/[0.07] hover:bg-surface-2 transition-colors">
+                      <div className="flex items-center gap-2">
+                        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${dotColor}`} />
+                        <span className="text-xs font-semibold text-white/85">{STAGE_LABELS[stage]}</span>
+                      </div>
+                      <span className="text-sm font-bold text-white/85">{count}</span>
+                    </Link>
+                  )
+                })}
+                {recoveryCount > 0 && (
+                  <Link to="/pipeline" className="flex items-center justify-between px-3 py-2.5 rounded-xl bg-surface-0 border border-danger/20 hover:bg-surface-2 transition-colors">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full flex-shrink-0 bg-danger" />
+                      <span className="text-xs font-semibold text-danger/85">Recuperación</span>
+                    </div>
+                    <span className="text-sm font-bold text-danger/85">{recoveryCount}</span>
+                  </Link>
+                )}
               </div>
             </div>
 

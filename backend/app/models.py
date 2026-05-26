@@ -242,7 +242,7 @@ class CalendarEvent(Base):
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String(200), nullable=False)
     lead_id = Column(Integer, ForeignKey("leads.id", ondelete="CASCADE"), nullable=True)
-    contact_id = Column(Integer, ForeignKey("contacts.id"), nullable=True)
+    contact_id = Column(Integer, ForeignKey("contacts.id", ondelete="SET NULL"), nullable=True)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
     assigned_to = Column(Integer, ForeignKey("users.id"), nullable=True)
     start_time = Column(DateTime(timezone=True), nullable=False)
@@ -411,7 +411,7 @@ class AIAgentLog(Base):
     __tablename__ = "ai_agent_logs"
     id              = Column(Integer, primary_key=True, index=True)
     agent_id        = Column(Integer, ForeignKey("ai_agents.id", ondelete="CASCADE"), nullable=False)
-    contact_id      = Column(Integer, ForeignKey("contacts.id"), nullable=True)
+    contact_id      = Column(Integer, ForeignKey("contacts.id", ondelete="SET NULL"), nullable=True)
     lead_id         = Column(Integer, ForeignKey("leads.id"), nullable=True)
     input_message   = Column(Text, nullable=True)
     output_message  = Column(Text, nullable=True)

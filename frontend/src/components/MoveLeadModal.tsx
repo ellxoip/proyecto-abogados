@@ -23,6 +23,11 @@ export const PREV_STAGE: Record<string, string> = {
   altamente_interesado: 'reunion',
   cierre:               'altamente_interesado',
   pago_comprometido:    'cierre',
+  // Recovery → corresponding main stage (allows "retro" back to main funnel)
+  recuperacion_lead:    'lead',
+  recuperacion_reunion: 'reunion',
+  recuperacion_cierre:  'cierre',
+  recuperacion_pago:    'pago_comprometido',
 }
 
 export function MoveLeadModal({ lead, targetStage, labels, onConfirm, onClose, canConfirmPago, userRole }: {
@@ -55,8 +60,8 @@ export function MoveLeadModal({ lead, targetStage, labels, onConfirm, onClose, c
     if (!validSet.has(s)) return false
     if (s === cur) return false
     if (s === 'pagado_confirmado' && !canConfirmPago) return false
-    // Agendadora: 'reunion' only available if a meeting event is scheduled
-    if (s === 'reunion' && blockedReunionNoSchedule) return false
+    // Agendadora: 'reunion' AND recuperación blocked until a meeting is scheduled
+    if (blockedReunionNoSchedule && (s === 'reunion' || s.startsWith('recuperacion'))) return false
     if (blockedAdvanceFromReunion) {
       const allowedFromReunion = ['lead', 'recuperacion_lead', 'recuperacion_reunion', 'recuperacion_cierre', 'recuperacion_pago']
       return allowedFromReunion.includes(s)

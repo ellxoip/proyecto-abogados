@@ -359,8 +359,10 @@ def create_lead(
         except Exception:
             pass
 
-    # Notify vendedor
-    if data.vendedor_id and data.vendedor_id != current_user.id and data.vendedor_id != data.agendadora_id:
+    # Notify vendedor — only when NOT created manually by an agendadora
+    # (agendadora manual leads notify the vendor only when a reunion is scheduled)
+    if data.vendedor_id and data.vendedor_id != current_user.id and data.vendedor_id != data.agendadora_id \
+            and current_user.role != "agendadora":
         try:
             create_notification(
                 db, data.vendedor_id,
@@ -981,8 +983,10 @@ def move_lead_stage(
         if lead.agendadora_id != current_user.id and lead.vendedor_id != current_user.id:
             raise HTTPException(status_code=403, detail="Sin permiso para este lead")
 
-    # Agendadoras cannot move a lead to 'reunion' unless a reunion calendar event is scheduled
-    if current_user.role == "agendadora" and data.stage == "reunion":
+    # Agendadoras cannot move to 'reunion' or any recuperación stage unless a reunion event exists
+    if current_user.role == "agendadora" and (
+        data.stage == "reunion" or data.stage.startswith("recuperacion")
+    ):
         event_count = db.query(models.CalendarEvent).filter(
             models.CalendarEvent.lead_id == lead_id,
             models.CalendarEvent.event_type == "reunion",
@@ -990,7 +994,7 @@ def move_lead_stage(
         if event_count == 0:
             raise HTTPException(
                 status_code=403,
-                detail="Debes agendar una reunión para este lead antes de moverlo a Reunión"
+                detail="Debes agendar una reunión para este lead antes de moverlo a Reunión o Recuperación"
             )
 
     # Agendadoras cannot advance a lead forward while it is in 'reunion' — only the vendor can

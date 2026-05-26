@@ -260,6 +260,13 @@ def delete_contact(
             detail=f"El contacto tiene {active_leads} lead(s) activo(s). Ciérrelos antes de eliminar el contacto.",
             headers={"X-Active-Leads": str(active_leads)},
         )
+    # Nullify FK references that lack cascade to avoid IntegrityError
+    db.query(models.CalendarEvent).filter(
+        models.CalendarEvent.contact_id == contact_id
+    ).update({"contact_id": None}, synchronize_session=False)
+    db.query(models.AIAgentLog).filter(
+        models.AIAgentLog.contact_id == contact_id
+    ).update({"contact_id": None}, synchronize_session=False)
     db.delete(contact)
     db.commit()
     return {"ok": True}
