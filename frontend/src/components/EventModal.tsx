@@ -162,7 +162,7 @@ export function EventModal({
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="input-label">Inicio *</label>
               <input type="datetime-local" className="input" value={form.start_time}

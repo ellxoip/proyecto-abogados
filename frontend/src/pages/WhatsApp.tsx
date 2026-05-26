@@ -823,7 +823,7 @@ export default function WhatsApp() {
         style={{ minHeight: 0, height: 'calc(100vh - 200px)' }}>
 
         {/* ── Conversations sidebar ── */}
-        <div className="w-80 flex-shrink-0 flex flex-col bg-surface-1" style={{borderRight:'1px solid var(--border)'}}>
+        <div className={`${selectedConv ? 'hidden sm:flex' : 'flex'} w-full sm:w-80 flex-shrink-0 flex-col bg-surface-1`} style={{borderRight:'1px solid var(--border)'}}>
           {/* Sidebar search */}
           <div className="px-3 py-2.5" style={{backgroundColor:'var(--surface-2)', borderBottom:'1px solid var(--border)'}}>
             <div className="relative">
@@ -914,7 +914,7 @@ export default function WhatsApp() {
 
         {/* ── Chat panel ── */}
         {!selectedConv ? (
-          <div className="flex-1 flex flex-col items-center justify-center" style={{backgroundColor:'var(--surface-2)'}}>
+          <div className="hidden sm:flex flex-1 flex-col items-center justify-center" style={{backgroundColor:'var(--surface-2)'}}>
             <div className="w-20 h-20 rounded-full flex items-center justify-center mb-4" style={{backgroundColor:'var(--primary-dim)'}}>
               <MessageSquare size={36} color="var(--primary)" />
             </div>
@@ -927,7 +927,12 @@ export default function WhatsApp() {
             {/* Chat header */}
             <div className="flex items-center justify-between px-4 py-2.5 flex-shrink-0 border-b"
               style={{backgroundColor:'var(--surface)', borderColor:'var(--border)'}}>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 sm:gap-3">
+                <button onClick={() => setSelectedConv(null)}
+                  className="sm:hidden p-1.5 rounded-lg transition-colors"
+                  style={{ color: 'var(--text-muted)' }}>
+                  ←
+                </button>
                 {selectedConv.contact.avatar_url ? (
                   <img
                     src={selectedConv.contact.avatar_url}

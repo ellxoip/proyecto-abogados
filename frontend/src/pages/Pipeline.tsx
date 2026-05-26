@@ -764,7 +764,7 @@ export default function Pipeline() {
     <div className="flex flex-col h-full gap-4">
 
       {/* Descripción */}
-      <div className="flex items-start gap-3 rounded-xl px-4 py-3 text-xs flex-shrink-0" style={{ background: 'rgba(67,97,238,0.07)', border: '1px solid rgba(67,97,238,0.16)', color: 'rgba(52,81,199,0.90)' }}>
+      <div className="hidden sm:flex items-start gap-3 rounded-xl px-4 py-3 text-xs flex-shrink-0" style={{ background: 'rgba(67,97,238,0.07)', border: '1px solid rgba(67,97,238,0.16)', color: 'rgba(52,81,199,0.90)' }}>
         <Info size={15} className="flex-shrink-0 mt-0.5" style={{ color: 'rgba(67,97,238,0.9)' }} />
         <p>El Pipeline muestra el avance de cada caso desde que llega como Lead hasta que el cliente paga. Puede ver en qué etapa está cada expediente, moverlos de etapa y revisar el detalle de cada uno. Use <strong>Recuperación</strong> para ver los casos que necesitan atención urgente.</p>
       </div>
@@ -815,18 +815,18 @@ export default function Pipeline() {
           )}
 
           {isAbogados && (
-            <div className="flex bg-surface-2 rounded-xl p-1">
+            <div className="flex bg-surface-2 rounded-xl p-1 overflow-x-auto">
               <button onClick={() => setFilter('main')}
-                className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-150 ${filter === 'main' ? 'bg-surface-1 text-white shadow-sm' : 'text-white/62 hover:text-white/85'}`}>
+                className={`px-3 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-150 whitespace-nowrap ${filter === 'main' ? 'bg-surface-1 text-white shadow-sm' : 'text-white/62 hover:text-white/85'}`}>
                 Embudo Principal
               </button>
               <button onClick={() => setFilter('recovery')}
-                className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-150 flex items-center gap-1.5 ${filter === 'recovery' ? 'bg-danger text-white shadow-sm' : 'text-danger hover:text-danger/70'}`}>
+                className={`px-3 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-150 flex items-center gap-1.5 whitespace-nowrap ${filter === 'recovery' ? 'bg-danger text-white shadow-sm' : 'text-danger hover:text-danger/70'}`}>
                 {filter !== 'recovery' && <span className="w-2 h-2 rounded-full bg-danger animate-pulse" />}
                 Recuperación
               </button>
               <button onClick={() => setFilter('seguimiento')}
-                className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-150 flex items-center gap-1.5 ${filter === 'seguimiento' ? 'shadow-sm' : 'hover:opacity-80'}`}
+                className={`px-3 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-150 flex items-center gap-1.5 whitespace-nowrap ${filter === 'seguimiento' ? 'shadow-sm' : 'hover:opacity-80'}`}
                 style={filter === 'seguimiento' ? { background: 'var(--warn)', color: '#ffffff' } : { color: 'var(--warn)' }}>
                 {filter !== 'seguimiento' && followupItems.length > 0 && <span className="w-2 h-2 rounded-full bg-warn animate-pulse" />}
                 Seguimiento

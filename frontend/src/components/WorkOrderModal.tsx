@@ -1039,7 +1039,7 @@ export function WorkOrderModal({ leadId, onClose, onSaved, autoOpen }: Props) {
           <p className="text-sm font-medium" style={{ color: 'rgba(26,32,53,0.55)' }}>Creando orden de trabajo...</p>
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           {otTypes.map(type => (
             <button key={type.key} onClick={() => openNew(type)} disabled={loadingNew}
               className="rounded-xl p-3.5 text-left transition-all"

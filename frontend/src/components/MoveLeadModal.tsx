@@ -179,7 +179,7 @@ export function MoveLeadModal({ lead, targetStage, labels, onConfirm, onClose, c
             <p className="text-[10px] font-bold uppercase tracking-widest mb-2.5" style={{ color: 'var(--text-muted)' }}>
               Mover a etapa
             </p>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {availableStages.map(s => {
                 const active    = selectedStage === s
                 const isRec     = s.startsWith('recuperacion')

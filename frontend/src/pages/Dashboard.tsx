@@ -60,7 +60,7 @@ function DashboardDetailModal({ metric, period, groupId, onClose }: {
           <button onClick={onClose} className="p-1.5 rounded-lg"
             style={{ color: 'var(--text-muted)' }}><X size={18} /></button>
         </div>
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto overflow-x-auto">
           {loading ? (
             <div className="flex items-center justify-center py-16">
               <Loader2 size={24} className="animate-spin" style={{ color: 'var(--primary)' }} />
@@ -68,7 +68,7 @@ function DashboardDetailModal({ metric, period, groupId, onClose }: {
           ) : rows.length === 0 ? (
             <div className="py-16 text-center text-sm" style={{ color: 'var(--text-muted)' }}>Sin datos para este período</div>
           ) : (
-            <table className="w-full text-sm">
+            <table className="w-full text-sm min-w-[500px]">
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--surface-2)' }}>
                   <th className="text-left px-4 py-2.5 text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>Cliente</th>
@@ -367,7 +367,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="bg-warn/[0.06] rounded-2xl border border-warn/20 p-5 shadow-sm">
             <p className="text-[10px] font-bold uppercase tracking-widest text-white/52 mb-1">Por verificar</p>
             <p className="text-4xl font-black text-warn">{stats.pending_payments ?? 0}</p>

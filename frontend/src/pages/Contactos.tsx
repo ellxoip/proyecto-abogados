@@ -63,7 +63,7 @@ function EditContactModal({ contact, onClose, onSuccess }: { contact: Contact; o
           <button onClick={onClose} className="p-2 hover:bg-surface-2 rounded-lg text-white/62"><X size={18} /></button>
         </div>
         <form onSubmit={handleSave} className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Nombre *">
               <input className="input" value={form.name} onChange={e => set('name', e.target.value)} required />
             </Field>
@@ -428,7 +428,7 @@ export default function Contactos() {
           </div>
           <p className="text-sm mt-0.5" style={{ color: 'rgba(26,32,53,0.50)' }}>{total} contactos registrados</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {canEdit && (
             <button
               onClick={async () => {
@@ -444,14 +444,14 @@ export default function Contactos() {
               }}
               disabled={exporting}
               title={!user?.negocio_plan_limits?.export_csv ? 'Plan Pro requerido' : 'Exportar CSV'}
-              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-2.5 rounded-xl transition-colors disabled:opacity-50"
+              className="hidden sm:flex items-center gap-1.5 text-sm font-semibold px-3 py-2.5 rounded-xl transition-colors disabled:opacity-50"
               style={{ background: '#ffffff', border: '1px solid rgba(26,32,53,0.12)', color: 'rgba(26,32,53,0.70)', boxShadow: '0 1px 3px rgba(26,32,53,0.06)', opacity: user?.negocio_plan_limits?.export_csv ? 1 : 0.4 }}>
               <Download size={14} className={exporting ? 'animate-spin' : ''} /> Exportar
             </button>
           )}
           {canEdit && (
             <button onClick={() => setShowImport(true)}
-              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-2.5 rounded-xl transition-colors"
+              className="hidden sm:flex items-center gap-1.5 text-sm font-semibold px-3 py-2.5 rounded-xl transition-colors"
               style={{ background: '#ffffff', border: '1px solid rgba(26,32,53,0.12)', color: 'rgba(26,32,53,0.70)', boxShadow: '0 1px 3px rgba(26,32,53,0.06)' }}>
               <Upload size={14} /> Importar
             </button>
