@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { getPipelineSummary, getGroups, moveLeadStage, downloadLeadPdf, getStageLabels, getPipelineStages, getAgendadoraFollowup } from '../api'
+import { getPipelineSummary, getGroups, moveLeadStage, getStageLabels, getPipelineStages, getAgendadoraFollowup } from '../api'
 import { apiUrl } from '../api/client'
 import type { Lead, Group, PaymentVerification } from '../types'
 import { STAGE_LABELS } from '../types'
@@ -16,6 +16,7 @@ import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 
 import { MoveLeadModal, MAIN_STAGES, RECOVERY_STAGES } from '../components/MoveLeadModal'
+import { WorkOrderModal } from '../components/WorkOrderModal'
 const COL_LIMIT       = 10
 
 const NEXT_STAGE: Record<string, string> = {
@@ -76,6 +77,8 @@ function LeadCard({ lead, canMove, showGroup, labels, canConfirmPago, onMoved, u
 }) {
   const [showMoveModal, setShowMoveModal] = useState<{ target: string } | null>(null)
   const [showViewModal, setShowViewModal] = useState(false)
+  const [showOTModal, setShowOTModal] = useState(false)
+  const navigate = useNavigate()
   const nextStage = NEXT_STAGE[lead.current_stage]
   const prevStage = PREV_STAGE[lead.current_stage]
 
@@ -341,19 +344,19 @@ function LeadCard({ lead, canMove, showGroup, labels, canConfirmPago, onMoved, u
           {/* ── Hover actions ── */}
           <div className="hidden group-hover:flex items-center gap-1 pt-2 mt-1"
             style={{ borderTop: '1px solid #e2e8f0' }}>
-            <Link to={`/leads/${lead.id}`} onClick={handleVerClick}
+            <button onClick={() => navigate('/leads', { state: { openLeadId: lead.id } })}
               className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-[10px] font-semibold transition-all"
               style={{ background: '#f8fafc', color: 'rgba(26,32,53,0.60)', border: '1px solid #e2e8f0' }}
-              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = palette.tagBg; (e.currentTarget as HTMLElement).style.color = palette.tagColor; (e.currentTarget as HTMLElement).style.borderColor = palette.border }}
-              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#f8fafc'; (e.currentTarget as HTMLElement).style.color = 'rgba(26,32,53,0.60)'; (e.currentTarget as HTMLElement).style.borderColor = '#e2e8f0' }}>
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = palette.tagBg; (e.currentTarget as HTMLElement).style.color = palette.tagColor }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#f8fafc'; (e.currentTarget as HTMLElement).style.color = 'rgba(26,32,53,0.60)' }}>
               <Eye size={11} /> Ver
-            </Link>
-            <button onClick={e => { e.stopPropagation(); downloadLeadPdf(lead.id, lead.contact?.name).catch(() => toast.error('Error PDF')) }}
+            </button>
+            <button onClick={() => setShowOTModal(true)}
               className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-[10px] font-semibold transition-all"
               style={{ background: '#f8fafc', color: 'rgba(26,32,53,0.60)', border: '1px solid #e2e8f0' }}
               onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#edf2f7'; (e.currentTarget as HTMLElement).style.color = '#1a2035' }}
               onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#f8fafc'; (e.currentTarget as HTMLElement).style.color = 'rgba(26,32,53,0.60)' }}>
-              <FileText size={11} /> PDF
+              <ClipboardList size={11} /> OT
             </button>
             {canShowBack && (
               <button onClick={() => setShowMoveModal({ target: prevStage })}
@@ -377,6 +380,15 @@ function LeadCard({ lead, canMove, showGroup, labels, canConfirmPago, onMoved, u
           userRole={userRole}
           onConfirm={handleMove}
           onClose={() => setShowMoveModal(null)}
+        />
+      )}
+
+      {showOTModal && (
+        <WorkOrderModal
+          leadId={lead.id}
+          honorarios={lead.honorarios}
+          onClose={() => setShowOTModal(false)}
+          onSaved={() => setShowOTModal(false)}
         />
       )}
 
