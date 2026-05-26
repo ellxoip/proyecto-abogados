@@ -2,22 +2,32 @@
 
 # dependencies
 /node_modules
+node_modules/
+**/node_modules/
 /.pnp
 .pnp.js
 .yarn/install-state.gz
+venv/
+**/venv/
 
 # testing
 /coverage
+coverage/
+**/coverage/
 
 # next.js
 /.next/
+**/.next/
 /out/
 
 # production
 /build
+dist/
+**/dist/
 
 # misc
 .DS_Store
+Thumbs.db
 *.pem
 
 # debug
@@ -26,13 +36,23 @@ yarn-debug.log*
 yarn-error.log*
 dev.*.log
 *.local.log
+*.log
+*.err
 
 # local env files
 .env
+.env.*
+**/.env
+**/.env.*
 .env*.local
 .env.local
 
 # database
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
 prisma/dev.db
 prisma/dev.db-journal
 prisma/test.db
@@ -44,9 +64,32 @@ prisma/test.db-*
 
 # local scratch (SQL pruebas, scripts, etc.)
 scratch/
+uploads/
+**/uploads/
+*.exe
+reset_pwd.mjs
+verify_login.mjs
+e2e_*_guard.mjs
 
 # typescript
 *.tsbuildinfo
 next-env.d.ts
 
 /src/generated/prisma
+
+# build outputs and caches
+.pytest_cache/
+**/.pytest_cache/
+__pycache__/
+**/__pycache__/
+.turbo/
+.vite/
+.npm-cache/
+**/.npm-cache/
+.push-staging-*/
+
+# local agent/editor state
+.agents/
+.claude/
+.vscode/
+.idea/
