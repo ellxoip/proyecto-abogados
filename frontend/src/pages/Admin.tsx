@@ -1383,16 +1383,16 @@ Reglas:
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex items-start gap-3 min-w-0">
                         <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
-                          style={{ background: agent.is_active ? 'rgba(163,230,53,0.15)' : 'rgba(255,255,255,0.06)' }}>
-                          <Bot size={16} style={{ color: agent.is_active ? '#a3e635' : '#64748b' }} />
+                          style={{ background: agent.is_active ? 'rgba(22,163,74,0.12)' : 'rgba(100,116,139,0.10)' }}>
+                          <Bot size={16} style={{ color: agent.is_active ? '#16a34a' : '#64748b' }} />
                         </div>
                         <div className="min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-semibold text-sm" style={{ color: '#f1f5f9' }}>{agent.name}</span>
+                            <span className="font-semibold text-sm" style={{ color: '#0f172a' }}>{agent.name}</span>
                             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
                               style={agent.is_active
-                                ? { background: 'rgba(163,230,53,0.15)', color: '#a3e635', border: '1px solid rgba(163,230,53,0.3)' }
-                                : { background: 'rgba(100,116,139,0.15)', color: '#94a3b8', border: '1px solid rgba(100,116,139,0.3)' }}>
+                                ? { background: 'rgba(22,163,74,0.12)', color: '#15803d', border: '1px solid rgba(22,163,74,0.35)' }
+                                : { background: 'rgba(100,116,139,0.12)', color: '#475569', border: '1px solid rgba(100,116,139,0.35)' }}>
                               {agent.is_active ? 'ACTIVO' : 'INACTIVO'}
                             </span>
                             {isTecnico && agent.group_name && (
@@ -1401,7 +1401,7 @@ Reglas:
                               </span>
                             )}
                           </div>
-                          {agent.description && <p className="text-xs mt-0.5 truncate" style={{ color: '#94a3b8' }}>{agent.description}</p>}
+                          {agent.description && <p className="text-xs mt-0.5 truncate" style={{ color: '#475569' }}>{agent.description}</p>}
                           <div className="flex items-center gap-3 mt-1.5 flex-wrap">
                             {/* Multi-number chips */}
                             {(agent.configs ?? []).map((c: any) => (
@@ -1437,11 +1437,11 @@ Reglas:
                               </button>
                             )}
                             {isTecnico && (
-                              <span className="flex items-center gap-1 text-xs" style={{ color: '#94a3b8' }}>
+                              <span className="flex items-center gap-1 text-xs" style={{ color: '#64748b' }}>
                                 <Zap size={10} /> {agent.openai_model}
                               </span>
                             )}
-                            <span className="text-xs font-medium" style={{ color: '#94a3b8' }}>{agent.total_messages_sent ?? 0} enviados</span>
+                            <span className="text-xs font-medium" style={{ color: '#64748b' }}>{agent.total_messages_sent ?? 0} enviados</span>
                             {agent.business_hours_start && (
                               <span className="flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-md"
                                 style={{ background: 'rgba(245,158,11,0.15)', color: '#fbbf24', border: '1px solid rgba(245,158,11,0.4)' }}>
