@@ -260,6 +260,7 @@ export default function Admin() {
 
   const [deletingAreaId, setDeletingAreaId] = useState<number | null>(null)
   const [areaUserDropOpen, setAreaUserDropOpen] = useState<Record<number, boolean>>({})
+  const [areaUserSearch, setAreaUserSearch] = useState<Record<number, string>>({})
 
   const handleAssignUserToArea = async (areaId: number, userId: number) => {
     try {
@@ -817,109 +818,155 @@ Reglas:
               ) : areas.map((a: any) => {
                 const phones: any[] = a.phone_configs ?? []
                 const areaAssigned: any[] = a.users ?? []
-                // Users in the group not yet assigned to this area
                 const allEligible = users.filter(u =>
                   u.is_active &&
                   ['agendadora','vendedor','subadmin','verificador'].includes(u.role)
                 )
                 const unassigned = allEligible.filter(u => !areaAssigned.some((au: any) => au.id === u.id))
+                const searchQ = (areaUserSearch[a.id] ?? '').toLowerCase()
+                const filteredUnassigned = searchQ
+                  ? unassigned.filter(u => u.name.toLowerCase().includes(searchQ) || u.role.includes(searchQ))
+                  : unassigned
+
+                const roleColor = (role: string) => role === 'agendadora'
+                  ? { bg: 'rgba(139,92,246,0.15)', border: 'rgba(139,92,246,0.35)', text: '#c4b5fd' }
+                  : { bg: 'rgba(163,230,53,0.12)', border: 'rgba(163,230,53,0.30)', text: '#a3e635' }
 
                 return (
-                  <div key={a.id} className="p-4 bg-surface-0 rounded-xl border border-white/[0.07]">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <p className="font-semibold text-sm text-white/90">{a.name}</p>
-                        {/* Phone badges */}
-                        {phones.length > 0 ? (
-                          <div className="flex flex-wrap gap-1.5 mt-1.5">
-                            {phones.map((wp: any) => (
-                              <div key={wp.id} className="flex items-center gap-1 rounded-lg px-2 py-1"
-                                style={{ background: 'rgba(163,230,53,0.10)', border: '1px solid rgba(163,230,53,0.25)' }}>
-                                <Phone size={10} style={{ color: '#a3e635', flexShrink: 0 }} />
-                                <p className="text-xs font-medium" style={{ color: '#a3e635' }}>{wp.phone_number}</p>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="text-xs text-white/38 mt-1">Sin número asociado</p>
-                        )}
-
-                        {/* Assigned users */}
-                        <div className="mt-2.5">
-                          <p className="text-[10px] font-semibold text-white/42 uppercase tracking-wider mb-1.5">
-                            Usuarios asignados ({areaAssigned.length})
-                          </p>
-                          <div className="flex flex-wrap gap-1.5">
-                            {areaAssigned.map((u: any) => (
-                              <span key={u.id} className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full"
-                                style={{ background: '#1c1c2e', border: '1px solid #3a3a5c', color: '#e2e8f0' }}>
-                                <span className="text-[9px] font-bold uppercase" style={{ color: '#94a3b8' }}>{u.role.slice(0,4)}</span>
-                                {u.name}
-                                <button onClick={() => handleRemoveUserFromArea(a.id, u.id)}
-                                  className="ml-0.5 transition-colors"
-                                  style={{ color: '#64748b' }}
-                                  onMouseEnter={e => (e.currentTarget.style.color = '#f87171')}
-                                  onMouseLeave={e => (e.currentTarget.style.color = '#64748b')}>
-                                  <X size={9} />
-                                </button>
-                              </span>
-                            ))}
-
-                            {/* Add user button */}
-                            {unassigned.length > 0 && (
-                              <div className="relative">
-                                <button
-                                  onClick={() => setAreaUserDropOpen(p => ({ ...p, [a.id]: !p[a.id] }))}
-                                  className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-semibold transition-colors"
-                                  style={{ background: '#1e3a5f', border: '1px solid #3b82f6', color: '#93c5fd' }}
-                                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#1e40af' }}
-                                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#1e3a5f' }}>
-                                  <Plus size={9} /> Agregar usuario
-                                </button>
-                                {areaUserDropOpen[a.id] && (
-                                  <div className="absolute left-0 top-7 z-10 rounded-xl shadow-xl overflow-hidden min-w-[180px]"
-                                    style={{ background: '#1c1c2e', border: '1px solid #3a3a5c' }}>
-                                    {unassigned.map((u: any) => (
-                                      <button key={u.id}
-                                        onClick={() => handleAssignUserToArea(a.id, u.id)}
-                                        className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 transition-colors"
-                                        style={{ color: '#e2e8f0' }}
-                                        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#2d2d50' }}
-                                        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}>
-                                        <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded"
-                                          style={{ background: '#2d2d50', color: '#94a3b8' }}>{u.role.slice(0,4)}</span>
-                                        {u.name}
-                                      </button>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                            {areaAssigned.length === 0 && unassigned.length === 0 && (
-                              <p className="text-xs text-white/32 italic">Sin usuarios disponibles</p>
-                            )}
-                          </div>
+                  <div key={a.id} className="rounded-xl border border-white/[0.08] overflow-hidden"
+                    style={{ background: 'rgba(255,255,255,0.02)' }}>
+                    {/* Area header */}
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
+                          style={{ background: 'rgba(163,230,53,0.10)' }}>
+                          <Layers size={13} style={{ color: '#a3e635' }} />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-semibold text-sm text-white truncate">{a.name}</p>
+                          {phones.length > 0 ? (
+                            <div className="flex flex-wrap gap-1 mt-0.5">
+                              {phones.map((wp: any) => (
+                                <span key={wp.id} className="flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-md"
+                                  style={{ background: 'rgba(163,230,53,0.08)', color: '#86efac' }}>
+                                  <Phone size={8} /> {wp.phone_number}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-[10px] text-white/30 mt-0.5">Sin número</p>
+                          )}
                         </div>
                       </div>
-
-                      {/* Edit / Delete */}
                       <div className="flex items-center gap-1 flex-shrink-0">
                         <button onClick={() => openEditArea(a)}
-                          className="p-2 hover:bg-surface-1 rounded-lg text-white/52 hover:text-white/90 transition-all">
-                          <Edit2 size={14} />
+                          className="w-7 h-7 flex items-center justify-center rounded-lg text-white/35 hover:text-white/80 hover:bg-white/[0.06] transition-colors">
+                          <Edit2 size={13} />
                         </button>
                         {deletingAreaId === a.id ? (
                           <button onClick={() => handleDeleteArea(a.id)}
-                            className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-semibold bg-danger/15 text-danger border border-danger/30 transition-colors">
-                            <Trash2 size={11} /> Confirmar
+                            className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold transition-colors"
+                            style={{ background: 'rgba(239,68,68,0.12)', color: '#f87171', border: '1px solid rgba(239,68,68,0.25)' }}>
+                            <Trash2 size={10} /> Confirmar
                           </button>
                         ) : (
                           <button onClick={() => handleDeleteArea(a.id)}
-                            className="p-2 hover:bg-danger/10 rounded-lg text-white/38 hover:text-danger transition-colors">
-                            <Trash2 size={14} />
+                            className="w-7 h-7 flex items-center justify-center rounded-lg text-white/30 hover:text-red-400 hover:bg-red-500/[0.08] transition-colors">
+                            <Trash2 size={13} />
                           </button>
                         )}
                       </div>
+                    </div>
+
+                    {/* Team section */}
+                    <div className="px-4 py-3">
+                      <div className="flex items-center justify-between mb-2.5">
+                        <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35">
+                          Equipo · {areaAssigned.length} persona{areaAssigned.length !== 1 ? 's' : ''}
+                        </p>
+                        {unassigned.length > 0 && (
+                          <div className="relative">
+                            <button
+                              onClick={() => {
+                                setAreaUserDropOpen(p => ({ ...p, [a.id]: !p[a.id] }))
+                                setAreaUserSearch(p => ({ ...p, [a.id]: '' }))
+                              }}
+                              className="flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-lg transition-all"
+                              style={{ background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.25)', color: '#a5b4fc' }}>
+                              <Plus size={11} /> Añadir
+                            </button>
+                            {areaUserDropOpen[a.id] && (
+                              <div className="absolute right-0 top-8 z-20 rounded-xl shadow-2xl w-64"
+                                style={{ background: '#16162a', border: '1px solid rgba(255,255,255,0.10)', boxShadow: '0 20px 40px rgba(0,0,0,0.5)' }}>
+                                {/* Search */}
+                                <div className="p-2 border-b border-white/[0.06]">
+                                  <input
+                                    autoFocus
+                                    value={areaUserSearch[a.id] ?? ''}
+                                    onChange={e => setAreaUserSearch(p => ({ ...p, [a.id]: e.target.value }))}
+                                    placeholder="Buscar persona..."
+                                    className="w-full text-xs bg-white/[0.05] border border-white/[0.08] rounded-lg px-3 py-1.5 text-white/85 placeholder-white/30 outline-none focus:border-indigo-500/50"
+                                  />
+                                </div>
+                                <div className="max-h-48 overflow-y-auto py-1">
+                                  {filteredUnassigned.length === 0 ? (
+                                    <p className="text-xs text-white/35 text-center py-4">Sin resultados</p>
+                                  ) : filteredUnassigned.map((u: any) => {
+                                    const rc = roleColor(u.role)
+                                    return (
+                                      <button key={u.id}
+                                        onClick={() => handleAssignUserToArea(a.id, u.id)}
+                                        className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-white/[0.05] transition-colors">
+                                        <div className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0"
+                                          style={{ background: rc.bg, color: rc.text }}>
+                                          {u.name.charAt(0).toUpperCase()}
+                                        </div>
+                                        <div className="min-w-0 flex-1">
+                                          <p className="text-xs font-medium text-white/90 truncate">{u.name}</p>
+                                          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md mt-0.5 inline-block"
+                                            style={{ background: rc.bg, color: rc.text, border: `1px solid ${rc.border}` }}>
+                                            {u.role === 'agendadora' ? 'Agendador/a' : u.role === 'vendedor' ? 'Vendedor/a' : u.role}
+                                          </span>
+                                        </div>
+                                      </button>
+                                    )
+                                  })}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {areaAssigned.length === 0 ? (
+                        <p className="text-xs text-white/25 italic py-1">Sin personas asignadas aún</p>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {areaAssigned.map((u: any) => {
+                            const rc = roleColor(u.role)
+                            return (
+                              <div key={u.id} className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg group"
+                                style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                                <div className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0"
+                                  style={{ background: rc.bg, color: rc.text }}>
+                                  {u.name.charAt(0).toUpperCase()}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-xs font-medium text-white/90 truncate">{u.name}</p>
+                                </div>
+                                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md flex-shrink-0"
+                                  style={{ background: rc.bg, color: rc.text, border: `1px solid ${rc.border}` }}>
+                                  {u.role === 'agendadora' ? 'Agend.' : u.role === 'vendedor' ? 'Vend.' : u.role.slice(0,5)}
+                                </span>
+                                <button onClick={() => handleRemoveUserFromArea(a.id, u.id)}
+                                  className="w-6 h-6 flex items-center justify-center rounded-md opacity-0 group-hover:opacity-100 transition-all text-white/30 hover:text-red-400 hover:bg-red-500/10">
+                                  <X size={11} />
+                                </button>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
                     </div>
                   </div>
                 )
@@ -1161,95 +1208,143 @@ Reglas:
       {/* ──────────── MODALS ──────────── */}
 
       {/* Members modal */}
-      {showMembersModal && membersGroupId && (
+      {showMembersModal && membersGroupId && (() => {
+        const grpName = groups.find(g => g.id === membersGroupId)?.name ?? ''
+        const memberRoleColor = (role: string) => role === 'agendadora'
+          ? { bg: 'rgba(139,92,246,0.14)', border: 'rgba(139,92,246,0.30)', text: '#c4b5fd', dot: '#8b5cf6' }
+          : { bg: 'rgba(163,230,53,0.12)', border: 'rgba(163,230,53,0.28)', text: '#a3e635', dot: '#a3e635' }
+        return (
         <div className="fixed inset-0 modal-backdrop flex items-center justify-center z-50 p-4">
-          <div className="bg-surface-1 rounded-2xl shadow-modal w-full max-w-lg max-h-[85vh] flex flex-col">
-            <div className="flex items-center justify-between px-6 py-5 border-b border-white/[0.07] flex-shrink-0">
+          <div className="rounded-2xl shadow-2xl w-full max-w-lg max-h-[88vh] flex flex-col overflow-hidden"
+            style={{ background: '#13131f', border: '1px solid rgba(255,255,255,0.09)' }}>
+
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 flex-shrink-0"
+              style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 bg-surface-2 rounded-xl flex items-center justify-center">
-                  <UserCheck size={16} className="text-white/85" />
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                  style={{ background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.25)' }}>
+                  <UserCheck size={16} style={{ color: '#a5b4fc' }} />
                 </div>
                 <div>
-                  <h2 className="text-base font-bold text-white">
-                    Usuarios — {groups.find(g => g.id === membersGroupId)?.name}
-                  </h2>
-                  <p className="text-xs text-white/52 mt-0.5">{groupMembers.length} usuario{groupMembers.length !== 1 ? 's' : ''} asignado{groupMembers.length !== 1 ? 's' : ''}</p>
+                  <h2 className="text-sm font-bold text-white">{grpName}</h2>
+                  <p className="text-[11px] mt-0.5" style={{ color: 'rgba(255,255,255,0.40)' }}>
+                    {groupMembers.length} persona{groupMembers.length !== 1 ? 's' : ''} en el grupo
+                  </p>
                 </div>
               </div>
               <button onClick={() => { setShowMembersModal(false); setMembersGroupId(null) }}
-                className="p-2 hover:bg-surface-2 rounded-xl text-white/52 hover:text-white/85 transition-colors">
-                <X size={18} />
+                className="w-8 h-8 flex items-center justify-center rounded-xl transition-colors"
+                style={{ color: 'rgba(255,255,255,0.40)' }}
+                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.07)' }}
+                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}>
+                <X size={16} />
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-5 space-y-4">
+            <div className="flex-1 overflow-y-auto">
               {membersLoading ? (
-                <p className="text-center text-white/40 text-sm py-8">Cargando...</p>
+                <div className="flex items-center justify-center py-16">
+                  <div className="w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+                </div>
               ) : (
                 <>
                   {/* Current members */}
-                  <div>
-                    <p className="text-[10px] font-semibold text-white/40 uppercase tracking-wide mb-2">Asignados a este grupo</p>
+                  <div className="px-5 pt-5 pb-3">
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: 'rgba(255,255,255,0.35)' }}>
+                        Equipo actual
+                      </span>
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md"
+                        style={{ background: 'rgba(99,102,241,0.15)', color: '#a5b4fc' }}>
+                        {groupMembers.length}
+                      </span>
+                    </div>
                     {groupMembers.length === 0 ? (
-                      <div className="text-center py-6 bg-surface-0 rounded-xl border border-white/[0.07]">
-                        <UserCheck size={20} className="text-white/25 mx-auto mb-2" />
-                        <p className="text-sm text-white/40">Sin usuarios asignados</p>
+                      <div className="flex flex-col items-center py-8 rounded-xl"
+                        style={{ background: 'rgba(255,255,255,0.02)', border: '1px dashed rgba(255,255,255,0.08)' }}>
+                        <UserCheck size={22} style={{ color: 'rgba(255,255,255,0.18)' }} />
+                        <p className="text-xs mt-2" style={{ color: 'rgba(255,255,255,0.30)' }}>Sin personas asignadas aún</p>
                       </div>
                     ) : (
                       <div className="space-y-1.5">
-                        {groupMembers.map(u => (
-                          <div key={u.id} className="flex items-center gap-3 px-4 py-3 bg-surface-0 rounded-xl border border-white/[0.07]">
-                            <div className={`w-8 h-8 rounded-lg font-bold flex items-center justify-center text-sm flex-shrink-0 ${u.role === 'agendadora' ? 'bg-neon/15 text-neon' : 'bg-lime/15 text-lime'}`}>
-                              {u.name.charAt(0).toUpperCase()}
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2">
-                                <p className="text-sm font-semibold text-white/90 truncate">{u.name}</p>
-                                <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0 ${u.role === 'agendadora' ? 'bg-neon/10 text-neon' : 'bg-lime/10 text-lime'}`}>
-                                  {roleLabel[u.role] ?? u.role}
-                                </span>
+                        {groupMembers.map(u => {
+                          const rc = memberRoleColor(u.role)
+                          return (
+                            <div key={u.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl group transition-colors"
+                              style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}
+                              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.10)' }}
+                              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.06)' }}>
+                              <div className="w-8 h-8 rounded-xl font-bold flex items-center justify-center text-sm flex-shrink-0"
+                                style={{ background: rc.bg, color: rc.text, border: `1px solid ${rc.border}` }}>
+                                {u.name.charAt(0).toUpperCase()}
                               </div>
-                              <p className="text-xs text-white/42 truncate">{u.email}</p>
+                              <div className="min-w-0 flex-1">
+                                <p className="text-sm font-semibold truncate" style={{ color: 'rgba(255,255,255,0.90)' }}>{u.name}</p>
+                                <p className="text-[11px] truncate" style={{ color: 'rgba(255,255,255,0.38)' }}>{u.email}</p>
+                              </div>
+                              <span className="text-[10px] font-semibold px-2 py-1 rounded-lg flex-shrink-0"
+                                style={{ background: rc.bg, color: rc.text, border: `1px solid ${rc.border}` }}>
+                                {roleLabel[u.role] ?? u.role}
+                              </span>
+                              <button
+                                onClick={() => handleRemoveMember(u.id)}
+                                title="Quitar del grupo"
+                                className="w-7 h-7 flex items-center justify-center rounded-lg opacity-0 group-hover:opacity-100 transition-all flex-shrink-0"
+                                style={{ color: 'rgba(255,255,255,0.35)' }}
+                                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#f87171'; (e.currentTarget as HTMLElement).style.background = 'rgba(239,68,68,0.10)' }}
+                                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.35)'; (e.currentTarget as HTMLElement).style.background = 'transparent' }}>
+                                <UserMinus size={13} />
+                              </button>
                             </div>
-                            <button
-                              onClick={() => handleRemoveMember(u.id)}
-                              title="Quitar del grupo"
-                              className="p-1.5 hover:bg-danger/10 rounded-lg text-white/30 hover:text-danger transition-colors flex-shrink-0">
-                              <UserMinus size={14} />
-                            </button>
-                          </div>
-                        ))}
+                          )
+                        })}
                       </div>
                     )}
                   </div>
 
-                  {/* Users available to add */}
+                  {/* Divider */}
                   {unassigned.length > 0 && (
-                    <div>
-                      <p className="text-[10px] font-semibold text-white/40 uppercase tracking-wide mb-2">Disponibles para asignar</p>
+                    <div className="mx-5 my-1" style={{ height: '1px', background: 'rgba(255,255,255,0.06)' }} />
+                  )}
+
+                  {/* Available to add */}
+                  {unassigned.length > 0 && (
+                    <div className="px-5 pt-3 pb-5">
+                      <p className="text-[10px] font-bold uppercase tracking-widest mb-3" style={{ color: 'rgba(255,255,255,0.35)' }}>
+                        Disponibles para agregar
+                      </p>
                       <div className="space-y-1.5">
-                        {unassigned.map(u => (
-                          <div key={u.id} className="flex items-center gap-3 px-4 py-3 bg-surface-0 rounded-xl border border-white/[0.07] opacity-60 hover:opacity-100 transition-opacity">
-                            <div className="w-8 h-8 rounded-lg bg-surface-2 text-white/52 font-bold flex items-center justify-center text-sm flex-shrink-0">
-                              {u.name.charAt(0).toUpperCase()}
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2">
-                                <p className="text-sm font-semibold text-white/90 truncate">{u.name}</p>
-                                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-white/5 text-white/40 flex-shrink-0">
-                                  {roleLabel[u.role] ?? u.role}
-                                </span>
+                        {unassigned.map(u => {
+                          const rc = memberRoleColor(u.role)
+                          return (
+                            <div key={u.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all"
+                              style={{ background: 'rgba(255,255,255,0.015)', border: '1px solid rgba(255,255,255,0.04)' }}
+                              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.04)'; (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.08)' }}
+                              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.015)'; (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.04)' }}>
+                              <div className="w-8 h-8 rounded-xl font-bold flex items-center justify-center text-sm flex-shrink-0"
+                                style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.45)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                                {u.name.charAt(0).toUpperCase()}
                               </div>
-                              <p className="text-xs text-white/42 truncate">{u.email}</p>
+                              <div className="min-w-0 flex-1">
+                                <p className="text-sm font-semibold truncate" style={{ color: 'rgba(255,255,255,0.75)' }}>{u.name}</p>
+                                <p className="text-[11px] truncate" style={{ color: 'rgba(255,255,255,0.30)' }}>{u.email}</p>
+                              </div>
+                              <span className="text-[10px] font-semibold px-2 py-1 rounded-lg flex-shrink-0"
+                                style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.38)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                                {roleLabel[u.role] ?? u.role}
+                              </span>
+                              <button
+                                onClick={() => handleAssignMember(u.id)}
+                                className="flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-lg flex-shrink-0 transition-all"
+                                style={{ background: 'rgba(99,102,241,0.12)', color: '#a5b4fc', border: '1px solid rgba(99,102,241,0.22)' }}
+                                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(99,102,241,0.22)' }}
+                                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(99,102,241,0.12)' }}>
+                                <Plus size={11} /> Agregar
+                              </button>
                             </div>
-                            <button
-                              onClick={() => handleAssignMember(u.id)}
-                              title="Asignar a este grupo"
-                              className="flex items-center gap-1 text-xs font-semibold text-lime/80 hover:text-lime px-2.5 py-1.5 rounded-lg hover:bg-lime/10 transition-colors flex-shrink-0">
-                              <Plus size={12} /> Asignar
-                            </button>
-                          </div>
-                        ))}
+                          )
+                        })}
                       </div>
                     </div>
                   )}
@@ -1258,7 +1353,8 @@ Reglas:
             </div>
           </div>
         </div>
-      )}
+        )
+      })()}
 
       {/* User modal */}
       {showUserModal && (() => {
