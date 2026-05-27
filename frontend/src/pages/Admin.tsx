@@ -657,28 +657,28 @@ Reglas:
       {/* Users tab */}
       {activeTab === 'users' && (
         <div className="bg-surface-1 rounded-xl border border-white/[0.07] shadow-sm overflow-hidden">
-          <div className="flex items-center justify-between px-6 py-4 border-b border-white/5 gap-4">
-            <h2 className="font-semibold text-white/90 flex-shrink-0">Usuarios <span className="text-white/52 font-normal">({visibleUsers.length})</span></h2>
-            <div className="flex items-center gap-2 flex-1 max-w-xs">
-              <div className="relative flex-1">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-white/5">
+            <h2 className="font-semibold text-white/90">Usuarios <span className="text-white/52 font-normal">({visibleUsers.length})</span></h2>
+            <div className="flex items-center gap-2">
+              <div className="relative">
                 <input
                   type="text"
                   value={userSearch}
                   onChange={e => setUserSearch(e.target.value)}
-                  placeholder="Buscar por nombre, email o rol..."
-                  className="input w-full pl-8 text-sm"
+                  placeholder="Buscar..."
+                  className="input pl-8 pr-7 text-sm w-48"
                 />
-                <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 text-white/35 pointer-events-none" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 text-white/35 pointer-events-none" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
                 {userSearch && (
-                  <button onClick={() => setUserSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-white/35 hover:text-white/70">
-                    <X size={13} />
+                  <button onClick={() => setUserSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-white/35 hover:text-white/70">
+                    <X size={12} />
                   </button>
                 )}
               </div>
+              <button onClick={openCreateUser} className="btn-primary text-sm">
+                <Plus size={15} /> Nuevo Usuario
+              </button>
             </div>
-            <button onClick={openCreateUser} className="btn-primary text-sm flex-shrink-0">
-              <Plus size={15} /> Nuevo Usuario
-            </button>
           </div>
 
           <div className="overflow-x-auto">
