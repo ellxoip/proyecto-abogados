@@ -39,6 +39,7 @@ class UserOut(BaseModel):
     email: str
     role: str
     group_id: Optional[int]
+    group_ids: List[int] = []
     is_active: bool
     whatsapp_number: Optional[str]
     at_informa_user_id: Optional[str] = None

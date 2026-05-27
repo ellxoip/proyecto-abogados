@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 from typing import List
 from ..database import get_db
@@ -154,17 +155,91 @@ def get_default_assignment(
                 "vendedor":   {"id": vendedor.id,   "name": vendedor.name}   if vendedor   else None,
             }
 
-    # Fallback: all group users
-    group_users = db.query(models.User).filter(
-        models.User.group_id == group_id,
+    # Fallback: all group users (primary group_id OR in group_users M2M)
+    from ..models import group_users as group_users_table
+    m2m_rows = db.execute(
+        group_users_table.select().where(group_users_table.c.group_id == group_id)
+    ).fetchall()
+    m2m_user_ids = [row[1] for row in m2m_rows]
+    membership_filter = (
+        or_(models.User.group_id == group_id, models.User.id.in_(m2m_user_ids))
+        if m2m_user_ids
+        else (models.User.group_id == group_id)
+    )
+    group_members = db.query(models.User).filter(
         models.User.is_active == True,
+        membership_filter,
     ).all()
-    agendadora = _least_loaded(group_users, "agendadora")
-    vendedor   = _least_loaded(group_users, "vendedor")
+    agendadora = _least_loaded(group_members, "agendadora")
+    vendedor   = _least_loaded(group_members, "vendedor")
     return {
         "agendadora": {"id": agendadora.id, "name": agendadora.name} if agendadora else None,
         "vendedor":   {"id": vendedor.id,   "name": vendedor.name}   if vendedor   else None,
     }
+
+
+# ── GROUP ↔ USER MEMBERSHIP (M2M) ────────────────────────
+@router.get("/{group_id}/members", response_model=List[schemas.UserOut])
+def list_group_members(
+    group_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    group = (
+        db.query(models.Group)
+        .options(joinedload(models.Group.member_users))
+        .filter(models.Group.id == group_id)
+        .first()
+    )
+    if not group:
+        raise HTTPException(status_code=404, detail="Grupo no encontrado")
+    return [u for u in group.member_users if u.is_active]
+
+
+@router.post("/{group_id}/members/{user_id}")
+def assign_user_to_group(
+    group_id: int,
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_roles("superadmin", "subadmin"))
+):
+    group = (
+        db.query(models.Group)
+        .options(joinedload(models.Group.member_users))
+        .filter(models.Group.id == group_id)
+        .first()
+    )
+    if not group:
+        raise HTTPException(status_code=404, detail="Grupo no encontrado")
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    if user not in group.member_users:
+        group.member_users.append(user)
+        db.commit()
+    return {"ok": True, "group_id": group_id, "user_id": user_id}
+
+
+@router.delete("/{group_id}/members/{user_id}")
+def remove_user_from_group(
+    group_id: int,
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_roles("superadmin", "subadmin"))
+):
+    group = (
+        db.query(models.Group)
+        .options(joinedload(models.Group.member_users))
+        .filter(models.Group.id == group_id)
+        .first()
+    )
+    if not group:
+        raise HTTPException(status_code=404, detail="Grupo no encontrado")
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if user and user in group.member_users:
+        group.member_users.remove(user)
+        db.commit()
+    return {"ok": True}
 
 
 # ── AREAS ────────────────────────────────────────────────

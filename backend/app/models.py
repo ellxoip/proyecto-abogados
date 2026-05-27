@@ -19,6 +19,14 @@ area_users = Table(
     Column("user_id",  Integer, ForeignKey("users.id",  ondelete="CASCADE"), primary_key=True),
 )
 
+# Many-to-many: Group ↔ User (user can belong to multiple groups)
+group_users = Table(
+    "group_users",
+    Base.metadata,
+    Column("group_id", Integer, ForeignKey("groups.id", ondelete="CASCADE"), primary_key=True),
+    Column("user_id",  Integer, ForeignKey("users.id",  ondelete="CASCADE"), primary_key=True),
+)
+
 # Many-to-many: AIAgent ↔ WhatsAppConfig (1 agent can serve multiple numbers, fully isolated by config_id)
 ai_agent_configs = Table(
     "ai_agent_configs",
@@ -48,12 +56,20 @@ class User(Base):
     locked_until = Column(DateTime(timezone=True), nullable=True)
 
     group = relationship("Group", back_populates="members")
+    member_groups = relationship("Group", secondary=group_users, back_populates="member_users")
     leads_as_agendadora = relationship("Lead", foreign_keys="Lead.agendadora_id", back_populates="agendadora")
     leads_as_vendedor = relationship("Lead", foreign_keys="Lead.vendedor_id", back_populates="vendedor")
     notifications = relationship("Notification", back_populates="user")
     payment_verifications = relationship("PaymentVerification", back_populates="assigned_to_user")
     calendar_events = relationship("CalendarEvent", foreign_keys="CalendarEvent.created_by", back_populates="creator")
     google_token = relationship("GoogleCalendarToken", back_populates="user", uselist=False)
+
+    @property
+    def group_ids(self) -> list:
+        try:
+            return [g.id for g in self.member_groups]
+        except Exception:
+            return []
 
 
 class Group(Base):
@@ -70,6 +86,7 @@ class Group(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     members = relationship("User", back_populates="group")
+    member_users = relationship("User", secondary=group_users, back_populates="member_groups")
     areas = relationship("Area", back_populates="group")
     whatsapp_configs = relationship("WhatsAppConfig", back_populates="group")
     leads = relationship("Lead", back_populates="group")

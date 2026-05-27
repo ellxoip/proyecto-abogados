@@ -13,6 +13,7 @@ import {
   getAuditLog, getSecurityStats, getLockedUsers, unlockUser,
   updateAIAgentSchedule,
   assignUserToArea, removeUserFromArea,
+  getGroupMembers, assignUserToGroup, removeUserFromGroup,
 } from '../api'
 import type { User, Group, Area, WhatsAppConfig } from '../types'
 import { STAGE_LABELS as DEFAULT_STAGE_LABELS } from '../types'
@@ -81,15 +82,16 @@ export default function Admin() {
     setMembersLoading(true)
     try {
       const [members, all] = await Promise.all([
-        getUsers({ group_id: gid }),
+        getGroupMembers(gid),
         getUsers(),
       ])
-      setGroupMembers(members.filter((u: User) => u.is_active && ['vendedor', 'agendadora'].includes(u.role)))
+      const activeMembers = members.filter((u: User) => u.is_active && ['vendedor', 'agendadora'].includes(u.role))
+      setGroupMembers(activeMembers)
       setUnassigned(
         all.filter((u: User) =>
           u.is_active &&
           ['vendedor', 'agendadora'].includes(u.role) &&
-          !u.group_id
+          !activeMembers.some((m: User) => m.id === u.id)
         )
       )
     } catch { toast.error('Error cargando miembros') }
@@ -98,17 +100,15 @@ export default function Admin() {
 
   const handleAssignMember = async (userId: number) => {
     try {
-      await updateUser(userId, { group_id: membersGroupId })
+      await assignUserToGroup(membersGroupId!, userId)
       await openGroupMembers(membersGroupId!)
-      loadUsers()
     } catch { toast.error('Error al asignar') }
   }
 
   const handleRemoveMember = async (userId: number) => {
     try {
-      await updateUser(userId, { group_id: null })
+      await removeUserFromGroup(membersGroupId!, userId)
       await openGroupMembers(membersGroupId!)
-      loadUsers()
     } catch { toast.error('Error al quitar del grupo') }
   }
 
@@ -686,7 +686,9 @@ Reglas:
                       </span>
                     </td>
                     <td className="table-cell text-xs text-white/62">
-                      {groups.find(g => g.id === u.group_id)?.name ?? '—'}
+                      {(u.group_ids?.length
+                        ? u.group_ids.map(gid => groups.find(g => g.id === gid)?.name).filter(Boolean).join(', ')
+                        : groups.find(g => g.id === u.group_id)?.name) ?? '—'}
                     </td>
                     <td className="table-cell">
                       <span className={`badge border text-[11px] ${u.is_active ? 'text-lime border border-lime/30 bg-lime/10' : 'text-danger border border-danger/30 bg-danger/10'}`}>
@@ -816,12 +818,11 @@ Reglas:
                 const phones: any[] = a.phone_configs ?? []
                 const areaAssigned: any[] = a.users ?? []
                 // Users in the group not yet assigned to this area
-                const groupUsers = users.filter(u =>
+                const allEligible = users.filter(u =>
                   u.is_active &&
-                  u.group_id === selectedGroup &&
                   ['agendadora','vendedor','subadmin','verificador'].includes(u.role)
                 )
-                const unassigned = groupUsers.filter(u => !areaAssigned.some((au: any) => au.id === u.id))
+                const unassigned = allEligible.filter(u => !areaAssigned.some((au: any) => au.id === u.id))
 
                 return (
                   <div key={a.id} className="p-4 bg-surface-0 rounded-xl border border-white/[0.07]">
@@ -895,7 +896,7 @@ Reglas:
                               </div>
                             )}
                             {areaAssigned.length === 0 && unassigned.length === 0 && (
-                              <p className="text-xs text-white/32 italic">Sin usuarios en el grupo</p>
+                              <p className="text-xs text-white/32 italic">Sin usuarios disponibles</p>
                             )}
                           </div>
                         </div>
@@ -1222,10 +1223,10 @@ Reglas:
                     )}
                   </div>
 
-                  {/* Unassigned vendedores to add */}
+                  {/* Users available to add */}
                   {unassigned.length > 0 && (
                     <div>
-                      <p className="text-[10px] font-semibold text-white/40 uppercase tracking-wide mb-2">Sin grupo — disponibles para asignar</p>
+                      <p className="text-[10px] font-semibold text-white/40 uppercase tracking-wide mb-2">Disponibles para asignar</p>
                       <div className="space-y-1.5">
                         {unassigned.map(u => (
                           <div key={u.id} className="flex items-center gap-3 px-4 py-3 bg-surface-0 rounded-xl border border-white/[0.07] opacity-60 hover:opacity-100 transition-opacity">

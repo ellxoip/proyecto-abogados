@@ -391,6 +391,19 @@ def _run_migrations():
         except Exception:
             pass
 
+        # group_users M2M table (user can belong to multiple groups)
+        try:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS group_users (
+                    group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+                    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    PRIMARY KEY (group_id, user_id)
+                )
+            """))
+            conn.commit()
+        except Exception:
+            pass
+
         # Pipeline stages table for non-abogados negocios
         try:
             conn.execute(text("""

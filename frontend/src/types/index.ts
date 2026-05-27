@@ -4,6 +4,7 @@ export interface User {
   email: string
   role: string
   group_id: number | null
+  group_ids: number[]
   is_active: boolean
   whatsapp_number: string | null
   created_at: string
