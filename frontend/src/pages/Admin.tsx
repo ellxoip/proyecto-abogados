@@ -73,6 +73,8 @@ export default function Admin() {
 
   const openGroupAreas = async (gid: number) => {
     setSelectedGroup(gid)
+    setAreaUserDropOpen({})
+    setAreaUserSearch({})
     setShowAreasModal(true)
   }
 
@@ -799,7 +801,7 @@ Reglas:
                 </div>
               </div>
               <button
-                onClick={() => { setShowAreasModal(false); setSelectedGroup(null) }}
+                onClick={() => { setShowAreasModal(false); setSelectedGroup(null); setAreaUserDropOpen({}); setAreaUserSearch({}) }}
                 className="p-2 hover:bg-surface-2 rounded-xl text-white/52 hover:text-white/85 transition-colors">
                 <X size={18} />
               </button>
