@@ -1,0 +1,100 @@
+import { getToken } from "next-auth/jwt";
+import { NextRequest, NextResponse } from "next/server";
+
+const PUBLIC_PATHS = [
+  "/login",
+  "/registro",
+  "/auth/",
+  "/api/auth",
+  "/api/casos",
+  "/api/webhooks/",
+  "/api/crm",
+  "/api/v1",
+  "/api/internal/",
+  "/api/integration/",
+  "/api/cron/",
+];
+
+// NextAuth v5 cookie names (Auth.js renamed from "next-auth" to "authjs").
+const SESSION_COOKIE_NAMES = [
+  "__Secure-authjs.session-token",
+  "authjs.session-token",
+  "__Secure-next-auth.session-token",
+  "next-auth.session-token",
+];
+
+async function readSessionToken(req: NextRequest) {
+  const secret = process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET;
+  const isHttps =
+    req.nextUrl.protocol === "https:" || req.headers.get("x-forwarded-proto") === "https";
+
+  for (const cookieName of SESSION_COOKIE_NAMES) {
+    if (!req.cookies.get(cookieName)) continue;
+    try {
+      const token = await getToken({ req, secret, secureCookie: isHttps, cookieName });
+      if (token) return token;
+    } catch {
+      // Probar el siguiente nombre de cookie.
+    }
+  }
+  // Ultimo intento usando los defaults de getToken.
+  return getToken({ req, secret, secureCookie: isHttps });
+}
+
+export default async function middleware(req: NextRequest) {
+  const { pathname } = req.nextUrl;
+  if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) return NextResponse.next();
+
+  const token = await readSessionToken(req);
+
+  if (!token) {
+    const url = req.nextUrl.clone();
+    url.pathname = "/login";
+    return NextResponse.redirect(url);
+  }
+
+  const role = token.role;
+
+  // Redirección de la raíz en el MIDDLEWARE (307 limpio) en vez de en la page
+  // server-component, que hacía redirect() dentro de Suspense → el redirect
+  // viajaba por streaming y los navegadores in-app (WhatsApp) no lo seguían,
+  // dejando al usuario en un loop infinito de "Cargando/Procesando".
+  if (pathname === "/") {
+    return NextResponse.redirect(new URL(role === "CLIENTE" ? "/portal" : "/admin", req.url));
+  }
+
+  if (pathname.startsWith("/portal") && role !== "CLIENTE") {
+    return NextResponse.redirect(new URL("/", req.url));
+  }
+  if (pathname.startsWith("/admin") && role === "CLIENTE") {
+    return NextResponse.redirect(new URL("/portal", req.url));
+  }
+  if (
+    (pathname.startsWith("/admin/productividad") ||
+      pathname.startsWith("/admin/mora") ||
+      pathname.startsWith("/admin/monitoreo")) &&
+    role !== "SUPER_ADMIN"
+  ) {
+    return NextResponse.redirect(new URL("/admin/casos", req.url));
+  }
+
+  // Command Center (/admin) restringido a SUPER_ADMIN. ABOGADO y JEFE_DE_MESA
+  // van directo a su bandeja sin pasar por la vista ejecutiva.
+  if (pathname === "/admin" && role !== "SUPER_ADMIN") {
+    return NextResponse.redirect(new URL("/admin/bandeja", req.url));
+  }
+
+  // Nota: anteriormente forzábamos rotación de contraseña al primer
+  // login (mustChangePassword=true). Hoy el cliente ya conoce su
+  // clave desde PagaCuotas, así que el cambio es voluntario desde
+  // `/portal/cambiar-password`. El flag se conserva solo para
+  // compatibilidad con datos legados — no bloquea el portal.
+
+  return NextResponse.next();
+}
+
+export const config = {
+  // Skip Next internals, fonts, and any path that ends with a file extension
+  // (so static assets in /public/** are served directly without auth redirects).
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|fonts/|brand/|.*\\..*).*)"],
+};
