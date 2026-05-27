@@ -1401,17 +1401,21 @@ Reglas:
                           <div className="flex items-center gap-3 mt-1.5 flex-wrap">
                             {/* Multi-number chips */}
                             {(agent.configs ?? []).map((c: any) => (
-                              <span key={c.id} className="flex items-center gap-1.5 text-xs bg-lime/10 border border-lime/20 px-2 py-1 rounded-lg">
-                                <MessageSquare size={9} className="text-lime/70 flex-shrink-0" />
+                              <span key={c.id} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded-lg"
+                                style={{ background: '#1c1c2e', border: '1px solid #3a3a5c' }}>
+                                <MessageSquare size={9} style={{ color: '#a78bfa', flexShrink: 0 }} />
                                 <span className="flex flex-col leading-none">
-                                  <span className="text-lime/90 font-semibold">{c.phone_number}</span>
+                                  <span className="font-semibold" style={{ color: '#f5f5ff' }}>{c.phone_number}</span>
                                   {c.group_name && (
-                                    <span className="text-white/40 text-[9px] mt-0.5">{c.group_name}</span>
+                                    <span className="text-[9px] mt-0.5" style={{ color: '#9090b0' }}>{c.group_name}</span>
                                   )}
                                 </span>
                                 <button
                                   onClick={() => handleRemoveConfig(agent.id, c.id)}
-                                  className="ml-0.5 text-white/25 hover:text-danger transition-colors flex-shrink-0"
+                                  className="ml-0.5 transition-colors flex-shrink-0"
+                                  style={{ color: '#6060a0' }}
+                                  onMouseEnter={e => (e.currentTarget.style.color = '#f87171')}
+                                  onMouseLeave={e => (e.currentTarget.style.color = '#6060a0')}
                                   title="Quitar número">
                                   <X size={9} />
                                 </button>
