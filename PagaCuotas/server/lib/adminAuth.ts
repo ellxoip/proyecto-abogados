@@ -1,8 +1,8 @@
 import crypto from 'crypto';
 import type { Request, Response, NextFunction } from 'express';
 
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@pagacuotas.local';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Admin123!';
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'superadmin@pagacuotas.demo';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Demo2026!';
 const ADMIN_TOKEN_SECRET = process.env.ADMIN_TOKEN_SECRET || process.env.JWT_SECRET || 'change-this-admin-secret';
 const TOKEN_TTL_MS = 8 * 60 * 60 * 1000;
 

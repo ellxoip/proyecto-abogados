@@ -24,6 +24,7 @@ import {
 } from '../validators/support.validators.js';
 import { clientLoginSchema, clientPasswordUpdateSchema } from '../validators/client.validators.js';
 import type { Request, Response, NextFunction } from 'express';
+import { outboxService } from '../services/outbox.service.js';
 
 const router = Router();
 
@@ -64,6 +65,7 @@ router.get('/deudas/:identifier', requireClientAuth, ensureClientOwnsIdentifier,
 router.get('/contratos/:contratoId/cuotas', requireClientAuth, paymentController.getContractInstallments);
 router.post('/payment-intents', requireClientAuth, validate(createPaymentIntentSchema), ensureClientOwnsPaymentIntent, paymentController.createPaymentIntent);
 router.get('/client/billing-documents', requireClientAuth, billingController.listClientDocuments);
+router.get('/client/case-updates', requireClientAuth, clientController.getCaseUpdates);
 router.post('/support/tickets', validate(createSupportTicketSchema), supportController.createTicket);
 
 // ===========================================================
@@ -117,6 +119,23 @@ router.post('/admin/retry-all-failed', requireAdminAuth, paymentController.retry
 router.post('/admin/reconciliation/run', requireAdminAuth, paymentController.runReconciliation);
 router.get('/admin/support/tickets', requireAdminAuth, supportController.listTickets);
 router.patch('/admin/support/tickets/:id', requireAdminAuth, validate(updateSupportTicketSchema), supportController.updateTicket);
+
+// ===========================================================
+// Cron (Vercel Cron Jobs — triggered every 5 min)
+// ===========================================================
+router.get('/cron/process-outbox', async (req: Request, res: Response) => {
+  const secret = process.env.CRON_SECRET;
+  if (secret && req.headers.authorization !== `Bearer ${secret}`) {
+    res.status(401).json({ ok: false });
+    return;
+  }
+  try {
+    const result = await outboxService.processOnce();
+    res.json({ ok: true, ...result });
+  } catch (err: any) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
 
 // ===========================================================
 // Health & Status

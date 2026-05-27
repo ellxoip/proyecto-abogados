@@ -1,5 +1,5 @@
 import { Outlet, useLocation, Link, useNavigate } from 'react-router-dom';
-import { Shield, Bell, UserCircle, Home, CreditCard, Lock, ArrowLeft, HelpCircle } from 'lucide-react';
+import { Shield, Bell, Home, CreditCard, Lock, ArrowLeft, HelpCircle, Settings as SettingsIcon } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
 export default function ClientLayout() {
@@ -36,7 +36,9 @@ export default function ClientLayout() {
           </div>
           <div className="flex items-center gap-4">
             <Bell className="w-5 h-5 text-slate-500 cursor-pointer" />
-            <UserCircle className="w-5 h-5 text-slate-500 cursor-pointer" />
+            <Link to="/client/settings" aria-label="Configuración">
+              <SettingsIcon className={cn('w-5 h-5 cursor-pointer', location.pathname.includes('/settings') ? 'text-indigo-800' : 'text-slate-500')} />
+            </Link>
           </div>
         </nav>
       )}
@@ -64,6 +66,10 @@ export default function ClientLayout() {
           <Link to="/client/support" className={cn("flex flex-col items-center justify-center rounded-xl px-4 py-1", location.pathname.includes('/support') ? "bg-indigo-50 text-indigo-800" : "text-slate-400")}>
             <HelpCircle className="w-6 h-6" />
             <span className="font-manrope text-[10px] font-semibold mt-1">Soporte</span>
+          </Link>
+          <Link to="/client/settings" className={cn("flex flex-col items-center justify-center rounded-xl px-4 py-1", location.pathname.includes('/settings') ? "bg-indigo-50 text-indigo-800" : "text-slate-400")}>
+            <SettingsIcon className="w-6 h-6" />
+            <span className="font-manrope text-[10px] font-semibold mt-1">Ajustes</span>
           </Link>
         </nav>
       )}

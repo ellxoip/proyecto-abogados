@@ -2,12 +2,14 @@
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model CrmClientProfile {
@@ -30,10 +32,10 @@ model CrmClientProfile {
   agendadora           String?
   fuente               String?
   // Honorarios snapshot (autoritativo en SIS.CONTABLE)
-  total_snapshot       Decimal?
-  cuota_inicial_snap   Decimal?
+  total_snapshot       Decimal? @db.Decimal(12, 2)
+  cuota_inicial_snap   Decimal? @db.Decimal(12, 2)
   num_cuotas           Int?
-  monto_cuota_snap     Decimal?
+  monto_cuota_snap     Decimal? @db.Decimal(12, 2)
   // Notas
   descripcion          String?
   notas_internas       String?
@@ -41,6 +43,7 @@ model CrmClientProfile {
   magic_token          String   @unique
   magic_token_revoked  Boolean  @default(false)
   last_login_at        DateTime?
+  password_changed_at  DateTime?
   // Timestamps
   created_at           DateTime @default(now())
   updated_at           DateTime @updatedAt
@@ -70,10 +73,10 @@ model PaymentAttempt {
   cliente_identifier      String?  // RUT/email/id used by the client in the portal
   cliente_contable_id     String
   contrato_contable_id    String
-  cuota_ids_json          String   // JSON string array of installment IDs
+  cuota_ids_json          Json     // array of installment IDs
   provider                String   // e.g., mercadopago
   provider_transaction_id String?  @unique
-  amount                  Decimal
+  amount                  Decimal  @db.Decimal(12, 2)
   currency                String   @default("CLP")
   method                  String?  // tarjeta, transferencia, etc.
   status                  String   // iniciado, pendiente, autorizado, confirmado, rechazado, expirado, error, reversado
@@ -82,9 +85,9 @@ model PaymentAttempt {
   sis_contable_error       String?
   sis_contable_retry_count Int     @default(0)
   // Provider payloads
-  request_payload_json    String?  // Raw request to provider
-  response_payload_json   String?  // Raw response from provider
-  provider_payload_json   String?  // Webhook payload
+  request_payload_json    Json?    // Raw request to provider
+  response_payload_json   Json?    // Raw response from provider
+  provider_payload_json   Json?    // Webhook payload
   // Validation from SIS.CONTABLE
   validation_status       String?  // APPROVED_TO_PAY, REJECTED
   validation_expires_at   DateTime?
@@ -111,7 +114,7 @@ model Payment {
   provider                  String
   provider_transaction_id   String?
   transaction_number        String?
-  amount                    Decimal
+  amount                    Decimal  @db.Decimal(12, 2)
   method                    String?
   status                    String   // confirmado, rechazado, reversado, anulado
   paid_at                   DateTime?
@@ -128,7 +131,7 @@ model Payment {
   crm_sync_error            String?
   crm_retry_count           Int      @default(0)
   // Provider raw data
-  raw_provider_payload_json String?
+  raw_provider_payload_json Json?
   // Timestamps
   created_at                DateTime @default(now())
   updated_at                DateTime @updatedAt
@@ -160,14 +163,14 @@ model BillingDocument {
   recipient_rut          String
   recipient_name         String
   recipient_email        String?
-  net_amount             Decimal
-  tax_amount             Decimal
-  total_amount           Decimal
+  net_amount             Decimal  @db.Decimal(12, 2)
+  tax_amount             Decimal  @db.Decimal(12, 2)
+  total_amount           Decimal  @db.Decimal(12, 2)
   pdf_url                String?
   xml_url                String?
-  request_payload_json   String?
-  response_payload_json  String?
-  provider_payload_json  String?
+  request_payload_json   Json?
+  response_payload_json  Json?
+  provider_payload_json  Json?
   error_message          String?
   retry_count            Int      @default(0)
   issued_at              DateTime?
@@ -193,8 +196,8 @@ model PaymentReversal {
   cliente_contable_id       String
   contrato_contable_id      String
   provider                  String
-  cuota_ids_json            String
-  amount_reversed           Decimal
+  cuota_ids_json            Json
+  amount_reversed           Decimal  @db.Decimal(12, 2)
   reason                    String?
   provider_reversal_code    String?
   // SIS.CONTABLE sync
@@ -223,8 +226,8 @@ model IntegrationLog {
   event_type            String
   endpoint              String?
   http_method           String?
-  request_payload_json  String?
-  response_payload_json String?
+  request_payload_json  Json?
+  response_payload_json Json?
   status                Int?
   duration_ms           Int?
   error_message         String?
@@ -243,7 +246,7 @@ model IntegrationOutbox {
   aggregate_type       String
   aggregate_id         String
   idempotency_key      String   @unique
-  payload_json         String
+  payload_json         Json
   status               String   @default("pending") // pending, processing, published, failed
   retry_count          Int      @default(0)
   last_error           String?
@@ -262,7 +265,7 @@ model DeadLetterQueue {
   source               String
   event_type           String
   aggregate_id         String?
-  payload_json         String?
+  payload_json         Json?
   error_message        String
   retry_count          Int      @default(0)
   status               String   @default("open") // open, resolved, ignored
@@ -284,7 +287,7 @@ model ReconciliationRun {
   sis_retried          Int      @default(0)
   crm_retried          Int      @default(0)
   errors_count         Int      @default(0)
-  result_json          String?
+  result_json          Json?
 
   @@index([status])
   @@index([started_at])

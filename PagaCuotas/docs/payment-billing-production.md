@@ -59,7 +59,7 @@ PORT=4000
 DATABASE_URL="file:./prisma/dev.db"
 APP_URL=http://localhost:4000
 VITE_API_BASE_URL=http://localhost:4000
-CLIENT_PORTAL_BASE_URL=http://localhost:3000
+CLIENT_PORTAL_BASE_URL=http://localhost:3002
 
 PAYMENT_ENVIRONMENT=sandbox
 PAYMENT_DEFAULT_PROVIDER=transbank
@@ -227,4 +227,3 @@ TRANSBANK_ENABLED=false
 - SIS.CONTABLE recibe pago antes de DTE.
 - Webhooks idempotentes.
 - Secretos fuera de logs.
-

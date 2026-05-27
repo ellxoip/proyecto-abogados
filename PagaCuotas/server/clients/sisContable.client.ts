@@ -13,16 +13,19 @@ import type {
   PaymentRejectedResponse,
   PaymentReversedPayload,
   PaymentReversedResponse,
+  CaseUpdatesResponse,
   IntegrationError,
 } from '../types/index.js';
 import prisma from '../lib/prisma.js';
 import { logger } from '../lib/logger.js';
 import {
+  authenticateLocalClient,
   confirmLocalPayment,
   findLocalDebt,
   findLocalInstallments,
   rejectLocalPayment,
   reverseLocalPayment,
+  updateLocalClientPassword,
   validateLocalPaymentIntent,
 } from '../fixtures/localSisContable.fixture.js';
 
@@ -32,7 +35,23 @@ const SIS_CONTABLE_BASE_URL = process.env.SIS_CONTABLE_BASE_URL || 'http://local
 const SIS_CONTABLE_API_KEY = process.env.SIS_CONTABLE_API_KEY || '';
 const SIS_CONTABLE_BEARER_TOKEN = process.env.SIS_CONTABLE_BEARER_TOKEN || '';
 const SIS_CONTABLE_AUTH_METHOD = process.env.SIS_CONTABLE_AUTH_METHOD || 'api_key'; // api_key | bearer
-const SIS_CONTABLE_LOCAL_FIXTURES = process.env.SIS_CONTABLE_LOCAL_FIXTURES === 'true';
+
+// Local fixtures: simulan respuestas de SIS.CONTABLE para desarrollo sin DB real.
+// Producción debe SIEMPRE hablar contra hive-financial-control real, así que el flag
+// se ignora cuando NODE_ENV === "production" o PAYMENT_ENVIRONMENT === "production".
+const IS_PROD =
+  process.env.NODE_ENV === 'production' ||
+  process.env.PAYMENT_ENVIRONMENT === 'production';
+const REQUESTED_LOCAL_FIXTURES = process.env.SIS_CONTABLE_LOCAL_FIXTURES === 'true';
+const SIS_CONTABLE_LOCAL_FIXTURES = REQUESTED_LOCAL_FIXTURES && !IS_PROD;
+
+if (REQUESTED_LOCAL_FIXTURES && IS_PROD) {
+  // eslint-disable-next-line no-console
+  console.error(
+    '[sisContable.client] SIS_CONTABLE_LOCAL_FIXTURES=true ignorado en producción. ' +
+      'Las fixtures locales NUNCA deben usarse en prod; verificar configuración de ENV.',
+  );
+}
 
 const MAX_RETRIES = 3;
 const RETRY_BASE_DELAY_MS = 1000;
@@ -78,6 +97,16 @@ export class SisContableClient {
   }
 
   async loginClient(identifier: string, password: string): Promise<{ cliente: SisContableDebtResponse['cliente']; debts: SisContableDebtResponse }> {
+    if (SIS_CONTABLE_LOCAL_FIXTURES) {
+      const localSession = authenticateLocalClient(identifier, password);
+      if (localSession) return localSession;
+      throw {
+        message: 'Credenciales invalidas.',
+        status: 401,
+        code: 'CLIENT_INVALID_CREDENTIALS',
+      } as IntegrationError;
+    }
+
     const response = await this.requestWithLog<any>(
       'POST',
       '/api/integrations/pagacuotas/client-login',
@@ -97,11 +126,38 @@ export class SisContableClient {
   }
 
   async updateClientPassword(identifier: string, currentPassword: string, newPassword: string): Promise<void> {
+    if (SIS_CONTABLE_LOCAL_FIXTURES) {
+      if (updateLocalClientPassword(identifier, currentPassword) && /^[a-zA-Z0-9]{6}$/.test(newPassword)) return;
+      throw {
+        message: 'Credenciales invalidas.',
+        status: 401,
+        code: 'CLIENT_INVALID_CREDENTIALS',
+      } as IntegrationError;
+    }
+
     await this.requestWithLog<any>(
       'PATCH',
       '/api/integrations/pagacuotas/client-login',
       { identifier, currentPassword, newPassword },
       'client_password_update'
+    );
+  }
+
+  async setClientPasswordFromAutoLogin(identifier: string, newPassword: string): Promise<void> {
+    if (SIS_CONTABLE_LOCAL_FIXTURES) {
+      if (findLocalDebt(identifier) && /^[a-zA-Z0-9]{6}$/.test(newPassword)) return;
+      throw {
+        message: 'Credenciales invalidas.',
+        status: 401,
+        code: 'CLIENT_INVALID_CREDENTIALS',
+      } as IntegrationError;
+    }
+
+    await this.requestWithLog<any>(
+      'PATCH',
+      '/api/integrations/pagacuotas/client-login',
+      { identifier, newPassword, autoLoginPasswordChange: true },
+      'client_password_update_auto_login'
     );
   }
 
@@ -209,7 +265,9 @@ export class SisContableClient {
     try {
       const response = method === 'GET'
         ? await this.client.get<T>(endpoint)
-        : await this.client.post<T>(endpoint, payload);
+        : method === 'PATCH'
+          ? await this.client.patch<T>(endpoint, payload)
+          : await this.client.post<T>(endpoint, payload);
 
       const duration = Date.now() - startTime;
 
@@ -412,8 +470,8 @@ export class SisContableClient {
           event_type: eventType,
           endpoint,
           http_method: httpMethod,
-          request_payload_json: request ? JSON.stringify(request) : null,
-          response_payload_json: response ? JSON.stringify(response) : null,
+          request_payload_json: request ?? null,
+          response_payload_json: response ?? null,
           status: status || null,
           duration_ms: durationMs || null,
           error_message: errorMessage || null,

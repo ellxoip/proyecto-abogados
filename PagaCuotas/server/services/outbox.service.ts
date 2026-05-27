@@ -31,7 +31,7 @@ export class OutboxService {
         aggregate_type: params.aggregateType,
         aggregate_id: params.aggregateId,
         idempotency_key: params.idempotencyKey,
-        payload_json: JSON.stringify(params.payload),
+        payload_json: params.payload as any,
       },
     });
   }
@@ -85,7 +85,7 @@ export class OutboxService {
         }
 
         try {
-          const payload = JSON.parse(event.payload_json);
+          const payload = event.payload_json;
           await handler(payload, event.aggregate_id);
           await this.markPublished(event.idempotency_key);
           stats.published += 1;

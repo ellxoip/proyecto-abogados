@@ -70,7 +70,7 @@ export class ReconciliationService {
           sis_retried: result.sis_retried,
           crm_retried: result.crm_retried,
           errors_count: result.errors.length,
-          result_json: JSON.stringify(result),
+          result_json: result as any,
         },
       });
 
@@ -82,7 +82,7 @@ export class ReconciliationService {
           status: 'failed',
           finished_at: new Date(),
           errors_count: 1,
-          result_json: JSON.stringify({ message: error.message }),
+          result_json: { message: error.message },
         },
       });
       throw error;
@@ -95,7 +95,7 @@ export class ReconciliationService {
         source,
         event_type: eventType,
         aggregate_id: aggregateId,
-        payload_json: JSON.stringify(payload),
+        payload_json: payload as any,
         error_message: errorMessage,
       },
     });

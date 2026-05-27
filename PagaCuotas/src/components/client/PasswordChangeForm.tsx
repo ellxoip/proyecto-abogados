@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
-import { CheckCircle2, AlertCircle } from 'lucide-react';
+import { CheckCircle2, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { updateClientPassword, getClientSession, saveClientSession, saveClientToken } from '../../lib/clientPortal';
 
@@ -54,6 +54,7 @@ export default function PasswordChangeForm({ forced = false, onSuccess }: Props)
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [visible, setVisible] = useState({ current: false, next: false, confirm: false });
 
   const strength = useMemo(() => evaluateStrength(newPassword), [newPassword]);
   const isValid = PASSWORD_REGEX.test(newPassword);
@@ -74,6 +75,10 @@ export default function PasswordChangeForm({ forced = false, onSuccess }: Props)
     }
     if (!matches) {
       setMessage('La confirmación no coincide con la nueva clave.');
+      return;
+    }
+    if (!forced && currentPassword === newPassword) {
+      setMessage('La nueva clave debe ser distinta a la actual.');
       return;
     }
     if (strength.score < 2) {
@@ -112,27 +117,59 @@ export default function PasswordChangeForm({ forced = false, onSuccess }: Props)
       {!forced && (
         <label className="grid gap-1">
           <span className="text-xs font-semibold text-on-surface-variant">Clave actual</span>
-          <input
-            className="h-11 rounded-lg border border-border-subtle px-3 text-sm outline-none focus:border-secondary"
-            type="password"
-            maxLength={6}
-            value={currentPassword}
-            onChange={(e) => setCurrentPassword(e.target.value.toUpperCase())}
-            autoComplete="current-password"
-          />
+          <div className="relative">
+            <input
+              className="h-11 w-full rounded-lg border border-border-subtle px-3 pr-11 text-sm outline-none focus:border-secondary"
+              type={visible.current ? 'text' : 'password'}
+              minLength={6}
+              maxLength={6}
+              pattern="[A-Za-z0-9]{6}"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value.toUpperCase())}
+              autoComplete="current-password"
+              aria-invalid={!forced && currentPassword.length > 0 && !PASSWORD_REGEX.test(currentPassword)}
+              disabled={busy}
+            />
+            <button
+              type="button"
+              onClick={() => setVisible((v) => ({ ...v, current: !v.current }))}
+              aria-label={visible.current ? 'Ocultar clave actual' : 'Mostrar clave actual'}
+              aria-pressed={visible.current}
+              disabled={busy}
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-on-surface-variant hover:bg-surface-container-low disabled:opacity-50"
+            >
+              {visible.current ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          </div>
         </label>
       )}
 
       <label className="grid gap-1">
         <span className="text-xs font-semibold text-on-surface-variant">Nueva clave (6 caracteres)</span>
-        <input
-          className="h-11 rounded-lg border border-border-subtle px-3 text-sm outline-none focus:border-secondary"
-          type="password"
-          maxLength={6}
-          value={newPassword}
-          onChange={(e) => setNewPassword(e.target.value.toUpperCase())}
-          autoComplete="new-password"
-        />
+        <div className="relative">
+          <input
+            className="h-11 w-full rounded-lg border border-border-subtle px-3 pr-11 text-sm outline-none focus:border-secondary"
+            type={visible.next ? 'text' : 'password'}
+            minLength={6}
+            maxLength={6}
+            pattern="[A-Za-z0-9]{6}"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value.toUpperCase())}
+            autoComplete="new-password"
+            aria-invalid={newPassword.length > 0 && !isValid}
+            disabled={busy}
+          />
+          <button
+            type="button"
+            onClick={() => setVisible((v) => ({ ...v, next: !v.next }))}
+            aria-label={visible.next ? 'Ocultar nueva clave' : 'Mostrar nueva clave'}
+            aria-pressed={visible.next}
+            disabled={busy}
+            className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-on-surface-variant hover:bg-surface-container-low disabled:opacity-50"
+          >
+            {visible.next ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          </button>
+        </div>
       </label>
 
       {newPassword.length > 0 && (
@@ -164,21 +201,37 @@ export default function PasswordChangeForm({ forced = false, onSuccess }: Props)
 
       <label className="grid gap-1">
         <span className="text-xs font-semibold text-on-surface-variant">Confirmar nueva clave</span>
-        <input
-          className={cn(
-            'h-11 rounded-lg border px-3 text-sm outline-none',
-            confirmPassword.length === 0
-              ? 'border-border-subtle focus:border-secondary'
-              : matches
-                ? 'border-emerald-500'
-                : 'border-red-500'
-          )}
-          type="password"
-          maxLength={6}
-          value={confirmPassword}
-          onChange={(e) => setConfirmPassword(e.target.value.toUpperCase())}
-          autoComplete="new-password"
-        />
+        <div className="relative">
+          <input
+            className={cn(
+              'h-11 w-full rounded-lg border px-3 pr-11 text-sm outline-none',
+              confirmPassword.length === 0
+                ? 'border-border-subtle focus:border-secondary'
+                : matches
+                  ? 'border-emerald-500'
+                  : 'border-red-500'
+            )}
+            type={visible.confirm ? 'text' : 'password'}
+            minLength={6}
+            maxLength={6}
+            pattern="[A-Za-z0-9]{6}"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value.toUpperCase())}
+            autoComplete="new-password"
+            aria-invalid={confirmPassword.length > 0 && !matches}
+            disabled={busy}
+          />
+          <button
+            type="button"
+            onClick={() => setVisible((v) => ({ ...v, confirm: !v.confirm }))}
+            aria-label={visible.confirm ? 'Ocultar confirmacion' : 'Mostrar confirmacion'}
+            aria-pressed={visible.confirm}
+            disabled={busy}
+            className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-on-surface-variant hover:bg-surface-container-low disabled:opacity-50"
+          >
+            {visible.confirm ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          </button>
+        </div>
         {confirmPassword.length > 0 && !matches && (
           <span className="text-[11px] text-red-500">No coincide con la nueva clave.</span>
         )}
