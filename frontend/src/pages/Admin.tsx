@@ -1490,9 +1490,9 @@ Reglas:
                             onClick={() => openScheduleModal(agent)}
                             title="Configurar horario de activación"
                             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-colors"
-                            style={{ background: '#d97706', color: '#ffffff', border: '1px solid #f59e0b' }}
-                            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#b45309' }}
-                            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#d97706' }}>
+                            style={{ background: '#1c1c2e', color: '#f5f5ff', border: '1px solid #3a3a5c' }}
+                            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#2a2a42' }}
+                            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#1c1c2e' }}>
                             <Clock size={12} /> Horario
                           </button>
                         )}
