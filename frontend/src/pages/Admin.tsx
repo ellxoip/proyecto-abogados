@@ -1382,13 +1382,17 @@ Reglas:
                   <div key={agent.id} className="px-6 py-4">
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex items-start gap-3 min-w-0">
-                        <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${agent.is_active ? 'bg-lime/10' : 'bg-white/5'}`}>
-                          <Bot size={16} className={agent.is_active ? 'text-lime' : 'text-white/30'} />
+                        <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+                          style={{ background: agent.is_active ? 'rgba(163,230,53,0.15)' : 'rgba(255,255,255,0.06)' }}>
+                          <Bot size={16} style={{ color: agent.is_active ? '#a3e635' : '#64748b' }} />
                         </div>
                         <div className="min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-semibold text-white/90 text-sm">{agent.name}</span>
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${agent.is_active ? 'bg-lime/15 text-lime' : 'bg-white/8 text-white/40'}`}>
+                            <span className="font-semibold text-sm" style={{ color: '#f1f5f9' }}>{agent.name}</span>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                              style={agent.is_active
+                                ? { background: 'rgba(163,230,53,0.15)', color: '#a3e635', border: '1px solid rgba(163,230,53,0.3)' }
+                                : { background: 'rgba(100,116,139,0.15)', color: '#94a3b8', border: '1px solid rgba(100,116,139,0.3)' }}>
                               {agent.is_active ? 'ACTIVO' : 'INACTIVO'}
                             </span>
                             {isTecnico && agent.group_name && (
@@ -1397,7 +1401,7 @@ Reglas:
                               </span>
                             )}
                           </div>
-                          {agent.description && <p className="text-xs text-white/42 mt-0.5 truncate">{agent.description}</p>}
+                          {agent.description && <p className="text-xs mt-0.5 truncate" style={{ color: '#94a3b8' }}>{agent.description}</p>}
                           <div className="flex items-center gap-3 mt-1.5 flex-wrap">
                             {/* Multi-number chips */}
                             {(agent.configs ?? []).map((c: any) => (
@@ -1425,16 +1429,19 @@ Reglas:
                             {(agent.configs ?? []).length < 10 && (
                               <button
                                 onClick={() => setAssignWAOpen(p => ({ ...p, [agent.id]: !p[agent.id] }))}
-                                className="flex items-center gap-1 text-xs text-amber-400/80 hover:text-amber-400 border border-amber-500/25 px-2 py-0.5 rounded-full transition-colors">
+                                className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full transition-colors"
+                                style={{ color: '#fbbf24', border: '1px solid #d97706', background: 'rgba(217,119,6,0.12)' }}
+                                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(217,119,6,0.25)' }}
+                                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(217,119,6,0.12)' }}>
                                 <MessageSquare size={9} /> + Número
                               </button>
                             )}
                             {isTecnico && (
-                              <span className="flex items-center gap-1 text-xs text-white/52">
+                              <span className="flex items-center gap-1 text-xs" style={{ color: '#94a3b8' }}>
                                 <Zap size={10} /> {agent.openai_model}
                               </span>
                             )}
-                            <span className="text-xs text-white/42">{agent.total_messages_sent ?? 0} enviados</span>
+                            <span className="text-xs font-medium" style={{ color: '#94a3b8' }}>{agent.total_messages_sent ?? 0} enviados</span>
                             {agent.business_hours_start && (
                               <span className="flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-md"
                                 style={{ background: 'rgba(245,158,11,0.15)', color: '#fbbf24', border: '1px solid rgba(245,158,11,0.4)' }}>
