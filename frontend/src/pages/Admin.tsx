@@ -1752,60 +1752,81 @@ Reglas:
 
       {/* ── Schedule modal — superadmin/subadmin ─────────────────── */}
       {scheduleAgent && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-surface-1 rounded-2xl border border-white/[0.07] shadow-2xl w-full max-w-sm flex flex-col">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.07]">
-              <h3 className="font-semibold text-white/90 flex items-center gap-2">
-                <Clock size={15} className="text-amber-400" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="rounded-2xl shadow-2xl w-full max-w-sm flex flex-col"
+            style={{ background: '#1c1c2e', border: '1px solid #3a3a5c' }}>
+
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4"
+              style={{ borderBottom: '1px solid #2e2e46' }}>
+              <h3 className="font-bold text-base flex items-center gap-2" style={{ color: '#f5f5ff' }}>
+                <Clock size={16} style={{ color: '#f59e0b' }} />
                 Horario de activación
               </h3>
-              <button onClick={() => setScheduleAgent(null)} className="text-white/42 hover:text-white/90 p-1 rounded-lg">
-                <X size={16} />
+              <button onClick={() => setScheduleAgent(null)}
+                className="p-1.5 rounded-lg transition-colors"
+                style={{ color: '#9090b0', background: 'transparent' }}
+                onMouseEnter={e => (e.currentTarget.style.background = '#2e2e46')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                <X size={15} />
               </button>
             </div>
 
             <div className="px-5 py-5 space-y-4">
-              <p className="text-xs text-white/52 leading-relaxed">
-                Define en qué rango horario el agente responde automáticamente.<br/>
-                Ejemplo: <span className="text-amber-400/80">17:30 – 09:00</span> activa el agente desde las 17:30 hasta las 9 AM del día siguiente.<br/>
-                Deja ambos vacíos para activar el agente <span className="text-lime">24/7</span>.<br/>
-                <span className="text-white/35">Los horarios corresponden a la hora de Chile (Santiago).</span>
+              <p className="text-sm leading-relaxed" style={{ color: '#b0b0d0' }}>
+                Define en qué rango el agente responde automáticamente.
+              </p>
+              <p className="text-xs leading-relaxed" style={{ color: '#8080a0' }}>
+                Ej: <span style={{ color: '#f59e0b', fontWeight: 600 }}>17:30 – 09:00</span> activa desde las 17:30 hasta las 9:00 AM del día siguiente.
+                Deja ambos vacíos para <span style={{ color: '#a3e635', fontWeight: 600 }}>24/7</span>.
+                Hora de Chile (Santiago).
               </p>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs text-white/52 block mb-1.5">Hora inicio</label>
+                  <label className="text-xs font-semibold block mb-1.5" style={{ color: '#c0c0e0' }}>Hora inicio</label>
                   <input
                     type="time"
-                    className="input w-full"
                     value={scheduleForm.start}
                     onChange={e => setScheduleForm(f => ({ ...f, start: e.target.value }))}
+                    className="w-full rounded-lg px-3 py-2 text-sm font-semibold focus:outline-none"
+                    style={{
+                      background: '#12122a',
+                      border: '1px solid #3a3a5c',
+                      color: '#f0f0ff',
+                      colorScheme: 'dark',
+                    }}
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-white/52 block mb-1.5">Hora fin</label>
+                  <label className="text-xs font-semibold block mb-1.5" style={{ color: '#c0c0e0' }}>Hora fin</label>
                   <input
                     type="time"
-                    className="input w-full"
                     value={scheduleForm.end}
                     onChange={e => setScheduleForm(f => ({ ...f, end: e.target.value }))}
+                    className="w-full rounded-lg px-3 py-2 text-sm font-semibold focus:outline-none"
+                    style={{
+                      background: '#12122a',
+                      border: '1px solid #3a3a5c',
+                      color: '#f0f0ff',
+                      colorScheme: 'dark',
+                    }}
                   />
                 </div>
               </div>
 
-              {(scheduleForm.start || scheduleForm.end) && (
-                <div className="rounded-lg px-3 py-2 text-xs flex items-center gap-2"
-                  style={{ background: 'rgba(251,191,36,0.07)', border: '1px solid rgba(251,191,36,0.18)', color: 'rgba(251,191,36,0.85)' }}>
-                  <Clock size={11} />
-                  Agente activo de {scheduleForm.start || '??:??'} a {scheduleForm.end || '??:??'}
-                  {scheduleForm.start > scheduleForm.end && scheduleForm.start && scheduleForm.end
-                    ? ' (cruza medianoche)' : ''}
+              {(scheduleForm.start || scheduleForm.end) ? (
+                <div className="rounded-lg px-3 py-2.5 text-sm font-semibold flex items-center gap-2"
+                  style={{ background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.35)', color: '#fcd34d' }}>
+                  <Clock size={13} />
+                  {scheduleForm.start || '??:??'} → {scheduleForm.end || '??:??'}
+                  {scheduleForm.start && scheduleForm.end && scheduleForm.start > scheduleForm.end
+                    ? <span style={{ color: '#f59e0b', fontSize: 11 }}> (cruza medianoche)</span> : null}
                 </div>
-              )}
-              {!scheduleForm.start && !scheduleForm.end && (
-                <div className="rounded-lg px-3 py-2 text-xs flex items-center gap-2"
-                  style={{ background: 'rgba(163,230,53,0.07)', border: '1px solid rgba(163,230,53,0.18)', color: 'rgba(163,230,53,0.85)' }}>
-                  <Clock size={11} /> Agente activo 24/7
+              ) : (
+                <div className="rounded-lg px-3 py-2.5 text-sm font-semibold flex items-center gap-2"
+                  style={{ background: 'rgba(163,230,53,0.10)', border: '1px solid rgba(163,230,53,0.30)', color: '#a3e635' }}>
+                  <Clock size={13} /> Activo 24/7
                 </div>
               )}
             </div>
@@ -1813,15 +1834,19 @@ Reglas:
             <div className="flex gap-3 px-5 pb-5">
               <button
                 onClick={() => setScheduleAgent(null)}
-                className="flex-1 py-2 rounded-xl text-sm font-semibold border transition-colors"
-                style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-colors"
+                style={{ background: '#2a2a42', border: '1px solid #3a3a5c', color: '#b0b0d0' }}
+                onMouseEnter={e => (e.currentTarget.style.background = '#32324e')}
+                onMouseLeave={e => (e.currentTarget.style.background = '#2a2a42')}>
                 Cancelar
               </button>
               <button
                 onClick={handleSaveSchedule}
                 disabled={scheduleSaving}
-                className="flex-1 py-2 rounded-xl text-sm font-bold transition-colors flex items-center justify-center gap-2"
-                style={{ background: 'rgba(251,191,36,0.15)', color: '#f59e0b', border: '1px solid rgba(251,191,36,0.3)' }}>
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold transition-colors flex items-center justify-center gap-2"
+                style={{ background: '#d97706', border: '1px solid #f59e0b', color: '#fff' }}
+                onMouseEnter={e => { if (!scheduleSaving) (e.currentTarget as HTMLElement).style.background = '#b45309' }}
+                onMouseLeave={e => { if (!scheduleSaving) (e.currentTarget as HTMLElement).style.background = '#d97706' }}>
                 {scheduleSaving ? <RefreshCw size={13} className="animate-spin" /> : <Clock size={13} />}
                 {scheduleSaving ? 'Guardando…' : 'Guardar horario'}
               </button>
