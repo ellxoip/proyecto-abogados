@@ -866,6 +866,16 @@ def advance_lead(
     if new_stage == "pagado_confirmado" and current_user.role != "verificador":
         raise HTTPException(status_code=403, detail="Solo el Verificador de Pagos puede confirmar el pago")
 
+    # ── RUT obligatorio para pasar a Cierre ──────────────────────────────────
+    if new_stage == "cierre":
+        contact = lead.contact
+        rut = (contact.rut_persona or contact.rut_empresa) if contact else None
+        if not rut or not rut.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="El cliente debe tener RUT registrado antes de pasar a Cierre. Sin RUT no se puede generar la Orden de Trabajo.",
+            )
+
     if new_stage == "pago_comprometido":
         _require_financials_for_pago_comprometido(lead)
 
@@ -1013,6 +1023,16 @@ def move_lead_stage(
             raise HTTPException(
                 status_code=403,
                 detail="El vendedor debe crear la Orden de Trabajo (OT) antes de mover a Pago Comprometido"
+            )
+
+    # ── RUT obligatorio para pasar a Cierre ──────────────────────────────────
+    if data.stage == "cierre":
+        contact = lead.contact
+        rut = (contact.rut_persona or contact.rut_empresa) if contact else None
+        if not rut or not rut.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="El cliente debe tener RUT registrado antes de pasar a Cierre. Sin RUT no se puede generar la Orden de Trabajo.",
             )
 
     if data.stage == "pago_comprometido":
