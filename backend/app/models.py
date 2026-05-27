@@ -11,6 +11,14 @@ area_phone_numbers = Table(
     Column("whatsapp_config_id", Integer, ForeignKey("whatsapp_configs.id", ondelete="CASCADE"), primary_key=True),
 )
 
+# Many-to-many: Area ↔ User (multiple agendadoras/vendedores per area)
+area_users = Table(
+    "area_users",
+    Base.metadata,
+    Column("area_id", Integer, ForeignKey("areas.id", ondelete="CASCADE"), primary_key=True),
+    Column("user_id",  Integer, ForeignKey("users.id",  ondelete="CASCADE"), primary_key=True),
+)
+
 # Many-to-many: AIAgent ↔ WhatsAppConfig (1 agent can serve multiple numbers, fully isolated by config_id)
 ai_agent_configs = Table(
     "ai_agent_configs",
@@ -97,6 +105,7 @@ class Area(Base):
     whatsapp_config = relationship("WhatsAppConfig", foreign_keys=[whatsapp_config_id], back_populates="areas")
     phone_configs = relationship("WhatsAppConfig", secondary=area_phone_numbers)
     leads = relationship("Lead", back_populates="area")
+    users = relationship("User", secondary=area_users, lazy="select")
 
 
 class WhatsAppConfig(Base):

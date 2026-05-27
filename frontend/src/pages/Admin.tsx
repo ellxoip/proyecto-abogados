@@ -12,6 +12,7 @@ import {
   getAllWhatsAppConfigs, assignAgentWhatsApp, addAgentConfig, removeAgentConfig,
   getAuditLog, getSecurityStats, getLockedUsers, unlockUser,
   updateAIAgentSchedule,
+  assignUserToArea, removeUserFromArea,
 } from '../api'
 import type { User, Group, Area, WhatsAppConfig } from '../types'
 import { STAGE_LABELS as DEFAULT_STAGE_LABELS } from '../types'
@@ -258,6 +259,25 @@ export default function Admin() {
   }
 
   const [deletingAreaId, setDeletingAreaId] = useState<number | null>(null)
+  const [areaUserDropOpen, setAreaUserDropOpen] = useState<Record<number, boolean>>({})
+
+  const handleAssignUserToArea = async (areaId: number, userId: number) => {
+    try {
+      await assignUserToArea(areaId, userId)
+      // Refresh areas
+      if (selectedGroup) loadGroupData(selectedGroup)
+      toast.success('Usuario asignado al área')
+    } catch (e: any) { toast.error(e?.response?.data?.detail || 'Error asignando usuario') }
+    setAreaUserDropOpen(p => ({ ...p, [areaId]: false }))
+  }
+
+  const handleRemoveUserFromArea = async (areaId: number, userId: number) => {
+    try {
+      await removeUserFromArea(areaId, userId)
+      if (selectedGroup) loadGroupData(selectedGroup)
+      toast.success('Usuario removido del área')
+    } catch { toast.error('Error removiendo usuario') }
+  }
 
   const handleDeleteArea = async (id: number) => {
     if (deletingAreaId === id) {
@@ -792,43 +812,113 @@ Reglas:
                   <p className="text-sm text-white/52 font-medium">Sin áreas configuradas</p>
                   <p className="text-xs text-white/38 mt-1">Agrega la primera área con el botón de abajo</p>
                 </div>
-              ) : areas.map(a => {
+              ) : areas.map((a: any) => {
                 const phones: any[] = a.phone_configs ?? []
+                const areaAssigned: any[] = a.users ?? []
+                // Users in the group not yet assigned to this area
+                const groupUsers = users.filter(u =>
+                  u.is_active &&
+                  u.group_id === selectedGroup &&
+                  ['agendadora','vendedor','subadmin','verificador'].includes(u.role)
+                )
+                const unassigned = groupUsers.filter(u => !areaAssigned.some((au: any) => au.id === u.id))
+
                 return (
-                  <div key={a.id}
-                    className="flex items-center justify-between p-4 bg-surface-0 hover:bg-surface-2 rounded-xl border border-white/[0.07] transition-colors">
-                    <div className="min-w-0 flex-1">
-                      <p className="font-semibold text-sm text-white/90">{a.name}</p>
-                      {phones.length > 0 ? (
-                        <div className="flex flex-wrap gap-1.5 mt-1.5">
-                          {phones.map((wp: any) => (
-                            <div key={wp.id}
-                              className="flex items-center gap-1 bg-lime/10 border border-lime/20 rounded-lg px-2 py-1">
-                              <Phone size={10} className="text-lime flex-shrink-0" />
-                              <p className="text-xs text-lime font-medium">{wp.phone_number}</p>
-                            </div>
-                          ))}
+                  <div key={a.id} className="p-4 bg-surface-0 rounded-xl border border-white/[0.07]">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="font-semibold text-sm text-white/90">{a.name}</p>
+                        {/* Phone badges */}
+                        {phones.length > 0 ? (
+                          <div className="flex flex-wrap gap-1.5 mt-1.5">
+                            {phones.map((wp: any) => (
+                              <div key={wp.id} className="flex items-center gap-1 rounded-lg px-2 py-1"
+                                style={{ background: 'rgba(163,230,53,0.10)', border: '1px solid rgba(163,230,53,0.25)' }}>
+                                <Phone size={10} style={{ color: '#a3e635', flexShrink: 0 }} />
+                                <p className="text-xs font-medium" style={{ color: '#a3e635' }}>{wp.phone_number}</p>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-white/38 mt-1">Sin número asociado</p>
+                        )}
+
+                        {/* Assigned users */}
+                        <div className="mt-2.5">
+                          <p className="text-[10px] font-semibold text-white/42 uppercase tracking-wider mb-1.5">
+                            Usuarios asignados ({areaAssigned.length})
+                          </p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {areaAssigned.map((u: any) => (
+                              <span key={u.id} className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full"
+                                style={{ background: '#1c1c2e', border: '1px solid #3a3a5c', color: '#e2e8f0' }}>
+                                <span className="text-[9px] font-bold uppercase" style={{ color: '#94a3b8' }}>{u.role.slice(0,4)}</span>
+                                {u.name}
+                                <button onClick={() => handleRemoveUserFromArea(a.id, u.id)}
+                                  className="ml-0.5 transition-colors"
+                                  style={{ color: '#64748b' }}
+                                  onMouseEnter={e => (e.currentTarget.style.color = '#f87171')}
+                                  onMouseLeave={e => (e.currentTarget.style.color = '#64748b')}>
+                                  <X size={9} />
+                                </button>
+                              </span>
+                            ))}
+
+                            {/* Add user button */}
+                            {unassigned.length > 0 && (
+                              <div className="relative">
+                                <button
+                                  onClick={() => setAreaUserDropOpen(p => ({ ...p, [a.id]: !p[a.id] }))}
+                                  className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-semibold transition-colors"
+                                  style={{ background: '#1e3a5f', border: '1px solid #3b82f6', color: '#93c5fd' }}
+                                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#1e40af' }}
+                                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#1e3a5f' }}>
+                                  <Plus size={9} /> Agregar usuario
+                                </button>
+                                {areaUserDropOpen[a.id] && (
+                                  <div className="absolute left-0 top-7 z-10 rounded-xl shadow-xl overflow-hidden min-w-[180px]"
+                                    style={{ background: '#1c1c2e', border: '1px solid #3a3a5c' }}>
+                                    {unassigned.map((u: any) => (
+                                      <button key={u.id}
+                                        onClick={() => handleAssignUserToArea(a.id, u.id)}
+                                        className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 transition-colors"
+                                        style={{ color: '#e2e8f0' }}
+                                        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#2d2d50' }}
+                                        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}>
+                                        <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded"
+                                          style={{ background: '#2d2d50', color: '#94a3b8' }}>{u.role.slice(0,4)}</span>
+                                        {u.name}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                            {areaAssigned.length === 0 && unassigned.length === 0 && (
+                              <p className="text-xs text-white/32 italic">Sin usuarios en el grupo</p>
+                            )}
+                          </div>
                         </div>
-                      ) : (
-                        <p className="text-xs text-white/38 mt-1">Sin número asociado</p>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-1 flex-shrink-0 ml-3">
-                      <button onClick={() => openEditArea(a)}
-                        className="p-2 hover:bg-surface-1 hover:shadow-sm rounded-lg text-white/52 hover:text-white/90 transition-all">
-                        <Edit2 size={14} />
-                      </button>
-                      {deletingAreaId === a.id ? (
-                        <button onClick={() => handleDeleteArea(a.id)}
-                          className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-semibold bg-danger/15 text-danger border border-danger/30 transition-colors">
-                          <Trash2 size={11} /> Confirmar
+                      </div>
+
+                      {/* Edit / Delete */}
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <button onClick={() => openEditArea(a)}
+                          className="p-2 hover:bg-surface-1 rounded-lg text-white/52 hover:text-white/90 transition-all">
+                          <Edit2 size={14} />
                         </button>
-                      ) : (
-                        <button onClick={() => handleDeleteArea(a.id)}
-                          className="p-2 hover:bg-danger/10 rounded-lg text-white/38 hover:text-danger transition-colors">
-                          <Trash2 size={14} />
-                        </button>
-                      )}
+                        {deletingAreaId === a.id ? (
+                          <button onClick={() => handleDeleteArea(a.id)}
+                            className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-semibold bg-danger/15 text-danger border border-danger/30 transition-colors">
+                            <Trash2 size={11} /> Confirmar
+                          </button>
+                        ) : (
+                          <button onClick={() => handleDeleteArea(a.id)}
+                            className="p-2 hover:bg-danger/10 rounded-lg text-white/38 hover:text-danger transition-colors">
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 )

@@ -121,6 +121,7 @@ class AreaOut(BaseModel):
     kpi_leads: int
     is_active: bool
     phone_configs: List['WhatsAppConfigOut'] = []
+    users: List['UserOutBasic'] = []
     class Config:
         from_attributes = True
 

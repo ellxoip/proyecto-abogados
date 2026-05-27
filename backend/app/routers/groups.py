@@ -105,23 +105,65 @@ def delete_group(
 @router.get("/{group_id}/default-assignment")
 def get_default_assignment(
     group_id: int,
+    area_id: int = None,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    """Return first active agendadora and vendedor for auto-assignment when creating a lead."""
-    agendadora = db.query(models.User).filter(
+    """
+    Return suggested agendadora and vendedor for lead creation.
+    If area_id provided and that area has assigned users, picks from them (round-robin by least leads).
+    Falls back to all group users if the area has no assignments.
+    """
+    from sqlalchemy import func as sqlfunc
+
+    def _least_loaded(users: list, role: str):
+        """From a list of users, pick the one with fewest active leads (round-robin by load)."""
+        candidates = [u for u in users if u.role == role and u.is_active]
+        if not candidates:
+            return None
+        # Count active leads per candidate
+        counts = {u.id: 0 for u in candidates}
+        rows = (
+            db.query(models.Lead.agendadora_id if role == "agendadora" else models.Lead.vendedor_id,
+                     sqlfunc.count())
+            .filter(
+                (models.Lead.agendadora_id if role == "agendadora" else models.Lead.vendedor_id).in_(counts.keys()),
+                models.Lead.current_stage.notin_(["pagado_confirmado"]),
+            )
+            .group_by(models.Lead.agendadora_id if role == "agendadora" else models.Lead.vendedor_id)
+            .all()
+        )
+        for uid, cnt in rows:
+            if uid in counts:
+                counts[uid] = cnt
+        return min(candidates, key=lambda u: counts[u.id])
+
+    # Try area-specific users first
+    if area_id:
+        area = (
+            db.query(models.Area)
+            .options(joinedload(models.Area.users))
+            .filter(models.Area.id == area_id)
+            .first()
+        )
+        if area and area.users:
+            agendadora = _least_loaded(area.users, "agendadora")
+            vendedor   = _least_loaded(area.users, "vendedor")
+            return {
+                "agendadora": {"id": agendadora.id, "name": agendadora.name} if agendadora else None,
+                "vendedor":   {"id": vendedor.id,   "name": vendedor.name}   if vendedor   else None,
+            }
+
+    # Fallback: all group users
+    group_users = db.query(models.User).filter(
         models.User.group_id == group_id,
-        models.User.role == "agendadora",
-        models.User.is_active == True
-    ).first()
-    vendedor = db.query(models.User).filter(
-        models.User.group_id == group_id,
-        models.User.role == "vendedor",
-        models.User.is_active == True
-    ).first()
+        models.User.is_active == True,
+    ).all()
+    agendadora = _least_loaded(group_users, "agendadora")
+    vendedor   = _least_loaded(group_users, "vendedor")
     return {
         "agendadora": {"id": agendadora.id, "name": agendadora.name} if agendadora else None,
-        "vendedor": {"id": vendedor.id, "name": vendedor.name} if vendedor else None,
+        "vendedor":   {"id": vendedor.id,   "name": vendedor.name}   if vendedor   else None,
     }
 
 
@@ -129,13 +171,12 @@ def get_default_assignment(
 @router.get("/{group_id}/areas", response_model=List[schemas.AreaOut])
 def list_areas(group_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     group = db.query(models.Group).filter(models.Group.id == group_id).first()
-    # If the group is a sub-group, also check the parent negocio for shared areas
     target_ids = [group_id]
     if group and group.negocio_id:
         target_ids.append(group.negocio_id)
     return (
         db.query(models.Area)
-        .options(joinedload(models.Area.phone_configs))
+        .options(joinedload(models.Area.phone_configs), joinedload(models.Area.users))
         .filter(models.Area.group_id.in_(target_ids), models.Area.is_active == True)
         .order_by(models.Area.name)
         .all()
@@ -213,6 +254,47 @@ def delete_area(
         raise HTTPException(status_code=404, detail="Área no encontrada")
     db.delete(area)
     db.commit()
+    return {"ok": True}
+
+
+# ── AREA ↔ USER ASSIGNMENT ───────────────────────────────
+@router.post("/areas/{area_id}/users/{user_id}")
+def assign_user_to_area(
+    area_id: int,
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_roles("superadmin", "subadmin", "tecnico"))
+):
+    """Assign an agendadora/vendedor to an area (many-to-many)."""
+    area = db.query(models.Area).options(joinedload(models.Area.users)).filter(models.Area.id == area_id).first()
+    if not area:
+        raise HTTPException(status_code=404, detail="Área no encontrada")
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    if user.role not in ("agendadora", "vendedor", "subadmin", "superadmin", "verificador"):
+        raise HTTPException(status_code=400, detail="Solo se pueden asignar agendadoras y vendedores a áreas")
+    if user not in area.users:
+        area.users.append(user)
+        db.commit()
+    return {"ok": True, "area_id": area_id, "user_id": user_id}
+
+
+@router.delete("/areas/{area_id}/users/{user_id}")
+def remove_user_from_area(
+    area_id: int,
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_roles("superadmin", "subadmin", "tecnico"))
+):
+    """Remove a user from an area."""
+    area = db.query(models.Area).options(joinedload(models.Area.users)).filter(models.Area.id == area_id).first()
+    if not area:
+        raise HTTPException(status_code=404, detail="Área no encontrada")
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if user and user in area.users:
+        area.users.remove(user)
+        db.commit()
     return {"ok": True}
 
 

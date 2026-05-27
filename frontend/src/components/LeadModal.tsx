@@ -74,6 +74,7 @@ export default function LeadModal({ onClose, onSuccess }: Props) {
     })
   }, [])
 
+  // When group changes: load areas, auto-assign from group
   useEffect(() => {
     if (!form.group_id) return
     const gid = parseInt(form.group_id)
@@ -89,12 +90,35 @@ export default function LeadModal({ onClose, onSuccess }: Props) {
     }
   }, [form.group_id])
 
-  // Only show sub-groups (negocio_id != null) as lead targets — root groups have no areas
-  const subGroups   = groups.filter((g: any) => g.negocio_id !== null && g.negocio_id !== undefined)
-  const gUsers      = users.filter(u => u.is_active && (form.group_id ? u.group_id === parseInt(form.group_id) : false))
-  const agendadoras = gUsers.filter(u => u.role === 'agendadora')
-  const vendedores  = gUsers.filter(u => ['vendedor', 'verificador', 'subadmin'].includes(u.role))
-  const myGroup     = groups.find((g: any) => g.id === user?.group_id)?.name ?? (isRestricted ? `Grupo ${user?.group_id}` : '')
+  // When area changes: filter users to those assigned to the area (round-robin auto-assign)
+  useEffect(() => {
+    if (!form.area_id || !form.group_id || isRestricted) return
+    const gid = parseInt(form.group_id)
+    const aid = parseInt(form.area_id)
+    getGroupDefaultAssignment(gid, aid).then((assignment: any) => {
+      setForm(f => ({
+        ...f,
+        agendadora_id: assignment.agendadora ? assignment.agendadora.id.toString() : f.agendadora_id,
+        vendedor_id:   assignment.vendedor   ? assignment.vendedor.id.toString()   : f.vendedor_id,
+      }))
+    }).catch(() => {})
+  }, [form.area_id])
+
+  // Get users filtered by selected area (if area has assigned users)
+  const selectedArea = areas.find((a: any) => a.id === parseInt(form.area_id))
+  const areaUsers: any[] = selectedArea?.users ?? []
+
+  // If area has assigned users, filter by those; otherwise show all group users
+  const gUsers = users.filter(u => u.is_active && (form.group_id ? u.group_id === parseInt(form.group_id) : false))
+  const agendadoras = areaUsers.length > 0
+    ? areaUsers.filter((u: any) => u.role === 'agendadora' && u.is_active !== false)
+    : gUsers.filter(u => u.role === 'agendadora')
+  const vendedores = areaUsers.length > 0
+    ? areaUsers.filter((u: any) => ['vendedor', 'verificador', 'subadmin'].includes(u.role) && u.is_active !== false)
+    : gUsers.filter(u => ['vendedor', 'verificador', 'subadmin'].includes(u.role))
+
+  const myGroup = groups.find((g: any) => g.id === user?.group_id)?.name ?? (isRestricted ? `Grupo ${user?.group_id}` : '')
+  const subGroups = groups.filter((g: any) => g.negocio_id !== null && g.negocio_id !== undefined)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -177,9 +201,14 @@ export default function LeadModal({ onClose, onSuccess }: Props) {
 
             <Field label="Área Legal" required>
               <select className="input" value={form.area_id}
-                onChange={e => set('area_id', e.target.value)} required disabled={!form.group_id}>
+                onChange={e => { set('area_id', e.target.value); set('agendadora_id', ''); set('vendedor_id', '') }}
+                required disabled={!form.group_id}>
                 <option value="">Seleccionar...</option>
-                {areas.map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                {areas.map((a: any) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name}{a.users?.length > 0 ? ` (${a.users.length} usuarios)` : ''}
+                  </option>
+                ))}
               </select>
             </Field>
 
@@ -192,6 +221,11 @@ export default function LeadModal({ onClose, onSuccess }: Props) {
                   <option value="">Seleccionar...</option>
                   {agendadoras.map((u: any) => <option key={u.id} value={u.id}>{u.name}</option>)}
                 </select>
+                {areaUsers.length > 0 && (
+                  <p className="text-[10px] mt-0.5" style={{ color: '#60a5fa' }}>
+                    Filtrado por área · {agendadoras.length} disponible{agendadoras.length !== 1 ? 's' : ''}
+                  </p>
+                )}
               </Field>
             )}
 
@@ -204,6 +238,11 @@ export default function LeadModal({ onClose, onSuccess }: Props) {
                   <option value="">Seleccionar...</option>
                   {vendedores.map((u: any) => <option key={u.id} value={u.id}>{u.name}</option>)}
                 </select>
+                {areaUsers.length > 0 && (
+                  <p className="text-[10px] mt-0.5" style={{ color: '#60a5fa' }}>
+                    Filtrado por área · {vendedores.length} disponible{vendedores.length !== 1 ? 's' : ''}
+                  </p>
+                )}
               </Field>
             )}
 
