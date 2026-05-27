@@ -1402,20 +1402,20 @@ Reglas:
                             {/* Multi-number chips */}
                             {(agent.configs ?? []).map((c: any) => (
                               <span key={c.id} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded-lg"
-                                style={{ background: '#1c1c2e', border: '1px solid #3a3a5c' }}>
-                                <MessageSquare size={9} style={{ color: '#a78bfa', flexShrink: 0 }} />
+                                style={{ background: '#2d2b55', border: '1.5px solid #6c63ff' }}>
+                                <MessageSquare size={9} style={{ color: '#a5b4fc', flexShrink: 0 }} />
                                 <span className="flex flex-col leading-none">
-                                  <span className="font-semibold" style={{ color: '#f5f5ff' }}>{c.phone_number}</span>
+                                  <span className="font-bold" style={{ color: '#ffffff' }}>{c.phone_number}</span>
                                   {c.group_name && (
-                                    <span className="text-[9px] mt-0.5" style={{ color: '#9090b0' }}>{c.group_name}</span>
+                                    <span className="text-[9px] mt-0.5" style={{ color: '#c4b5fd' }}>{c.group_name}</span>
                                   )}
                                 </span>
                                 <button
                                   onClick={() => handleRemoveConfig(agent.id, c.id)}
                                   className="ml-0.5 transition-colors flex-shrink-0"
-                                  style={{ color: '#6060a0' }}
+                                  style={{ color: '#a5b4fc' }}
                                   onMouseEnter={e => (e.currentTarget.style.color = '#f87171')}
-                                  onMouseLeave={e => (e.currentTarget.style.color = '#6060a0')}
+                                  onMouseLeave={e => (e.currentTarget.style.color = '#a5b4fc')}
                                   title="Quitar número">
                                   <X size={9} />
                                 </button>
