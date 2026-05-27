@@ -827,19 +827,29 @@ Reglas:
                 const filteredUnassigned = searchQ
                   ? unassigned.filter(u => u.name.toLowerCase().includes(searchQ) || u.role.includes(searchQ))
                   : unassigned
+                const isOpen = !!areaUserDropOpen[a.id]
 
-                const roleColor = (role: string) => role === 'agendadora'
-                  ? { bg: 'rgba(139,92,246,0.15)', border: 'rgba(139,92,246,0.35)', text: '#c4b5fd' }
-                  : { bg: 'rgba(163,230,53,0.12)', border: 'rgba(163,230,53,0.30)', text: '#a3e635' }
+                const roleTag = (role: string) => role === 'agendadora'
+                  ? { bg: '#ede9fe', color: '#6d28d9', label: 'Agendador/a' }
+                  : role === 'vendedor'
+                  ? { bg: '#dcfce7', color: '#15803d', label: 'Vendedor/a' }
+                  : { bg: '#f1f5f9', color: '#475569', label: role }
+
+                const roleTagDark = (role: string) => role === 'agendadora'
+                  ? { bg: 'rgba(139,92,246,0.18)', color: '#c4b5fd', label: 'Agend.' }
+                  : role === 'vendedor'
+                  ? { bg: 'rgba(163,230,53,0.15)', color: '#a3e635', label: 'Vend.' }
+                  : { bg: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.55)', label: role.slice(0,5) }
 
                 return (
-                  <div key={a.id} className="rounded-xl border border-white/[0.08] overflow-hidden"
-                    style={{ background: 'rgba(255,255,255,0.02)' }}>
+                  <div key={a.id} className="rounded-xl border border-white/[0.08]"
+                    style={{ background: '#0f0f1a' }}>
+
                     {/* Area header */}
-                    <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
+                    <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
                       <div className="flex items-center gap-2.5 min-w-0">
                         <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
-                          style={{ background: 'rgba(163,230,53,0.10)' }}>
+                          style={{ background: 'rgba(163,230,53,0.12)' }}>
                           <Layers size={13} style={{ color: '#a3e635' }} />
                         </div>
                         <div className="min-w-0">
@@ -880,92 +890,99 @@ Reglas:
 
                     {/* Team section */}
                     <div className="px-4 py-3">
-                      <div className="flex items-center justify-between mb-2.5">
-                        <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35">
-                          Equipo · {areaAssigned.length} persona{areaAssigned.length !== 1 ? 's' : ''}
-                        </p>
-                        {unassigned.length > 0 && (
-                          <div className="relative">
-                            <button
-                              onClick={() => {
-                                setAreaUserDropOpen(p => ({ ...p, [a.id]: !p[a.id] }))
-                                setAreaUserSearch(p => ({ ...p, [a.id]: '' }))
-                              }}
-                              className="flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-lg transition-all"
-                              style={{ background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.25)', color: '#a5b4fc' }}>
-                              <Plus size={11} /> Añadir
-                            </button>
-                            {areaUserDropOpen[a.id] && (
-                              <div className="absolute right-0 top-8 z-20 rounded-xl shadow-2xl w-64"
-                                style={{ background: '#16162a', border: '1px solid rgba(255,255,255,0.10)', boxShadow: '0 20px 40px rgba(0,0,0,0.5)' }}>
-                                {/* Search */}
-                                <div className="p-2 border-b border-white/[0.06]">
-                                  <input
-                                    autoFocus
-                                    value={areaUserSearch[a.id] ?? ''}
-                                    onChange={e => setAreaUserSearch(p => ({ ...p, [a.id]: e.target.value }))}
-                                    placeholder="Buscar persona..."
-                                    className="w-full text-xs bg-white/[0.05] border border-white/[0.08] rounded-lg px-3 py-1.5 text-white/85 placeholder-white/30 outline-none focus:border-indigo-500/50"
-                                  />
-                                </div>
-                                <div className="max-h-48 overflow-y-auto py-1">
-                                  {filteredUnassigned.length === 0 ? (
-                                    <p className="text-xs text-white/35 text-center py-4">Sin resultados</p>
-                                  ) : filteredUnassigned.map((u: any) => {
-                                    const rc = roleColor(u.role)
-                                    return (
-                                      <button key={u.id}
-                                        onClick={() => handleAssignUserToArea(a.id, u.id)}
-                                        className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-white/[0.05] transition-colors">
-                                        <div className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0"
-                                          style={{ background: rc.bg, color: rc.text }}>
-                                          {u.name.charAt(0).toUpperCase()}
-                                        </div>
-                                        <div className="min-w-0 flex-1">
-                                          <p className="text-xs font-medium text-white/90 truncate">{u.name}</p>
-                                          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md mt-0.5 inline-block"
-                                            style={{ background: rc.bg, color: rc.text, border: `1px solid ${rc.border}` }}>
-                                            {u.role === 'agendadora' ? 'Agendador/a' : u.role === 'vendedor' ? 'Vendedor/a' : u.role}
-                                          </span>
-                                        </div>
-                                      </button>
-                                    )
-                                  })}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
+                      <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35 mb-2">
+                        Equipo · {areaAssigned.length} persona{areaAssigned.length !== 1 ? 's' : ''}
+                      </p>
 
-                      {areaAssigned.length === 0 ? (
-                        <p className="text-xs text-white/25 italic py-1">Sin personas asignadas aún</p>
+                      {areaAssigned.length === 0 && !isOpen ? (
+                        <p className="text-xs text-white/25 italic mb-2">Sin personas asignadas aún</p>
                       ) : (
-                        <div className="space-y-1.5">
+                        <div className="space-y-1.5 mb-2">
                           {areaAssigned.map((u: any) => {
-                            const rc = roleColor(u.role)
+                            const rt = roleTagDark(u.role)
                             return (
-                              <div key={u.id} className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg group"
-                                style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
-                                <div className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0"
-                                  style={{ background: rc.bg, color: rc.text }}>
+                              <div key={u.id} className="flex items-center gap-2.5 px-3 py-2 rounded-lg group"
+                                style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                                <div className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0 text-white/80"
+                                  style={{ background: 'rgba(255,255,255,0.08)' }}>
                                   {u.name.charAt(0).toUpperCase()}
                                 </div>
-                                <div className="min-w-0 flex-1">
-                                  <p className="text-xs font-medium text-white/90 truncate">{u.name}</p>
-                                </div>
+                                <p className="text-xs font-medium text-white/85 truncate flex-1">{u.name}</p>
                                 <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md flex-shrink-0"
-                                  style={{ background: rc.bg, color: rc.text, border: `1px solid ${rc.border}` }}>
-                                  {u.role === 'agendadora' ? 'Agend.' : u.role === 'vendedor' ? 'Vend.' : u.role.slice(0,5)}
+                                  style={{ background: rt.bg, color: rt.color }}>
+                                  {rt.label}
                                 </span>
                                 <button onClick={() => handleRemoveUserFromArea(a.id, u.id)}
-                                  className="w-6 h-6 flex items-center justify-center rounded-md opacity-0 group-hover:opacity-100 transition-all text-white/30 hover:text-red-400 hover:bg-red-500/10">
+                                  className="w-6 h-6 flex items-center justify-center rounded-md opacity-0 group-hover:opacity-100 transition-all"
+                                  style={{ color: 'rgba(255,255,255,0.35)' }}
+                                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#f87171'; (e.currentTarget as HTMLElement).style.background = 'rgba(239,68,68,0.12)' }}
+                                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.35)'; (e.currentTarget as HTMLElement).style.background = 'transparent' }}>
                                   <X size={11} />
                                 </button>
                               </div>
                             )
                           })}
                         </div>
+                      )}
+
+                      {/* Inline user picker — white bg, black text */}
+                      {unassigned.length > 0 && (
+                        isOpen ? (
+                          <div className="rounded-xl overflow-hidden mt-1" style={{ border: '1px solid #e2e8f0' }}>
+                            {/* Search bar */}
+                            <div className="flex items-center gap-2 px-3 py-2" style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                              <input
+                                autoFocus
+                                value={areaUserSearch[a.id] ?? ''}
+                                onChange={e => setAreaUserSearch(p => ({ ...p, [a.id]: e.target.value }))}
+                                placeholder="Buscar persona..."
+                                className="flex-1 text-xs outline-none"
+                                style={{ background: 'transparent', color: '#0f172a' }}
+                              />
+                              <button
+                                onClick={() => setAreaUserDropOpen(p => ({ ...p, [a.id]: false }))}
+                                style={{ color: '#94a3b8' }}
+                                className="hover:text-slate-600 transition-colors">
+                                <X size={13} />
+                              </button>
+                            </div>
+                            {/* User list */}
+                            <div style={{ background: '#ffffff', maxHeight: '200px', overflowY: 'auto' }}>
+                              {filteredUnassigned.length === 0 ? (
+                                <p className="text-xs text-center py-4" style={{ color: '#94a3b8' }}>Sin resultados</p>
+                              ) : filteredUnassigned.map((u: any) => {
+                                const rt = roleTag(u.role)
+                                return (
+                                  <button key={u.id}
+                                    onClick={() => handleAssignUserToArea(a.id, u.id)}
+                                    className="w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors"
+                                    style={{ color: '#0f172a', borderBottom: '1px solid #f1f5f9' }}
+                                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#f8fafc' }}
+                                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#ffffff' }}>
+                                    <div className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0"
+                                      style={{ background: rt.bg, color: rt.color }}>
+                                      {u.name.charAt(0).toUpperCase()}
+                                    </div>
+                                    <p className="text-xs font-medium flex-1 truncate" style={{ color: '#1e293b' }}>{u.name}</p>
+                                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md flex-shrink-0"
+                                      style={{ background: rt.bg, color: rt.color }}>
+                                      {rt.label}
+                                    </span>
+                                  </button>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => { setAreaUserDropOpen(p => ({ ...p, [a.id]: true })); setAreaUserSearch(p => ({ ...p, [a.id]: '' })) }}
+                            className="flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-lg transition-all mt-1"
+                            style={{ background: 'rgba(99,102,241,0.10)', border: '1px solid rgba(99,102,241,0.22)', color: '#a5b4fc' }}
+                            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(99,102,241,0.18)' }}
+                            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(99,102,241,0.10)' }}>
+                            <Plus size={11} /> Añadir persona
+                          </button>
+                        )
                       )}
                     </div>
                   </div>
