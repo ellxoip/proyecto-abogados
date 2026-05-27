@@ -994,9 +994,14 @@ def move_lead_stage(
             raise HTTPException(status_code=403, detail="Sin permiso para este lead")
 
     # Agendadoras cannot move to 'reunion' or any recuperación stage unless a reunion event exists
+    # Skip this check if the lead has already passed the reunion stage (cierre or beyond)
+    _past_reunion_stages = {
+        "altamente_interesado", "cierre", "pago_comprometido",
+        "pagado_confirmado", "recuperacion_cierre", "recuperacion_pago",
+    }
     if current_user.role == "agendadora" and (
         data.stage == "reunion" or data.stage.startswith("recuperacion")
-    ):
+    ) and lead.current_stage not in _past_reunion_stages:
         event_count = db.query(models.CalendarEvent).filter(
             models.CalendarEvent.lead_id == lead_id,
             models.CalendarEvent.event_type == "reunion",
