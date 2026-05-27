@@ -109,7 +109,7 @@ def _handle_payment_confirmed(db: Session, lead: models.Lead, contrato_id):
     _notify_team(
         db, lead,
         f"Pago confirmado — {contact_name}",
-        f"El pago de {contact_name} fue verificado en Legal Finance. Lead cerrado exitosamente.",
+        f"El pago de {contact_name} fue verificado en Hive Contable. Lead cerrado exitosamente.",
     )
 
 
@@ -265,7 +265,7 @@ def _handle_service_started(db: Session, lead: models.Lead, contrato_id, payload
         from_stage = lead.current_stage,
         to_stage   = lead.current_stage,
         result     = "success",
-        notes      = "[Legal Finance] Servicio iniciado. Caso creado en AT.Informa.",
+        notes      = "[Hive Contable] Servicio iniciado. Caso creado en Hive Service Control.",
         created_by = lead.vendedor_id or lead.agendadora_id,
     ))
 
@@ -273,5 +273,5 @@ def _handle_service_started(db: Session, lead: models.Lead, contrato_id, payload
     _notify_team(
         db, lead,
         f"Servicio activo — {contact_name}",
-        f"El caso de {contact_name} fue iniciado en AT.Informa a través de Legal Finance.",
+        f"El caso de {contact_name} fue iniciado en Hive Service Control a través de Hive Contable.",
     )

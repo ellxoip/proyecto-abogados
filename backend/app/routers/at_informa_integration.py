@@ -296,8 +296,8 @@ async def at_informa_webhook(
 
     elif event == "case_halted":
         lead.at_informa_status = "halted"
-        _notify_team(db, lead, "Caso detenido en AT Informa",
-                     f"El caso de {lead.contact.name if lead.contact else 'cliente'} fue detenido en AT Informa por falta de pago.")
+        _notify_team(db, lead, "Caso detenido en Hive Service Control",
+                     f"El caso de {lead.contact.name if lead.contact else 'cliente'} fue detenido en Hive Service Control por falta de pago.")
 
     else:
         logger.warning("Unknown AT Informa event: %s", event)
@@ -370,7 +370,7 @@ def _handle_payment_verified(db: Session, lead: models.Lead, notes: str):
         from_stage = old_stage,
         to_stage   = "pagado_confirmado",
         result     = "success",
-        notes      = f"[AT Informa] Pago verificado. {notes}".strip(),
+        notes      = f"[Hive Service Control] Pago verificado. {notes}".strip(),
         created_by = lead.vendedor_id,
     ))
 
@@ -388,7 +388,7 @@ def _handle_payment_verified(db: Session, lead: models.Lead, notes: str):
     contact_name = lead.contact.name if lead.contact else "cliente"
     _notify_team(db, lead,
                  f"Pago confirmado — {contact_name}",
-                 f"El pago de {contact_name} fue verificado en AT Informa. Lead cerrado exitosamente.")
+                 f"El pago de {contact_name} fue verificado en Hive Service Control. Lead cerrado exitosamente.")
 
 
 def _notify_team(db: Session, lead: models.Lead, title: str, message: str):
