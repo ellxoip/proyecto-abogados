@@ -11,7 +11,7 @@ import {
 } from '../api'
 import type { CalendarEvent } from '../types'
 import toast from 'react-hot-toast'
-import { X, Plus, ChevronLeft, ChevronRight, RefreshCw, Link2, Link2Off, Search } from 'lucide-react'
+import { X, Plus, ChevronLeft, ChevronRight, RefreshCw, Link2, Link2Off, Search, User } from 'lucide-react'
 import { format } from 'date-fns'
 import { useAuthStore } from '../store/auth'
 
@@ -678,6 +678,33 @@ export default function Calendario() {
             </div>
 
             <form onSubmit={handleSave} className="px-6 py-5 space-y-4">
+
+              {/* Superadmin/subadmin: info del dueño del evento */}
+              {editEvent && isAdmin && (editEvent.creator || editEvent.assigned_to) && (
+                <div className="flex items-start gap-3 px-3 py-2.5 rounded-xl bg-surface-0 border border-white/[0.07]">
+                  <User size={14} className="text-white/40 mt-0.5 flex-shrink-0" />
+                  <div className="text-xs space-y-0.5 min-w-0">
+                    {editEvent.creator && (
+                      <p className="text-white/55">
+                        <span className="text-white/35 mr-1">Creado por</span>
+                        <span className="font-semibold text-white/80">{editEvent.creator.name}</span>
+                        <span className="text-white/35 ml-1">({editEvent.creator.role})</span>
+                      </p>
+                    )}
+                    {editEvent.assigned_to && (() => {
+                      const assignedUser = users.find((u: any) => u.id === editEvent.assigned_to)
+                      return assignedUser ? (
+                        <p className="text-white/55">
+                          <span className="text-white/35 mr-1">Asignado a</span>
+                          <span className="font-semibold text-white/80">{assignedUser.name}</span>
+                          <span className="text-white/35 ml-1">({assignedUser.role})</span>
+                        </p>
+                      ) : null
+                    })()}
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label className="input-label">Título *</label>
                 <input className="input" value={form.title} onChange={e => set('title', e.target.value)}
