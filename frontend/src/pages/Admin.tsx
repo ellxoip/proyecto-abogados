@@ -1429,10 +1429,10 @@ Reglas:
                             {(agent.configs ?? []).length < 10 && (
                               <button
                                 onClick={() => setAssignWAOpen(p => ({ ...p, [agent.id]: !p[agent.id] }))}
-                                className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full transition-colors"
-                                style={{ color: '#fbbf24', border: '1px solid #d97706', background: 'rgba(217,119,6,0.12)' }}
-                                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(217,119,6,0.25)' }}
-                                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(217,119,6,0.12)' }}>
+                                className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-semibold transition-colors"
+                                style={{ color: '#ffffff', border: '1px solid #d97706', background: '#b45309' }}
+                                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#92400e' }}
+                                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#b45309' }}>
                                 <MessageSquare size={9} /> + Número
                               </button>
                             )}
