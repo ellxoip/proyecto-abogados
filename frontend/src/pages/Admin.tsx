@@ -1432,7 +1432,8 @@ Reglas:
                             )}
                             <span className="text-xs text-white/42">{agent.total_messages_sent ?? 0} enviados</span>
                             {agent.business_hours_start && (
-                              <span className="flex items-center gap-1 text-xs text-white/52">
+                              <span className="flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-md"
+                                style={{ background: 'rgba(245,158,11,0.15)', color: '#fbbf24', border: '1px solid rgba(245,158,11,0.4)' }}>
                                 <Clock size={10} /> {agent.business_hours_start}–{agent.business_hours_end}
                               </span>
                             )}
@@ -1488,7 +1489,10 @@ Reglas:
                           <button
                             onClick={() => openScheduleModal(agent)}
                             title="Configurar horario de activación"
-                            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors text-amber-400/80 hover:text-amber-400 border border-amber-500/25 hover:bg-amber-400/5">
+                            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-colors"
+                            style={{ background: '#92400e', color: '#fde68a', border: '1px solid #b45309' }}
+                            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#b45309' }}
+                            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#92400e' }}>
                             <Clock size={12} /> Horario
                           </button>
                         )}
