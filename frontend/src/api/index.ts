@@ -239,6 +239,8 @@ export const getAIAgents = () => api.get('/api/ai-agents').then(r => r.data)
 export const createAIAgent = (data: any) => api.post('/api/ai-agents', data).then(r => r.data)
 export const updateAIAgent = (id: number, data: any) => api.put(`/api/ai-agents/${id}`, data).then(r => r.data)
 export const toggleAIAgent = (id: number) => api.patch(`/api/ai-agents/${id}/toggle`).then(r => r.data)
+export const updateAIAgentSchedule = (id: number, start: string | null, end: string | null) =>
+  api.patch(`/api/ai-agents/${id}/schedule`, { business_hours_start: start, business_hours_end: end }).then(r => r.data)
 export const deleteAIAgent = (id: number) => api.delete(`/api/ai-agents/${id}`).then(r => r.data)
 export const getAIAgentLogs = (id: number, limit = 50) => api.get(`/api/ai-agents/${id}/logs`, { params: { limit } }).then(r => r.data)
 export const assignAgentWhatsApp = (agentId: number, whatsappConfigId: number | null) =>

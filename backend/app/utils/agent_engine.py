@@ -14,6 +14,7 @@ import logging
 import random
 import time
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 import httpx
 from openai import AsyncOpenAI
@@ -29,8 +30,11 @@ QR_SERVICE_URL = "http://localhost:3001"
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
+_CHILE_TZ = ZoneInfo("America/Santiago")
+
 def _now_hhmm() -> str:
-    return datetime.now().strftime("%H:%M")
+    """Return current time in Chile/Santiago timezone (where all businesses operate)."""
+    return datetime.now(_CHILE_TZ).strftime("%H:%M")
 
 
 def _within_hours(start: str | None, end: str | None) -> bool:

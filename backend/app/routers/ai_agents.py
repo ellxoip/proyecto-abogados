@@ -259,6 +259,51 @@ def assign_whatsapp(
     return {"ok": True, "whatsapp_config_id": agent.whatsapp_config_id}
 
 
+class AgentSchedule(BaseModel):
+    business_hours_start: Optional[str] = None   # "HH:MM" o null para 24/7
+    business_hours_end: Optional[str] = None
+
+
+@router.patch("/{agent_id}/schedule")
+def update_agent_schedule(
+    agent_id: int,
+    body: AgentSchedule,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """
+    superadmin/subadmin can configure the activation schedule (business hours)
+    of an agent that belongs to their group.
+    Both start and end must be set together, or both null (= 24/7).
+    """
+    _require_admin(current_user)
+    agent = db.query(models.AIAgent).get(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agente no encontrado")
+    if not _can_manage_agent(current_user, agent):
+        raise HTTPException(status_code=403, detail="No tienes permiso sobre este agente")
+
+    start = body.business_hours_start or None
+    end   = body.business_hours_end or None
+
+    # Either both set or both null
+    if bool(start) != bool(end):
+        raise HTTPException(
+            status_code=400,
+            detail="Debes indicar tanto la hora de inicio como la de fin (o dejar ambas vacías para activar 24/7).",
+        )
+
+    agent.business_hours_start = start
+    agent.business_hours_end   = end
+    db.commit()
+    db.refresh(agent)
+    return {
+        "ok": True,
+        "business_hours_start": agent.business_hours_start,
+        "business_hours_end": agent.business_hours_end,
+    }
+
+
 @router.patch("/{agent_id}/toggle")
 def toggle_agent(
     agent_id: int,

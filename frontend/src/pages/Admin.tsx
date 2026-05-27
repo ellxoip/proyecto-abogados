@@ -11,6 +11,7 @@ import {
   getAIAgents, createAIAgent, updateAIAgent, toggleAIAgent, deleteAIAgent, getAIAgentLogs,
   getAllWhatsAppConfigs, assignAgentWhatsApp, addAgentConfig, removeAgentConfig,
   getAuditLog, getSecurityStats, getLockedUsers, unlockUser,
+  updateAIAgentSchedule,
 } from '../api'
 import type { User, Group, Area, WhatsAppConfig } from '../types'
 import { STAGE_LABELS as DEFAULT_STAGE_LABELS } from '../types'
@@ -346,6 +347,43 @@ export default function Admin() {
   const isTecnico = me?.role === 'tecnico'
   const myGroup = groups.find(g => g.id === me?.group_id)
   const negocioTipo: string = (myGroup as any)?.tipo ?? 'abogados'
+
+  // ── Schedule modal (superadmin) ──────────────────────────────
+  const [scheduleAgent, setScheduleAgent] = useState<any | null>(null)
+  const [scheduleForm, setScheduleForm] = useState({ start: '', end: '' })
+  const [scheduleSaving, setScheduleSaving] = useState(false)
+
+  const openScheduleModal = (agent: any) => {
+    setScheduleAgent(agent)
+    setScheduleForm({
+      start: agent.business_hours_start ?? '',
+      end:   agent.business_hours_end   ?? '',
+    })
+  }
+
+  const handleSaveSchedule = async () => {
+    if (!scheduleAgent) return
+    const start = scheduleForm.start.trim() || null
+    const end   = scheduleForm.end.trim()   || null
+    if (Boolean(start) !== Boolean(end)) {
+      toast.error('Ingresa tanto la hora de inicio como la de fin, o deja ambas vacías para activar 24/7.')
+      return
+    }
+    setScheduleSaving(true)
+    try {
+      const res = await updateAIAgentSchedule(scheduleAgent.id, start, end)
+      setAgents(prev => prev.map(a => a.id === scheduleAgent.id
+        ? { ...a, business_hours_start: res.business_hours_start, business_hours_end: res.business_hours_end }
+        : a
+      ))
+      toast.success(start ? `Horario guardado: ${start} – ${end}` : 'Agente configurado como 24/7')
+      setScheduleAgent(null)
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail || 'Error guardando horario')
+    } finally {
+      setScheduleSaving(false)
+    }
+  }
 
   // ── WhatsApp sessions state ──────────────────────────────────
   const [waSessions, setWASessions] = useState<any[]>([])
@@ -1445,6 +1483,16 @@ Reglas:
                           {agent.is_active ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
                         </button>
 
+                        {/* Schedule — superadmin/subadmin can configure business hours */}
+                        {!isTecnico && (
+                          <button
+                            onClick={() => openScheduleModal(agent)}
+                            title="Configurar horario de activación"
+                            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors text-amber-400/80 hover:text-amber-400 border border-amber-500/25 hover:bg-amber-400/5">
+                            <Clock size={12} /> Horario
+                          </button>
+                        )}
+
                         {/* Edit / Delete — tecnico only */}
                         {isTecnico && (
                           <>
@@ -1701,6 +1749,86 @@ Reglas:
           </div>
         )
       })()}
+
+      {/* ── Schedule modal — superadmin/subadmin ─────────────────── */}
+      {scheduleAgent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-surface-1 rounded-2xl border border-white/[0.07] shadow-2xl w-full max-w-sm flex flex-col">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.07]">
+              <h3 className="font-semibold text-white/90 flex items-center gap-2">
+                <Clock size={15} className="text-amber-400" />
+                Horario de activación
+              </h3>
+              <button onClick={() => setScheduleAgent(null)} className="text-white/42 hover:text-white/90 p-1 rounded-lg">
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="px-5 py-5 space-y-4">
+              <p className="text-xs text-white/52 leading-relaxed">
+                Define en qué rango horario el agente responde automáticamente.<br/>
+                Ejemplo: <span className="text-amber-400/80">17:30 – 09:00</span> activa el agente desde las 17:30 hasta las 9 AM del día siguiente.<br/>
+                Deja ambos vacíos para activar el agente <span className="text-lime">24/7</span>.<br/>
+                <span className="text-white/35">Los horarios corresponden a la hora de Chile (Santiago).</span>
+              </p>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-white/52 block mb-1.5">Hora inicio</label>
+                  <input
+                    type="time"
+                    className="input w-full"
+                    value={scheduleForm.start}
+                    onChange={e => setScheduleForm(f => ({ ...f, start: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-white/52 block mb-1.5">Hora fin</label>
+                  <input
+                    type="time"
+                    className="input w-full"
+                    value={scheduleForm.end}
+                    onChange={e => setScheduleForm(f => ({ ...f, end: e.target.value }))}
+                  />
+                </div>
+              </div>
+
+              {(scheduleForm.start || scheduleForm.end) && (
+                <div className="rounded-lg px-3 py-2 text-xs flex items-center gap-2"
+                  style={{ background: 'rgba(251,191,36,0.07)', border: '1px solid rgba(251,191,36,0.18)', color: 'rgba(251,191,36,0.85)' }}>
+                  <Clock size={11} />
+                  Agente activo de {scheduleForm.start || '??:??'} a {scheduleForm.end || '??:??'}
+                  {scheduleForm.start > scheduleForm.end && scheduleForm.start && scheduleForm.end
+                    ? ' (cruza medianoche)' : ''}
+                </div>
+              )}
+              {!scheduleForm.start && !scheduleForm.end && (
+                <div className="rounded-lg px-3 py-2 text-xs flex items-center gap-2"
+                  style={{ background: 'rgba(163,230,53,0.07)', border: '1px solid rgba(163,230,53,0.18)', color: 'rgba(163,230,53,0.85)' }}>
+                  <Clock size={11} /> Agente activo 24/7
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-3 px-5 pb-5">
+              <button
+                onClick={() => setScheduleAgent(null)}
+                className="flex-1 py-2 rounded-xl text-sm font-semibold border transition-colors"
+                style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
+                Cancelar
+              </button>
+              <button
+                onClick={handleSaveSchedule}
+                disabled={scheduleSaving}
+                className="flex-1 py-2 rounded-xl text-sm font-bold transition-colors flex items-center justify-center gap-2"
+                style={{ background: 'rgba(251,191,36,0.15)', color: '#f59e0b', border: '1px solid rgba(251,191,36,0.3)' }}>
+                {scheduleSaving ? <RefreshCw size={13} className="animate-spin" /> : <Clock size={13} />}
+                {scheduleSaving ? 'Guardando…' : 'Guardar horario'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Agent modal — tecnico only ─────────────────────────────── */}
       {showAgentModal && isTecnico && (
