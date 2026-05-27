@@ -831,52 +831,52 @@ Reglas:
 
                 return (
                   <div key={a.id} className="rounded-xl overflow-hidden"
-                    style={{ background: '#1e2235', border: '1px solid rgba(255,255,255,0.12)' }}>
+                    style={{ background: '#ffffff', border: '1px solid #e2e8f0', boxShadow: '0 1px 4px rgba(0,0,0,0.08)' }}>
 
                     {/* Header */}
                     <div className="flex items-center justify-between px-4 py-3"
-                      style={{ background: '#252840', borderBottom: '1px solid rgba(255,255,255,0.10)' }}>
+                      style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
                       <div className="flex items-center gap-2.5 min-w-0 flex-1">
                         <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
-                          style={{ background: 'rgba(163,230,53,0.15)', border: '1px solid rgba(163,230,53,0.25)' }}>
-                          <Layers size={14} style={{ color: '#a3e635' }} />
+                          style={{ background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
+                          <Layers size={14} style={{ color: '#16a34a' }} />
                         </div>
                         <div className="min-w-0">
-                          <p className="font-bold text-sm text-white">{a.name}</p>
+                          <p className="font-bold text-sm" style={{ color: '#0f172a' }}>{a.name}</p>
                           {phones.length > 0 ? (
                             <div className="flex flex-wrap gap-1 mt-0.5">
                               {phones.map((wp: any) => (
                                 <span key={wp.id} className="flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded"
-                                  style={{ background: 'rgba(163,230,53,0.12)', color: '#a3e635', border: '1px solid rgba(163,230,53,0.20)' }}>
+                                  style={{ background: '#f0fdf4', color: '#15803d', border: '1px solid #bbf7d0' }}>
                                   <Phone size={8} /> {wp.phone_number}
                                 </span>
                               ))}
                             </div>
                           ) : (
-                            <p className="text-[10px]" style={{ color: 'rgba(255,255,255,0.38)' }}>Sin número</p>
+                            <p className="text-[10px]" style={{ color: '#94a3b8' }}>Sin número</p>
                           )}
                         </div>
                       </div>
                       <div className="flex items-center gap-1 flex-shrink-0">
                         <button onClick={() => openEditArea(a)}
                           className="w-7 h-7 flex items-center justify-center rounded-lg transition-colors"
-                          style={{ color: 'rgba(255,255,255,0.45)' }}
-                          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#fff'; (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.08)' }}
-                          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.45)'; (e.currentTarget as HTMLElement).style.background = 'transparent' }}>
+                          style={{ color: '#94a3b8' }}
+                          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#334155'; (e.currentTarget as HTMLElement).style.background = '#f1f5f9' }}
+                          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = '#94a3b8'; (e.currentTarget as HTMLElement).style.background = 'transparent' }}>
                           <Edit2 size={13} />
                         </button>
                         {deletingAreaId === a.id ? (
                           <button onClick={() => handleDeleteArea(a.id)}
                             className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold"
-                            style={{ background: 'rgba(239,68,68,0.20)', color: '#fca5a5', border: '1px solid rgba(239,68,68,0.35)' }}>
+                            style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca' }}>
                             <Trash2 size={10} /> Confirmar
                           </button>
                         ) : (
                           <button onClick={() => handleDeleteArea(a.id)}
                             className="w-7 h-7 flex items-center justify-center rounded-lg transition-colors"
-                            style={{ color: 'rgba(255,255,255,0.35)' }}
-                            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#f87171'; (e.currentTarget as HTMLElement).style.background = 'rgba(239,68,68,0.12)' }}
-                            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.35)'; (e.currentTarget as HTMLElement).style.background = 'transparent' }}>
+                            style={{ color: '#94a3b8' }}
+                            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#dc2626'; (e.currentTarget as HTMLElement).style.background = '#fef2f2' }}
+                            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = '#94a3b8'; (e.currentTarget as HTMLElement).style.background = 'transparent' }}>
                             <Trash2 size={13} />
                           </button>
                         )}
@@ -884,34 +884,33 @@ Reglas:
                     </div>
 
                     {/* Body */}
-                    <div className="px-4 py-3">
+                    <div className="px-4 py-3" style={{ background: '#ffffff' }}>
                       {/* Assigned users */}
                       {areaAssigned.length > 0 && (
-                        <div className="space-y-2 mb-3">
+                        <div className="space-y-1.5 mb-3">
                           {areaAssigned.map((u: any) => (
                             <div key={u.id} className="flex items-center gap-3 px-3 py-2 rounded-lg group"
-                              style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.09)' }}>
+                              style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
                               <div className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0"
                                 style={{
-                                  background: u.role === 'agendadora' ? 'rgba(167,139,250,0.25)' : 'rgba(163,230,53,0.20)',
-                                  color: u.role === 'agendadora' ? '#c4b5fd' : '#a3e635',
+                                  background: u.role === 'agendadora' ? '#ede9fe' : '#dcfce7',
+                                  color: u.role === 'agendadora' ? '#7c3aed' : '#16a34a',
                                 }}>
                                 {u.name.charAt(0).toUpperCase()}
                               </div>
-                              <p className="text-sm font-medium flex-1 truncate" style={{ color: 'rgba(255,255,255,0.90)' }}>{u.name}</p>
+                              <p className="text-sm font-medium flex-1 truncate" style={{ color: '#1e293b' }}>{u.name}</p>
                               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0"
                                 style={{
-                                  background: u.role === 'agendadora' ? 'rgba(167,139,250,0.20)' : 'rgba(163,230,53,0.15)',
-                                  color: u.role === 'agendadora' ? '#c4b5fd' : '#a3e635',
-                                  border: `1px solid ${u.role === 'agendadora' ? 'rgba(167,139,250,0.30)' : 'rgba(163,230,53,0.25)'}`,
+                                  background: u.role === 'agendadora' ? '#ede9fe' : '#dcfce7',
+                                  color: u.role === 'agendadora' ? '#7c3aed' : '#16a34a',
                                 }}>
                                 {u.role === 'agendadora' ? 'Agend.' : u.role === 'vendedor' ? 'Vend.' : u.role.slice(0,5)}
                               </span>
                               <button onClick={() => handleRemoveUserFromArea(a.id, u.id)}
                                 className="w-6 h-6 flex items-center justify-center rounded-md opacity-0 group-hover:opacity-100 transition-all flex-shrink-0"
-                                style={{ color: 'rgba(255,255,255,0.40)' }}
-                                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#f87171'; (e.currentTarget as HTMLElement).style.background = 'rgba(239,68,68,0.15)' }}
-                                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.40)'; (e.currentTarget as HTMLElement).style.background = 'transparent' }}>
+                                style={{ color: '#94a3b8' }}
+                                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#dc2626'; (e.currentTarget as HTMLElement).style.background = '#fef2f2' }}
+                                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = '#94a3b8'; (e.currentTarget as HTMLElement).style.background = 'transparent' }}>
                                 <X size={11} />
                               </button>
                             </div>
@@ -933,7 +932,7 @@ Reglas:
                                 style={{ color: '#1e293b' }}
                               />
                               <button onClick={() => setAreaUserDropOpen(p => ({ ...p, [a.id]: false }))}
-                                className="transition-colors" style={{ color: '#94a3b8' }}
+                                style={{ color: '#94a3b8' }}
                                 onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#475569' }}
                                 onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = '#94a3b8' }}>
                                 <X size={13} />
@@ -956,7 +955,7 @@ Reglas:
                                     }}>
                                     {u.name.charAt(0).toUpperCase()}
                                   </div>
-                                  <p className="text-xs font-semibold flex-1 truncate" style={{ color: '#1e293b' }}>{u.name}</p>
+                                  <p className="text-sm font-semibold flex-1 truncate" style={{ color: '#1e293b' }}>{u.name}</p>
                                   <span className="text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0"
                                     style={{
                                       background: u.role === 'agendadora' ? '#ede9fe' : '#dcfce7',
@@ -972,16 +971,16 @@ Reglas:
                           <button
                             onClick={() => { setAreaUserDropOpen(p => ({ ...p, [a.id]: true })); setAreaUserSearch(p => ({ ...p, [a.id]: '' })) }}
                             className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg w-full justify-center transition-colors"
-                            style={{ background: 'rgba(99,102,241,0.15)', border: '1px dashed rgba(99,102,241,0.40)', color: '#a5b4fc' }}
-                            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(99,102,241,0.25)' }}
-                            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(99,102,241,0.15)' }}>
+                            style={{ background: '#f0f9ff', border: '1px dashed #7dd3fc', color: '#0284c7' }}
+                            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#e0f2fe' }}
+                            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#f0f9ff' }}>
                             <Plus size={12} /> Añadir persona al área
                           </button>
                         )
                       )}
 
                       {areaAssigned.length === 0 && !isOpen && (
-                        <p className="text-xs italic text-center py-1" style={{ color: 'rgba(255,255,255,0.30)' }}>Sin personas asignadas</p>
+                        <p className="text-xs italic text-center py-1" style={{ color: '#94a3b8' }}>Sin personas asignadas</p>
                       )}
                     </div>
                   </div>
