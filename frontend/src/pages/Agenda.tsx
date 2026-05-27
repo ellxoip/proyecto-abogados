@@ -318,6 +318,33 @@ function EventModal({
         </div>
 
         <form onSubmit={handleSave} className="p-5 space-y-4">
+
+          {/* Superadmin: info del dueño del evento */}
+          {event && me?.role === 'superadmin' && (
+            <div className="flex items-start gap-3 px-3 py-2.5 rounded-xl bg-surface-0 border border-white/[0.07]">
+              <User size={14} className="text-white/40 mt-0.5 flex-shrink-0" />
+              <div className="text-xs space-y-0.5 min-w-0">
+                {event.creator && (
+                  <p className="text-white/55">
+                    <span className="text-white/35 mr-1">Creado por</span>
+                    <span className="font-semibold text-white/80">{event.creator.name}</span>
+                    <span className="text-white/35 ml-1">({event.creator.role})</span>
+                  </p>
+                )}
+                {event.assigned_to && (() => {
+                  const assignedVendor = vendors.find(v => v.id === event.assigned_to)
+                  return assignedVendor ? (
+                    <p className="text-white/55">
+                      <span className="text-white/35 mr-1">Asignado a</span>
+                      <span className="font-semibold text-white/80">{assignedVendor.name}</span>
+                      <span className="text-white/35 ml-1">({assignedVendor.role})</span>
+                    </p>
+                  ) : null
+                })()}
+              </div>
+            </div>
+          )}
+
           <div>
             <label className="input-label">Título *</label>
             <input className="input" value={form.title}
