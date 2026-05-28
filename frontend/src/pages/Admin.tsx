@@ -93,7 +93,8 @@ export default function Admin() {
         all.filter((u: User) =>
           u.is_active &&
           ['vendedor', 'agendadora'].includes(u.role) &&
-          !activeMembers.some((m: User) => m.id === u.id)
+          !activeMembers.some((m: User) => m.id === u.id) &&
+          (!u.group_id || u.group_id === gid)
         )
       )
     } catch { toast.error('Error cargando miembros') }
@@ -1255,33 +1256,33 @@ Reglas:
         return (
         <div className="fixed inset-0 modal-backdrop flex items-center justify-center z-50 p-4">
           <div className="rounded-2xl shadow-2xl w-full max-w-lg max-h-[88vh] flex flex-col overflow-hidden"
-            style={{ background: '#13131f', border: '1px solid rgba(255,255,255,0.09)' }}>
+            style={{ background: '#ffffff', border: '1px solid #e2e8f0' }}>
 
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 flex-shrink-0"
-              style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+              style={{ borderBottom: '1px solid #f1f5f9', background: '#f8fafc' }}>
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-                  style={{ background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.25)' }}>
-                  <UserCheck size={16} style={{ color: '#a5b4fc' }} />
+                  style={{ background: '#ede9fe', border: '1px solid #c4b5fd' }}>
+                  <UserCheck size={16} style={{ color: '#6d28d9' }} />
                 </div>
                 <div>
-                  <h2 className="text-sm font-bold text-white">{grpName}</h2>
-                  <p className="text-[11px] mt-0.5" style={{ color: 'rgba(255,255,255,0.40)' }}>
+                  <h2 className="text-sm font-bold" style={{ color: '#1e293b' }}>{grpName}</h2>
+                  <p className="text-[11px] mt-0.5" style={{ color: '#64748b' }}>
                     {groupMembers.length} persona{groupMembers.length !== 1 ? 's' : ''} en el grupo
                   </p>
                 </div>
               </div>
               <button onClick={() => { setShowMembersModal(false); setMembersGroupId(null) }}
                 className="w-8 h-8 flex items-center justify-center rounded-xl transition-colors"
-                style={{ color: 'rgba(255,255,255,0.40)' }}
-                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.07)' }}
+                style={{ color: '#64748b' }}
+                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#f1f5f9' }}
                 onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}>
                 <X size={16} />
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto">
+            <div className="flex-1 overflow-y-auto" style={{ background: '#ffffff' }}>
               {membersLoading ? (
                 <div className="flex items-center justify-center py-16">
                   <div className="w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
@@ -1291,19 +1292,19 @@ Reglas:
                   {/* Current members */}
                   <div className="px-5 pt-5 pb-3">
                     <div className="flex items-center gap-2 mb-3">
-                      <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: 'rgba(255,255,255,0.35)' }}>
+                      <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#94a3b8' }}>
                         Equipo actual
                       </span>
                       <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md"
-                        style={{ background: 'rgba(99,102,241,0.15)', color: '#a5b4fc' }}>
+                        style={{ background: '#ede9fe', color: '#6d28d9' }}>
                         {groupMembers.length}
                       </span>
                     </div>
                     {groupMembers.length === 0 ? (
                       <div className="flex flex-col items-center py-8 rounded-xl"
-                        style={{ background: 'rgba(255,255,255,0.02)', border: '1px dashed rgba(255,255,255,0.08)' }}>
-                        <UserCheck size={22} style={{ color: 'rgba(255,255,255,0.18)' }} />
-                        <p className="text-xs mt-2" style={{ color: 'rgba(255,255,255,0.30)' }}>Sin personas asignadas aún</p>
+                        style={{ background: '#f8fafc', border: '1px dashed #e2e8f0' }}>
+                        <UserCheck size={22} style={{ color: '#cbd5e1' }} />
+                        <p className="text-xs mt-2" style={{ color: '#94a3b8' }}>Sin personas asignadas aún</p>
                       </div>
                     ) : (
                       <div className="space-y-1.5">
@@ -1311,16 +1312,16 @@ Reglas:
                           const rc = memberRoleColor(u.role)
                           return (
                             <div key={u.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl group transition-colors"
-                              style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}
-                              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.10)' }}
-                              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.06)' }}>
+                              style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}
+                              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = '#c7d2fe' }}
+                              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = '#e2e8f0' }}>
                               <div className="w-8 h-8 rounded-xl font-bold flex items-center justify-center text-sm flex-shrink-0"
                                 style={{ background: rc.bg, color: rc.text, border: `1px solid ${rc.border}` }}>
                                 {u.name.charAt(0).toUpperCase()}
                               </div>
                               <div className="min-w-0 flex-1">
-                                <p className="text-sm font-semibold truncate" style={{ color: 'rgba(255,255,255,0.90)' }}>{u.name}</p>
-                                <p className="text-[11px] truncate" style={{ color: 'rgba(255,255,255,0.38)' }}>{u.email}</p>
+                                <p className="text-sm font-semibold truncate" style={{ color: '#1e293b' }}>{u.name}</p>
+                                <p className="text-[11px] truncate" style={{ color: '#64748b' }}>{u.email}</p>
                               </div>
                               <span className="text-[10px] font-semibold px-2 py-1 rounded-lg flex-shrink-0"
                                 style={{ background: rc.bg, color: rc.text, border: `1px solid ${rc.border}` }}>
@@ -1330,9 +1331,9 @@ Reglas:
                                 onClick={() => handleRemoveMember(u.id)}
                                 title="Quitar del grupo"
                                 className="w-7 h-7 flex items-center justify-center rounded-lg opacity-0 group-hover:opacity-100 transition-all flex-shrink-0"
-                                style={{ color: 'rgba(255,255,255,0.35)' }}
-                                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#f87171'; (e.currentTarget as HTMLElement).style.background = 'rgba(239,68,68,0.10)' }}
-                                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.35)'; (e.currentTarget as HTMLElement).style.background = 'transparent' }}>
+                                style={{ color: '#94a3b8' }}
+                                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#ef4444'; (e.currentTarget as HTMLElement).style.background = '#fee2e2' }}
+                                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = '#94a3b8'; (e.currentTarget as HTMLElement).style.background = 'transparent' }}>
                                 <UserMinus size={13} />
                               </button>
                             </div>
@@ -1344,13 +1345,13 @@ Reglas:
 
                   {/* Divider */}
                   {unassigned.length > 0 && (
-                    <div className="mx-5 my-1" style={{ height: '1px', background: 'rgba(255,255,255,0.06)' }} />
+                    <div className="mx-5 my-1" style={{ height: '1px', background: '#f1f5f9' }} />
                   )}
 
                   {/* Available to add */}
                   {unassigned.length > 0 && (
                     <div className="px-5 pt-3 pb-5">
-                      <p className="text-[10px] font-bold uppercase tracking-widest mb-3" style={{ color: 'rgba(255,255,255,0.35)' }}>
+                      <p className="text-[10px] font-bold uppercase tracking-widest mb-3" style={{ color: '#94a3b8' }}>
                         Disponibles para agregar
                       </p>
                       <div className="space-y-1.5">
@@ -1358,27 +1359,27 @@ Reglas:
                           const rc = memberRoleColor(u.role)
                           return (
                             <div key={u.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all"
-                              style={{ background: 'rgba(255,255,255,0.015)', border: '1px solid rgba(255,255,255,0.04)' }}
-                              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.04)'; (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.08)' }}
-                              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.015)'; (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.04)' }}>
+                              style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}
+                              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#f1f5f9'; (e.currentTarget as HTMLElement).style.borderColor = '#cbd5e1' }}
+                              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#f8fafc'; (e.currentTarget as HTMLElement).style.borderColor = '#e2e8f0' }}>
                               <div className="w-8 h-8 rounded-xl font-bold flex items-center justify-center text-sm flex-shrink-0"
-                                style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.45)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                                style={{ background: '#e2e8f0', color: '#475569', border: '1px solid #cbd5e1' }}>
                                 {u.name.charAt(0).toUpperCase()}
                               </div>
                               <div className="min-w-0 flex-1">
-                                <p className="text-sm font-semibold truncate" style={{ color: 'rgba(255,255,255,0.75)' }}>{u.name}</p>
-                                <p className="text-[11px] truncate" style={{ color: 'rgba(255,255,255,0.30)' }}>{u.email}</p>
+                                <p className="text-sm font-semibold truncate" style={{ color: '#1e293b' }}>{u.name}</p>
+                                <p className="text-[11px] truncate" style={{ color: '#64748b' }}>{u.email}</p>
                               </div>
                               <span className="text-[10px] font-semibold px-2 py-1 rounded-lg flex-shrink-0"
-                                style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.38)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                                style={{ background: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0' }}>
                                 {roleLabel[u.role] ?? u.role}
                               </span>
                               <button
                                 onClick={() => handleAssignMember(u.id)}
                                 className="flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-lg flex-shrink-0 transition-all"
-                                style={{ background: 'rgba(99,102,241,0.12)', color: '#a5b4fc', border: '1px solid rgba(99,102,241,0.22)' }}
-                                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(99,102,241,0.22)' }}
-                                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(99,102,241,0.12)' }}>
+                                style={{ background: '#ede9fe', color: '#6d28d9', border: '1px solid #c4b5fd' }}
+                                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#ddd6fe' }}
+                                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#ede9fe' }}>
                                 <Plus size={11} /> Agregar
                               </button>
                             </div>
