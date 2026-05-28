@@ -217,7 +217,7 @@ html[data-config-theme="dark"] ::selection {
 }
 
 /* Mobile tweaks */
-html, body { overscroll-behavior-y: none; }
+html, body { overscroll-behavior-y: none; overflow-x: clip; }
 @media (max-width: 768px) {
   body { font-size: 14px; }
 }

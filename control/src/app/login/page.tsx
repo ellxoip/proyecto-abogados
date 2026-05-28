@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { signIn } from "next-auth/react";
 import { useState } from "react";
+import InstallAppButton from "@/components/pwa/InstallAppButton";
 import { Lock, Mail, ArrowRight, ShieldCheck, ScrollText, Briefcase, Eye, EyeOff, Sparkles } from "lucide-react";
 import { BrandMark } from "@/components/BrandMark";
 
@@ -72,6 +73,7 @@ export default function ClientLoginPage() {
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-[#0B0C10] text-white">
+      <InstallAppButton />
       {/* ── Fullscreen background image ───────────────────────────────────── */}
       <Image
         src="/brand/login-hero-hive.png"
@@ -147,7 +149,7 @@ export default function ClientLoginPage() {
               <span style={{ color: "var(--gold-soft)" }}>se ordena</span> con precisión.
             </h1>
             <p
-              className="mt-5 max-w-lg text-[15px] leading-7 text-white"
+              className="mt-5 hidden max-w-lg text-[15px] leading-7 text-white sm:block"
               style={{ textShadow: "0 2px 14px rgba(0,0,0,0.65)" }}
             >
               Plataforma diseñada para abogados que valoran la discreción, el rigor procesal y la
@@ -155,7 +157,7 @@ export default function ClientLoginPage() {
             </p>
 
             <div
-              className="mt-9 flex flex-wrap items-center gap-6 text-[11px] uppercase tracking-[0.28em] text-white"
+              className="mt-9 hidden flex-wrap items-center gap-6 text-[11px] uppercase tracking-[0.28em] text-white sm:flex"
               style={{ textShadow: "0 2px 10px rgba(0,0,0,0.6)" }}
             >
               <span className="inline-flex items-center gap-2">
@@ -175,7 +177,7 @@ export default function ClientLoginPage() {
 
           {/* Footer crest */}
           <div
-            className="mt-10 lg:mt-0 flex items-end justify-between gap-4"
+            className="mt-10 lg:mt-0 hidden items-end justify-between gap-4 sm:flex"
             style={{ textShadow: "0 2px 10px rgba(0,0,0,0.6)" }}
           >
             <p className="text-[10px] uppercase tracking-[0.38em] text-white">
