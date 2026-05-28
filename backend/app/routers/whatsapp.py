@@ -232,7 +232,7 @@ async def whatsapp_sse(token: str = Query(...)):
                     payload_str = await asyncio.wait_for(q.get(), timeout=20)
                     yield f"data: {payload_str}\n\n"
                 except asyncio.TimeoutError:
-                    yield ": keepalive\n\n"
+                    yield f"data: {json.dumps({'type': 'keepalive'})}\n\n"
         except (asyncio.CancelledError, GeneratorExit):
             pass
         finally:

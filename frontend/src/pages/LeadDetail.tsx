@@ -271,7 +271,7 @@ export function LeadDetailView({ leadId, onClose }: LeadDetailViewProps) {
         <div className="bg-surface-1 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[95vh] overflow-y-auto p-5" style={{ border: '1px solid var(--border)' }}>
           {content}
         </div>
-        {showOTModal && <WorkOrderModal leadId={leadId} honorarios={lead?.honorarios ?? 0} onClose={() => setShowOTModal(false)} autoOpen />}
+        {showOTModal && <WorkOrderModal leadId={leadId} honorarios={lead?.honorarios ?? 0} onClose={() => setShowOTModal(false)} onSaved={() => { setShowOTModal(false); loadAll() }} autoOpen />}
         {showEditContact && lead?.contact && <EditContactModal contact={lead.contact} onClose={() => setShowEditContact(false)} onSuccess={c => { setLead(l => l ? { ...l, contact: c } : l); setShowEditContact(false) }} />}
         {showMoveModal && lead && <MoveLeadModal lead={lead} targetStage="" labels={STAGE_LABELS} canConfirmPago={canConfirmPago} userRole={user?.role} onConfirm={handleMove} onClose={() => setShowMoveModal(false)} />}
       </div>
@@ -281,7 +281,7 @@ export function LeadDetailView({ leadId, onClose }: LeadDetailViewProps) {
   return (
     <div className="w-full">
       {content}
-      {showOTModal && <WorkOrderModal leadId={leadId} honorarios={lead?.honorarios ?? 0} onClose={() => setShowOTModal(false)} autoOpen />}
+      {showOTModal && <WorkOrderModal leadId={leadId} honorarios={lead?.honorarios ?? 0} onClose={() => setShowOTModal(false)} onSaved={() => { setShowOTModal(false); loadAll() }} autoOpen />}
       {showEditContact && lead?.contact && <EditContactModal contact={lead.contact} onClose={() => setShowEditContact(false)} onSuccess={c => { setLead(l => l ? { ...l, contact: c } : l); setShowEditContact(false) }} />}
       {showMoveModal && lead && <MoveLeadModal lead={lead} targetStage="" labels={STAGE_LABELS} canConfirmPago={canConfirmPago} userRole={user?.role} onConfirm={handleMove} onClose={() => setShowMoveModal(false)} />}
     </div>

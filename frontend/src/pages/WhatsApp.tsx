@@ -411,7 +411,7 @@ export default function WhatsApp() {
       let evt: any
       try { evt = JSON.parse(e.data) } catch { return }
 
-      if (evt.type === 'connected') return
+      if (evt.type === 'connected' || evt.type === 'keepalive') return
 
       if (evt.type === 'new_message') {
         const msg = evt.message

@@ -593,7 +593,7 @@ export default function VendorPipeline() {
       )}
 
       {otLead !== null && (
-        <WorkOrderModal leadId={otLead.id} honorarios={otLead.honorarios} onClose={() => { setOtLead(null); load(true) }} />
+        <WorkOrderModal leadId={otLead.id} honorarios={otLead.honorarios} onClose={() => { setOtLead(null); load(true) }} onSaved={() => load(true)} />
       )}
     </div>
   )

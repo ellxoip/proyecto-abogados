@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { getPipelineSummary, getGroups, moveLeadStage, getStageLabels, getPipelineStages, getAgendadoraFollowup } from '../api'
+import { getPipelineSummary, getGroups, moveLeadStage, getStageLabels, getPipelineStages, getAgendadoraFollowup, getLead } from '../api'
 import { apiUrl } from '../api/client'
 import type { Lead, Group, PaymentVerification } from '../types'
 import { STAGE_LABELS } from '../types'
@@ -388,7 +388,10 @@ function LeadCard({ lead, canMove, showGroup, labels, canConfirmPago, onMoved, u
           leadId={lead.id}
           honorarios={lead.honorarios}
           onClose={() => setShowOTModal(false)}
-          onSaved={() => setShowOTModal(false)}
+          onSaved={() => {
+            setShowOTModal(false)
+            getLead(lead.id).then(updated => onMoved(updated)).catch(() => {})
+          }}
         />
       )}
 
