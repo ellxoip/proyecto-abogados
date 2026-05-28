@@ -17,14 +17,16 @@ import {
 } from '../api'
 import type { User, Group, Area, WhatsAppConfig } from '../types'
 import { STAGE_LABELS as DEFAULT_STAGE_LABELS } from '../types'
-import { Users, Building, Plus, Edit2, Trash2, X, Shield, GitBranch, Phone, ChevronRight, Layers, Smartphone, Wifi, WifiOff, RefreshCw, UserCheck, UserMinus, Bot, Zap, ChevronDown, ChevronUp, Eye, Clock, MessageSquare, ToggleLeft, ToggleRight, GripVertical } from 'lucide-react'
+import { Users, Building, Plus, Edit2, Trash2, X, Shield, GitBranch, Phone, ChevronRight, Layers, Smartphone, Wifi, WifiOff, RefreshCw, UserCheck, UserMinus, Bot, Zap, ChevronDown, ChevronUp, Eye, Clock, MessageSquare, ToggleLeft, ToggleRight, GripVertical, Loader2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useAuthStore } from '../store/auth'
+import { useConfirm } from '../components/ConfirmDialog'
 
 type Tab = 'users' | 'groups' | 'pipeline' | 'whatsapp_sessions' | 'ai_agents' | 'security'
 
 export default function Admin() {
   const { user: me } = useAuthStore()
+  const { confirm, dialog: confirmDialog } = useConfirm()
   const [searchParams, setSearchParams] = useSearchParams()
   const activeTab: Tab = (searchParams.get('tab') as Tab) || 'users'
   const setActiveTab = (id: Tab) => setSearchParams({ tab: id })
@@ -204,7 +206,8 @@ export default function Admin() {
   }
 
   const handleDeleteGroup = async (id: number, name: string) => {
-    if (!confirm(`¿Eliminar el grupo "${name}"? Se eliminarán todas sus áreas y leads asociados.`)) return
+    const ok = await confirm(`Se eliminarán todas las áreas y leads de "${name}" permanentemente.`, { title: `Eliminar grupo ${name}`, confirmLabel: 'Eliminar' })
+    if (!ok) return
     try {
       await deleteGroup(id)
       toast.success('Grupo eliminado')
@@ -308,7 +311,8 @@ export default function Admin() {
   }
 
   const handleDeleteUser = async (id: number) => {
-    if (!confirm('¿Desactivar este usuario?')) return
+    const ok = await confirm('El usuario quedará inactivo y no podrá iniciar sesión.', { title: 'Desactivar usuario', confirmLabel: 'Desactivar' })
+    if (!ok) return
     try {
       await deleteUser(id)
       toast.success('Usuario desactivado')
@@ -352,7 +356,8 @@ export default function Admin() {
   }
 
   const handleDeleteStage = async (id: number) => {
-    if (!confirm('¿Eliminar esta etapa?')) return
+    const ok = await confirm('Se eliminará esta etapa del pipeline.', { title: 'Eliminar etapa', confirmLabel: 'Eliminar' })
+    if (!ok) return
     try {
       await deletePipelineStage(id)
       setPipelineStages(ps => ps.filter(s => s.id !== id))
@@ -603,7 +608,8 @@ Reglas:
   }
 
   const handleDeleteAgent = async (id: number) => {
-    if (!confirm('¿Eliminar este agente? Se perderán todos sus logs.')) return
+    const ok = await confirm('Se perderán todos sus logs permanentemente.', { title: 'Eliminar agente IA', confirmLabel: 'Eliminar' })
+    if (!ok) return
     try { await deleteAIAgent(id); toast.success('Agente eliminado'); loadAgents() }
     catch { toast.error('Error al eliminar') }
   }
@@ -1222,7 +1228,8 @@ Reglas:
                         <td className="table-cell">
                           <button
                             onClick={async () => {
-                              if (!confirm(`¿Eliminar sesión "${s.name}"? Se desconectará el número.`)) return
+                              const ok = await confirm(`Se desconectará el número "${s.name}".`, { title: 'Eliminar sesión WhatsApp', confirmLabel: 'Eliminar' })
+                              if (!ok) return
                               try {
                                 await adminDeleteWASession(s.id)
                                 toast.success('Sesión eliminada')
@@ -2288,6 +2295,8 @@ Reglas:
           </div>
         </div>
       )}
+
+      {confirmDialog}
     </div>
   )
 }

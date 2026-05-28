@@ -18,6 +18,7 @@ import {
   Link, Unlink, Loader2, Bot, Zap, Clock, ChevronDown, ChevronUp, X,
   Building2, ShieldCheck, KeyRound, Shield,
 } from 'lucide-react'
+import { useConfirm } from '../components/ConfirmDialog'
 
 type Tab = 'negocios' | 'overview' | 'whatsapp' | 'whatsapp_qr' | 'google' | 'users' | 'ai_agents' | 'security'
 
@@ -59,6 +60,7 @@ const emptyWAForm: WAForm = {
 }
 
 export default function Tecnico() {
+  const { confirm, dialog: confirmDialog } = useConfirm()
   const [searchParams, setSearchParams] = useSearchParams()
   const tab: Tab = (searchParams.get('tab') as Tab) || 'negocios'
   const setTab = (id: Tab) => setSearchParams({ tab: id })
@@ -352,7 +354,8 @@ export default function Tecnico() {
   }
 
   const handleDeleteQR = async (cfg: QRConfig) => {
-    if (!confirm(`¿Eliminar sesión "${cfg.name}"? Se desconectará WhatsApp.`)) return
+    const ok = await confirm(`Se desconectará WhatsApp "${cfg.name}".`, { title: 'Eliminar sesión', confirmLabel: 'Eliminar' })
+    if (!ok) return
     try {
       await deleteQRSession(cfg.id)
       toast.success('Sesión eliminada')
@@ -410,7 +413,8 @@ export default function Tecnico() {
   }
 
   const handleDeleteWA = async (cfg: WAConfig) => {
-    if (!confirm(`¿Eliminar "${cfg.name}"? Esta acción es irreversible.`)) return
+    const ok = await confirm(`Eliminar la configuración "${cfg.name}" es irreversible.`, { title: 'Eliminar config WhatsApp', confirmLabel: 'Eliminar' })
+    if (!ok) return
     try {
       await deleteTecnicoWhatsApp(cfg.id)
       toast.success('Configuración eliminada')
@@ -637,7 +641,8 @@ Si el cliente tiene una consulta compleja o quiere hablar con una persona, dile 
   }
 
   const handleDeleteAgent = async (id: number) => {
-    if (!confirm('¿Eliminar este agente? Se perderán todos sus logs.')) return
+    const ok = await confirm('Se perderán todos sus logs permanentemente.', { title: 'Eliminar agente IA', confirmLabel: 'Eliminar' })
+    if (!ok) return
     try { await deleteAIAgent(id); toast.success('Agente eliminado'); loadAgents() }
     catch { toast.error('Error al eliminar') }
   }
@@ -2403,6 +2408,7 @@ Si el cliente tiene una consulta compleja o quiere hablar con una persona, dile 
           </div>
         </div>
       )}
+      {confirmDialog}
     </div>
   )
 }

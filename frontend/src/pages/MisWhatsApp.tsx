@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { useAuthStore } from '../store/auth'
 import { getLimits } from '../utils/plans'
+import { useConfirm } from '../components/ConfirmDialog'
 
 type SessionStatus = 'not_started' | 'connecting' | 'qr_ready' | 'scanning' | 'connected' | 'disconnected' | 'logged_out' | 'service_unavailable'
 
@@ -405,6 +406,7 @@ function SessionCard({ session, onQR, onDelete, onRename, onRefresh }: {
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function MisWhatsApp() {
   const { user } = useAuthStore()
+  const { confirm, dialog: confirmDialog } = useConfirm()
   const [sessions, setSessions] = useState<WASession[]>([])
   const [loading, setLoading] = useState(true)
   const [creating, setCreating] = useState(false)
@@ -459,7 +461,8 @@ export default function MisWhatsApp() {
   }
 
   const handleDelete = async (s: WASession) => {
-    if (!confirm(`¿Eliminar "${s.name}"? Se desconectará el número.`)) return
+    const ok = await confirm(`Se desconectará el número "${s.name}".`, { title: 'Eliminar sesión WhatsApp', confirmLabel: 'Eliminar' })
+    if (!ok) return
     try {
       await deleteMyWASession(s.id)
       setSessions(prev => prev.filter(x => x.id !== s.id))
@@ -562,6 +565,7 @@ export default function MisWhatsApp() {
           onConnected={() => { setQrSession(null); load() }}
         />
       )}
+      {confirmDialog}
     </div>
   )
 }

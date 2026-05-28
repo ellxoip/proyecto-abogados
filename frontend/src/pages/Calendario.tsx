@@ -12,6 +12,7 @@ import {
 import type { CalendarEvent } from '../types'
 import toast from 'react-hot-toast'
 import { X, Plus, ChevronLeft, ChevronRight, RefreshCw, Link2, Link2Off, Search, User } from 'lucide-react'
+import { useConfirm } from '../components/ConfirmDialog'
 import { format } from 'date-fns'
 import { useAuthStore } from '../store/auth'
 
@@ -118,6 +119,7 @@ function MiniCalendar({ eventDates, selectedDate, onDayClick }: {
 /* ══════════════════════════════════════════════════════════════════════════ */
 export default function Calendario() {
   const { user: me } = useAuthStore()
+  const { confirm, dialog: confirmDialog } = useConfirm()
   const isAdmin = me?.role === 'superadmin' || me?.role === 'subadmin'
   const [searchParams] = useSearchParams()
 
@@ -204,7 +206,8 @@ export default function Calendario() {
   }
 
   const handleGoogleDisconnect = async () => {
-    if (!confirm('¿Desconectar Google Calendar?')) return
+    const ok = await confirm('Se perderá la sincronización con Google Calendar.', { title: 'Desconectar Google Calendar', confirmLabel: 'Desconectar' })
+    if (!ok) return
     try {
       await disconnectGoogle()
       setGoogleStatus(s => s ? { ...s, connected: false, google_email: null } : s)
@@ -387,7 +390,8 @@ export default function Calendario() {
 
   const handleDelete = async () => {
     if (!editEvent) return
-    if (!confirm('¿Eliminar este evento?')) return
+    const ok = await confirm('¿Eliminar este evento? Esta acción no se puede deshacer.', { title: 'Eliminar evento', confirmLabel: 'Eliminar' })
+    if (!ok) return
     try {
       await deleteCalendarEvent(editEvent.id)
       toast.success('Evento eliminado')
@@ -786,6 +790,7 @@ export default function Calendario() {
           </div>
         </div>
       )}
+      {confirmDialog}
     </div>
   )
 }

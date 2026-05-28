@@ -6,6 +6,7 @@ import toast from 'react-hot-toast'
 import { createCalendarEvent, updateCalendarEvent, deleteCalendarEvent, updateVendorStatus } from '../api'
 import type { CalendarEvent } from '../types'
 import { useAuthStore } from '../store/auth'
+import { useConfirm } from './ConfirmDialog'
 
 const EVENT_TYPES = [
   { value: 'reunion',      label: 'Reunión',      color: '#3B82F6' },
@@ -34,6 +35,7 @@ export function EventModal({
   defaultDate?: string
 }) {
   const { user: me } = useAuthStore()
+  const { confirm, dialog: confirmDialog } = useConfirm()
   const [form, setForm] = useState({
     title: event?.title ?? '',
     start_time: event ? toLocalInput(event.start_time) : (defaultDate ? `${defaultDate}T09:00` : ''),
@@ -117,7 +119,9 @@ export function EventModal({
   }
 
   const handleDelete = async () => {
-    if (!event || !confirm('¿Eliminar esta reunión?')) return
+    if (!event) return
+    const ok = await confirm('¿Eliminar esta reunión? Esta acción no se puede deshacer.', { title: 'Eliminar reunión', confirmLabel: 'Eliminar' })
+    if (!ok) return
     try {
       await deleteCalendarEvent(event.id)
       toast.success('Reunión eliminada')
@@ -127,6 +131,7 @@ export function EventModal({
   }
 
   return (
+    <>
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-end sm:items-center justify-center z-[100] p-0 sm:p-4">
       <div className="bg-surface-1 w-full sm:rounded-2xl sm:max-w-lg shadow-2xl max-h-[95vh] overflow-y-auto">
         <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.07] sticky top-0 bg-surface-1 z-10">
@@ -233,5 +238,7 @@ export function EventModal({
         </form>
       </div>
     </div>
+    {confirmDialog}
+    </>
   )
 }

@@ -21,6 +21,7 @@ import {
 import toast from 'react-hot-toast'
 import { useAuthStore } from '../store/auth'
 import LeadModal from '../components/LeadModal'
+import { useConfirm } from '../components/ConfirmDialog'
 import { format, isToday, isYesterday } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { parseDate as parseAsUTC } from '../utils/dates'
@@ -2051,6 +2052,7 @@ const PAGE_SIZE = 80
 // ── Main ──────────────────────────────────────────────────
 export default function Leads() {
   const { user } = useAuthStore()
+  const { confirm, dialog: confirmDialog } = useConfirm()
   const [leads, setLeads] = useState<Lead[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
@@ -2265,7 +2267,8 @@ export default function Leads() {
 
   const handleDelete = async (e: React.MouseEvent, id: number) => {
     e.stopPropagation()
-    if (!confirm('¿Eliminar este lead?')) return
+    const ok = await confirm('¿Eliminar este lead? Esta acción no se puede deshacer.', { title: 'Eliminar lead', confirmLabel: 'Eliminar' })
+    if (!ok) return
     try {
       await deleteLead(id)
       toast.success('Lead eliminado')
@@ -2279,8 +2282,9 @@ export default function Leads() {
     const count = group.length
     const msg = count === 1
       ? '¿Eliminar este lead? Esta acción no se puede deshacer.'
-      : `¿Eliminar este contacto y sus ${count} expedientes? Esta acción no se puede deshacer.`
-    if (!confirm(msg)) return
+      : `Se eliminarán el contacto y sus ${count} expedientes permanentemente.`
+    const ok = await confirm(msg, { title: count === 1 ? 'Eliminar lead' : `Eliminar ${count} expedientes`, confirmLabel: 'Eliminar' })
+    if (!ok) return
     try {
       await Promise.all(group.map(l => deleteLead(l.id)))
       toast.success(count === 1 ? 'Lead eliminado' : `${count} leads eliminados`)
@@ -2803,6 +2807,8 @@ export default function Leads() {
       {detailLeadId !== null && (
         <LeadDetailView leadId={detailLeadId} onClose={() => setDetailLeadId(null)} />
       )}
+
+      {confirmDialog}
     </div>
   )
 }

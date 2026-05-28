@@ -16,6 +16,7 @@ import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { parseLocalDate } from '../utils/dates'
 import { Plus, X, Link2, Link2Off, RefreshCw, Clock, User, ChevronLeft, ChevronRight } from 'lucide-react'
+import { useConfirm } from '../components/ConfirmDialog'
 
 const GC_CSS = `
 .fc {
@@ -218,6 +219,7 @@ function EventModal({
   googleConnected?: boolean
 }) {
   const { user: me } = useAuthStore()
+  const { confirm, dialog: confirmDialog } = useConfirm()
 
   const addThirtyMin = (startStr: string): string => {
     const [datePart, timePart] = startStr.split('T')
@@ -290,7 +292,9 @@ function EventModal({
   }
 
   const handleDelete = async () => {
-    if (!event || !confirm('¿Eliminar esta reunión?')) return
+    if (!event) return
+    const ok = await confirm('¿Eliminar esta reunión? Esta acción no se puede deshacer.', { title: 'Eliminar reunión', confirmLabel: 'Eliminar' })
+    if (!ok) return
     try {
       await deleteCalendarEvent(event.id)
       toast.success('Reunión eliminada')
@@ -301,6 +305,7 @@ function EventModal({
   const typeColor = EVENT_TYPES.find(t => t.value === form.event_type)?.color ?? form.color
 
   return (
+    <>
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
       <div className="bg-surface-1 w-full sm:rounded-2xl sm:max-w-lg shadow-2xl max-h-[95vh] overflow-y-auto border border-white/[0.08]">
         {/* Header with colored top accent */}
@@ -432,12 +437,15 @@ function EventModal({
         </form>
       </div>
     </div>
+    {confirmDialog}
+    </>
   )
 }
 
 // ── Main component ───────────────────────────────────────────────
 export default function Agenda() {
   const { user: me } = useAuthStore()
+  const { confirm: confirmMain, dialog: confirmMainDialog } = useConfirm()
   const [searchParams] = useSearchParams()
   const calRef = useRef<any>(null)
   const [events, setEvents] = useState<CalendarEvent[]>([])
@@ -528,7 +536,8 @@ export default function Agenda() {
   }
 
   const handleDisconnect = async () => {
-    if (!confirm('¿Desconectar Google Calendar?')) return
+    const ok = await confirmMain('Se perderá la sincronización con Google Calendar.', { title: 'Desconectar Google Calendar', confirmLabel: 'Desconectar' })
+    if (!ok) return
     try {
       await disconnectGoogle()
       setGoogleStatus((s: any) => s ? { ...s, connected: false } : s)
@@ -862,6 +871,7 @@ export default function Agenda() {
           onDeleted={() => { setShowModal(false); load() }}
         />
       )}
+      {confirmMainDialog}
     </div>
   )
 }

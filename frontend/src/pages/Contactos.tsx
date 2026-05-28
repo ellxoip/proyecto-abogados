@@ -10,6 +10,7 @@ import toast from 'react-hot-toast'
 import { useAuthStore } from '../store/auth'
 import ContactModal from '../components/ContactModal'
 import { rutOnChange } from '../utils/rut'
+import { useConfirm } from '../components/ConfirmDialog'
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <div><label className="block text-xs font-semibold text-white/62 mb-1">{label}</label>{children}</div>
@@ -294,6 +295,8 @@ export default function Contactos() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [bulkLoading, setBulkLoading] = useState(false)
   const [exporting, setExporting]     = useState(false)
+  const [deletingId, setDeletingId]   = useState<number | null>(null)
+  const { confirm, dialog: confirmDialog } = useConfirm()
 
   const isAdmin   = !!(user?.role && ['superadmin', 'subadmin'].includes(user.role))
   const canEdit   = !!(user?.role && ['superadmin', 'subadmin', 'agendadora'].includes(user.role))
@@ -355,18 +358,20 @@ export default function Contactos() {
 
   const handleBulkDelete = async () => {
     if (selectedIds.size === 0) return
-    if (!confirm(`¿Eliminar ${selectedIds.size} contacto${selectedIds.size > 1 ? 's' : ''}? Esta acción no se puede deshacer.`)) return
+    const ok = await confirm(
+      `Se eliminarán ${selectedIds.size} contacto${selectedIds.size > 1 ? 's' : ''} permanentemente. Esta acción no se puede deshacer.`,
+      { title: `Eliminar ${selectedIds.size} contacto${selectedIds.size > 1 ? 's' : ''}`, confirmLabel: 'Eliminar' }
+    )
+    if (!ok) return
     setBulkLoading(true)
     try {
       const results = await Promise.allSettled(Array.from(selectedIds).map(id => deleteContact(id, true)))
       const failed = results.filter(r => r.status === 'rejected' && r.reason?.response?.status !== 404)
       const deleted = results.filter(r => r.status === 'fulfilled' || r.reason?.response?.status === 404).length
-      if (deleted > 0) {
-        toast.success(`${deleted} contacto${deleted > 1 ? 's eliminados' : ' eliminado'}`)
-      }
+      if (deleted > 0) toast.success(`${deleted} contacto${deleted > 1 ? 's eliminados' : ' eliminado'}`)
       if (failed.length > 0) {
         const detail = failed[0].status === 'rejected' ? (failed[0].reason?.response?.data?.detail || 'Error al eliminar') : ''
-        toast.error(`${failed.length} contacto${failed.length > 1 ? 's no pudieron eliminarse' : ' no pudo eliminarse'}: ${detail}`)
+        toast.error(`${failed.length} no pudo${failed.length > 1 ? 'n' : ''} eliminarse: ${detail}`)
       }
       setSelectedIds(new Set())
       load(page)
@@ -378,10 +383,11 @@ export default function Contactos() {
   }
 
   const handleDelete = async (id: number, force = false) => {
-    const confirmMsg = force
-      ? '⚠️ Forzar eliminación: el contacto tiene leads activos en el pipeline. Se eliminarán el contacto y TODOS sus leads permanentemente. ¿Continuar?'
-      : '¿Eliminar este contacto?'
-    if (!confirm(confirmMsg)) return
+    if (!force) {
+      const ok = await confirm('¿Eliminar este contacto?', { title: 'Eliminar contacto', confirmLabel: 'Eliminar' })
+      if (!ok) return
+    }
+    setDeletingId(id)
     try {
       await deleteContact(id, force)
       toast.success('Contacto eliminado')
@@ -391,10 +397,16 @@ export default function Contactos() {
     } catch (err: any) {
       const detail: string = err?.response?.data?.detail || ''
       if (!force && detail.includes('lead(s) activo') && user?.role === 'superadmin') {
-        handleDelete(id, true)
+        const ok2 = await confirm(
+          'El contacto tiene leads activos. Se eliminarán el contacto y TODOS sus leads permanentemente.',
+          { title: 'Forzar eliminación', confirmLabel: 'Eliminar todo' }
+        )
+        if (ok2) handleDelete(id, true)
       } else {
         toast.error(detail || 'Error al eliminar')
       }
+    } finally {
+      setDeletingId(null)
     }
   }
 
@@ -603,12 +615,12 @@ export default function Contactos() {
                         </button>
                       )}
                       {canDelete && (
-                        <button onClick={() => handleDelete(c.id)}
-                          className="p-1.5 rounded-lg transition-colors"
+                        <button onClick={() => handleDelete(c.id)} disabled={deletingId === c.id}
+                          className="p-1.5 rounded-lg transition-colors disabled:opacity-50"
                           style={{ color: 'rgba(239,35,60,0.45)' }}
                           onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,35,60,0.08)'; e.currentTarget.style.color = '#ef233c' }}
                           onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'rgba(239,35,60,0.45)' }}>
-                          <Trash2 size={14} />
+                          {deletingId === c.id ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
                         </button>
                       )}
                     </div>
@@ -716,13 +728,13 @@ export default function Contactos() {
                               </button>
                             )}
                             {canDelete && (
-                              <button onClick={() => handleDelete(c.id)}
-                                className="p-1.5 rounded-lg transition-colors"
+                              <button onClick={() => handleDelete(c.id)} disabled={deletingId === c.id}
+                                className="p-1.5 rounded-lg transition-colors disabled:opacity-50"
                                 style={{ color: 'rgba(239,35,60,0.45)' }}
                                 onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,35,60,0.08)'; e.currentTarget.style.color = '#ef233c' }}
                                 onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'rgba(239,35,60,0.45)' }}
                                 title="Eliminar">
-                                <Trash2 size={14} />
+                                {deletingId === c.id ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
                               </button>
                             )}
                           </div>
@@ -807,6 +819,8 @@ export default function Contactos() {
           onSuccess={() => { setShowImport(false); load() }}
         />
       )}
+
+      {confirmDialog}
     </div>
   )
 }
