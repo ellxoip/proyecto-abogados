@@ -104,14 +104,21 @@ export default function Admin() {
   const handleAssignMember = async (userId: number) => {
     try {
       await assignUserToGroup(membersGroupId!, userId)
+      await updateUser(userId, { group_id: membersGroupId })
       await openGroupMembers(membersGroupId!)
+      loadUsers()
     } catch { toast.error('Error al asignar') }
   }
 
   const handleRemoveMember = async (userId: number) => {
     try {
       await removeUserFromGroup(membersGroupId!, userId)
+      const u = users.find(x => x.id === userId)
+      if (u && u.group_id === membersGroupId) {
+        await updateUser(userId, { group_id: null })
+      }
       await openGroupMembers(membersGroupId!)
+      loadUsers()
     } catch { toast.error('Error al quitar del grupo') }
   }
 
