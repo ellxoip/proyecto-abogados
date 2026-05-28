@@ -1251,8 +1251,8 @@ Reglas:
       {showMembersModal && membersGroupId && (() => {
         const grpName = groups.find(g => g.id === membersGroupId)?.name ?? ''
         const memberRoleColor = (role: string) => role === 'agendadora'
-          ? { bg: 'rgba(139,92,246,0.14)', border: 'rgba(139,92,246,0.30)', text: '#c4b5fd', dot: '#8b5cf6' }
-          : { bg: 'rgba(163,230,53,0.12)', border: 'rgba(163,230,53,0.28)', text: '#a3e635', dot: '#a3e635' }
+          ? { bg: '#ede9fe', border: '#c4b5fd', text: '#6d28d9' }
+          : { bg: '#dcfce7', border: '#86efac', text: '#15803d' }
         return (
         <div className="fixed inset-0 modal-backdrop flex items-center justify-center z-50 p-4">
           <div className="rounded-2xl shadow-2xl w-full max-w-lg max-h-[88vh] flex flex-col overflow-hidden"
@@ -1363,7 +1363,7 @@ Reglas:
                               onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#f1f5f9'; (e.currentTarget as HTMLElement).style.borderColor = '#cbd5e1' }}
                               onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#f8fafc'; (e.currentTarget as HTMLElement).style.borderColor = '#e2e8f0' }}>
                               <div className="w-8 h-8 rounded-xl font-bold flex items-center justify-center text-sm flex-shrink-0"
-                                style={{ background: '#e2e8f0', color: '#475569', border: '1px solid #cbd5e1' }}>
+                                style={{ background: rc.bg, color: rc.text, border: `1px solid ${rc.border}` }}>
                                 {u.name.charAt(0).toUpperCase()}
                               </div>
                               <div className="min-w-0 flex-1">
@@ -1371,7 +1371,7 @@ Reglas:
                                 <p className="text-[11px] truncate" style={{ color: '#64748b' }}>{u.email}</p>
                               </div>
                               <span className="text-[10px] font-semibold px-2 py-1 rounded-lg flex-shrink-0"
-                                style={{ background: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0' }}>
+                                style={{ background: rc.bg, color: rc.text, border: `1px solid ${rc.border}` }}>
                                 {roleLabel[u.role] ?? u.role}
                               </span>
                               <button
