@@ -65,12 +65,7 @@ function computePaymentFields(fields: Record<string, any>): Record<string, any> 
   const nc  = gi(fields.num_cuotas) || 1
   if (hon > 0 && nc > 0) {
     const cuota = Math.round((hon - pie) / nc)
-    return {
-      ...fields,
-      monto_cuota:  String(cuota),
-      honorarios:   String(pie + nc * cuota),
-      ultima_cuota: '',
-    }
+    return { ...fields, monto_cuota: String(cuota) }
   }
   return fields
 }
@@ -753,13 +748,8 @@ export function WorkOrderModal({ leadId, onClose, onSaved, autoOpen, honorarios 
     const nc  = gi(key === 'num_cuotas'  ? value : prev.num_cuotas) || 1
     const mc  = gi(key === 'monto_cuota' ? value : prev.monto_cuota)
     if (['honorarios', 'pie_inicial', 'num_cuotas'].includes(key)) {
-      const cuota       = nc > 0 ? Math.round((hon - pie) / nc) : 0
-      next.monto_cuota  = String(cuota)
-      next.honorarios   = String(pie + nc * cuota)
-      next.ultima_cuota = ''
-    } else if (key === 'monto_cuota') {
-      next.honorarios   = String(pie + nc * mc)
-      next.ultima_cuota = ''
+      const cuota = nc > 0 ? Math.round((hon - pie) / nc) : 0
+      next.monto_cuota = String(cuota)
     }
     return next
   })

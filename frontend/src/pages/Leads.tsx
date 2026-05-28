@@ -1284,37 +1284,15 @@ function InfoTab({ lead, onUpdate, onOpenFull }: { lead: Lead; onUpdate: (l: Lea
     if (field === 'honorarios') {
       const nc = lead.num_cuotas || 1
       const ci = lead.cuota_inicial || 0
-      if (nc > 1) {
-        const cuota = Math.round((val - ci) / nc)
-        payload.monto_cuota = cuota
-        payload.honorarios  = ci + nc * cuota
-      } else {
-        payload.cuota_inicial = val
-        payload.monto_cuota   = 0
-      }
+      payload.monto_cuota = nc > 0 ? Math.round((val - ci) / nc) : 0
     } else if (field === 'num_cuotas') {
       const h  = lead.honorarios || 0
-      const nc = val
-      const autoFilled = lead.cuota_inicial === lead.honorarios
-      const ci = autoFilled ? 0 : (lead.cuota_inicial || 0)
-      if (autoFilled) payload.cuota_inicial = 0
-      if (h > 0 && nc > 0) {
-        const cuota       = Math.round((h - ci) / nc)
-        payload.monto_cuota = cuota
-        payload.honorarios  = ci + nc * cuota
-      } else {
-        payload.monto_cuota = 0
-      }
+      const ci = lead.cuota_inicial || 0
+      payload.monto_cuota = val > 0 && h > 0 ? Math.round((h - ci) / val) : 0
     } else if (field === 'cuota_inicial') {
       const h  = lead.honorarios || 0
       const nc = lead.num_cuotas || 1
-      if (h > 0 && nc > 0) {
-        const cuota       = Math.round((h - val) / nc)
-        payload.monto_cuota = cuota
-        payload.honorarios  = val + nc * cuota
-      } else {
-        payload.monto_cuota = 0
-      }
+      payload.monto_cuota = nc > 0 && h > 0 ? Math.round((h - val) / nc) : 0
     }
 
     const updated = await updateLead(lead.id, payload)
