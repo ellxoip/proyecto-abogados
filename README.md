@@ -1,102 +1,149 @@
-# AT INFORMA v3.0 — Legal Operating System
+Legal Finance MVP (SIS.CONTABLE)
+Sistema interno financiero-contable para gestion de clientes, contratos, cuotas, pagos e integraciones externas.
 
-**AT INFORMA** es un sistema operativo legal de alto rendimiento diseñado para la gestión integral de procesos judiciales y administrativos. La versión 3.0 integra el sistema de diseño **LemonKiller**, cumplimiento normativo **ISO 27001** y análisis de productividad impulsado por IA.
+Resumen
+SIS.CONTABLE es la fuente de verdad de:
 
-![LemonKiller Aesthetic](https://img.shields.io/badge/Design-LemonKiller_MVP-gold?style=for-the-badge)
-![Security](https://img.shields.io/badge/Security-ISO_27001_Compliant-emerald?style=for-the-badge)
-![Tech](https://img.shields.io/badge/Stack-Next.js_14-blue?style=for-the-badge)
+deuda
+cuotas
+pagos
+saldos
+estado de contratos
+PagaCuotas actua como pasarela de cobro. No crea clientes ni contratos en SIS.CONTABLE; solo consulta deuda/cuotas y reporta eventos de pago.
 
----
+AT-INFORMA se integra para sincronizacion de informacion legal/financiera.
 
-## 💎 Diseño y Estética: LemonKiller MVP
-El sistema ha sido migrado a una interfaz premium de alto contraste basada en el **LemonKiller Design System**:
-- **Dark Mode Nativo**: Fondo profundo (`#0A0A0A`) con acentos en oro (`var(--gold)`).
-- **Glassmorphism**: Paneles con efectos de desenfoque de fondo y bordes de cristal.
-- **Tipografía Moderna**: Uso de *Space Grotesk* para interfaces técnicas y *Playfair Display* para elegancia legal.
-- **Micro-animaciones**: Transiciones suaves y efectos de hover dinámicos en toda la plataforma.
+Stack
+Next.js 16 (App Router + Route Handlers)
+TypeScript
+Prisma ORM
+PostgreSQL (Supabase)
+Zod
+Vitest
+ESLint
+Requisitos
+Node.js 20+
+npm 10+
+Proyecto Supabase con PostgreSQL (provee DATABASE_URL y DIRECT_URL)
+Variables de entorno
+Configurar .env desde .env.example.
 
----
+Variables base:
 
-## 🔒 Seguridad de la Información (ISO 27001)
-Implementación robusta de controles de seguridad para la protección de expedientes delicados:
-- **Control de Acceso Estricto (RBAC)**: Jerarquía de permisos clara (SuperAdmin, Jefe de Mesa, Abogado, Cliente).
-- **Auditoría Exhaustiva**: Registro de cada acción (logins, asignaciones, cambios de estado, descargas) con actor, fecha y canal.
-- **Cabeceras de Seguridad**: Protección contra Clickjacking, XSS y MIME-sniffing configurada a nivel de servidor.
-- **Gestión de Sesiones**: Expiración automática de tokens y protección contra fuerza bruta mediante retardos controlados.
-- **Identity Challenge**: Verificación de identidad adicional para acceder a expedientes marcados como "Delicados".
+DATABASE_URL="postgresql://postgres:[PASSWORD]@db.[PROJECT].supabase.co:5432/postgres?pgbouncer=true"
+DIRECT_URL="postgresql://postgres:[PASSWORD]@db.[PROJECT].supabase.co:5432/postgres"
+APP_URL="http://localhost:3000"
+JWT_SECRET="change-this-secret-in-local"
+AT_INFORMA_API_URL="https://at-informa.cl"
+AT_INFORMA_API_KEY="clave_bearer_token"
+PAGACUOTAS_INTERNAL_API_KEY="clave_interna_pagacuotas"
+PAGACUOTAS_INTERNAL_BEARER_TOKEN="bearer_interno_pagacuotas"
+DATABASE_URL usa PgBouncer (pooled) para el servidor. DIRECT_URL es conexión directa para migraciones Prisma.
 
----
+Notas de auth interna para PagaCuotas:
 
-## 🚀 Funcionalidades Clave
+cada endpoint interno acepta x-api-key o Authorization: Bearer <token>
+las credenciales se leen desde las variables anteriores
+Instalacion y ejecucion local
+npm install
+npx prisma generate
+npx prisma db push
+npm run prisma:seed
+npm run dev
+App local:
 
-### 💼 Gestión de Expedientes
-- **Ingreso Rápido**: Onboarding simplificado de clientes y creación de casos en un solo paso.
-- **Bandeja de Entrada**: Centro de mando para la asignación estratégica de casos a abogados.
-- **Validación de Término**: Los casos solo pueden finalizarse tras cumplir hitos de gestión obligatorios (asignación y avances registrados).
-- **Certificado de Término**: Generación automática de certificados firmados al concluir procesos.
+http://localhost:3000
+Calidad y build
+npm test
+npm run lint
+npm run build
+Usuarios demo (seed)
+admin@legalfinance.local / Admin123!
+contador@legalfinance.local / Contador123!
+Integracion PagaCuotas (interna)
+Endpoints de consulta para PagaCuotas
+GET /api/integrations/pagacuotas/deudas/:identifier
 
-### 📊 Control de Gestión (Exclusivo SuperAdmin)
-- **Métricas de Operación**: Análisis en tiempo real de carga de trabajo y rendimiento.
-- **SLA Management**: Control estricto de tiempos de respuesta por categoría legal.
-- **Análisis de IA**: Detección automática de casos estancados o con riesgo de incumplimiento.
-- **Ranking de Productividad**: Evaluación del desempeño del equipo basada en scores compuestos.
+busca cliente por rut, email o id
+responde cliente, resumen de deuda, contratos activos, total cuotas, cuotas pagadas, cuotas pendientes, monto pendiente y monto vencido
+GET /api/integrations/pagacuotas/contratos/:contratoId/cuotas
 
-### 💬 Centro de Comunicación
-- **Mensajería en Tiempo Real**: Chat integrado entre cliente y equipo legal.
-- **Notificaciones Multi-canal**: Encolamiento de mensajes vía WhatsApp y Email (procesados por BullMQ).
-- **Feedback de Satisfacción**: Sistema de medición mediante caritas (Excelente, Regular, Insatisfecho) al finalizar cada caso.
+responde cuotas del contrato con:
+id, numero, monto, saldo, fecha_vencimiento, estado, pagable
+Validacion previa de intencion de pago
+POST /api/integrations/pagacuotas/payment-intents/validate
+valida cliente, contrato, cuotas, estados permitidos y monto exacto
+idempotencia por external_attempt_id
+respuesta: valid y errors
+Eventos de pago
+POST /api/integrations/pagacuotas/payments/confirmed
 
----
+idempotencia por external_payment_id
+registra pago, aplica a cuotas, recalcula cuota/contrato y deja trazabilidad de integracion
+POST /api/integrations/pagacuotas/payments/rejected
 
-## 🛠️ Stack Tecnológico
-- **Core**: [Next.js 14](https://nextjs.org/) (App Router)
-- **Lenguaje**: [TypeScript](https://www.typescriptlang.org/)
-- **ORM**: [Prisma](https://www.prisma.io/)
-- **Base de Datos**: PostgreSQL (Supabase)
-- **Caché/Colas**: [Redis](https://redis.io/) + [BullMQ](https://bullmq.io/)
-- **Autenticación**: [NextAuth.js v5](https://authjs.dev/)
-- **Estilos**: [Tailwind CSS](https://tailwindcss.com/)
+registra intento rechazado
+no marca cuotas como pagadas
+POST /api/integrations/pagacuotas/payments/reversed
 
----
+valida pago original
+registra reversa
+devuelve cuotas a estado pendiente/vencida segun corresponda
+recalcula saldo/estado y crea log de integracion
+Integracion AT-INFORMA
+Endpoint interno de sincronizacion
+POST /api/internal/sync/at-informa
+requiere sesion (cookie lf_session)
+Body opcional:
 
-## ⚙️ Instalación y Configuración
+{
+  "solo_pendientes": true,
+  "desde": "2026-05-01",
+  "hasta": "2026-05-31"
+}
+Endpoints externos usados por SIS.CONTABLE
+GET /api/v1/plan-pagos
+POST /api/v1/pagos
+Endpoints publicos del portal de pagos
+GET /api/public/payment-portal/clientes/:identifier/deudas
+GET /api/public/payment-portal/contratos/:contratoId/cuotas
+Reportes
+UI: /reportes
+API:
+/api/reportes/pagos
+/api/reportes/cxc
+/api/reportes/vencimientos
+/api/reportes/morosidad
+/api/reportes/proyeccion
+CSV:
 
-### Requisitos Previos
-- Node.js 18+
-- Instancia de PostgreSQL
-- Instancia de Redis (para las colas de notificaciones)
+usar ?format=csv
+ejemplo:
+/api/reportes/pagos?from=2026-01-01&to=2026-12-31&format=csv
+Estructura relevante
+prisma/
+  schema.prisma
+  migrations/
+src/
+  app/
+    api/
+      integrations/pagacuotas/
+      internal/sync/at-informa/
+      public/payment-portal/
+      reportes/
+  lib/
+  server/
+    auth/
+    integrations/at-informa/
+    services/integrations/
+Estado actual
+Implementado y verificado:
 
-### Variables de Entorno (.env)
-```env
-# Database
-DATABASE_URL="postgresql://..."
-DIRECT_URL="postgresql://..."
-
-# Auth
-AUTH_SECRET="tu-secreto-aqui"
-NEXTAUTH_URL="http://localhost:3000"
-
-# Redis (BullMQ)
-REDIS_URL="redis://localhost:6379"
-
-# Notificaciones
-META_WHATSAPP_TOKEN="..."
-RESEND_API_KEY="..."
-```
-
-### Configuración del Proyecto
-1. **Instalar dependencias**: `npm install`
-2. **Sincronizar base de datos**: `npx prisma db push`
-3. **Generar cliente Prisma**: `npx prisma generate`
-4. **Iniciar modo desarrollo**: `npm run dev`
-
----
-
-## 👥 Roles del Sistema
-- **SuperAdmin**: Control total, métricas de gestión, configuración de equipo y SLAs.
-- **Jefe de Mesa**: Asignación de casos y supervisión de la bandeja de entrada.
-- **Abogado**: Gestión operativa de expedientes asignados y registro de hitos.
-- **Cliente**: Acceso exclusivo a sus propios casos, chat con su abogado y descarga de documentos.
-
----
-*AT INFORMA — v3.0 Digital Legal Excellence*
+modelo financiero base (clientes, contratos, cuotas, pagos)
+logica de pago y recalculo de estados
+integracion SIS.CONTABLE <-> PagaCuotas (consulta, validacion y eventos)
+integracion SIS.CONTABLE <-> AT-INFORMA
+tests unitarios e integracion (Vitest)
+Notas
+Next.js muestra advertencia deprecada sobre middleware -> proxy; es advertencia no bloqueante.
+Para guia rapida del proyecto, revisar startup.md.
