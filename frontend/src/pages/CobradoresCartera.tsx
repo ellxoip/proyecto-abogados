@@ -1,7 +1,13 @@
 import { useState, useEffect, useRef } from 'react'
-import { Search, X, User, DollarSign, Building2, Phone, Mail, FileText, ChevronDown, StickyNote } from 'lucide-react'
+import { Search, X, User, DollarSign, Building2, Phone, FileText, ChevronDown, StickyNote, Send, MessageSquare, Smartphone } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import toast from 'react-hot-toast'
-import { getCobradorLeads, updateCobradorStage, updateCobradorNotes, updateCobradorMontoPagado } from '../api'
+import {
+  getCobradorLeads, updateCobradorStage, updateCobradorNotes, updateCobradorMontoPagado,
+  getAllWhatsAppConfigs, getWhatsAppMessages, sendWhatsAppMessage, markMessagesRead,
+} from '../api'
+import { API_BASE_URL } from '../api/client'
+import { useAuthStore } from '../store/auth'
 
 interface CobradorLead {
   id: number
@@ -67,8 +73,7 @@ function StageSelector({ lead, onUpdate }: { lead: CobradorLead; onUpdate: (l: C
 
   const handleSelect = async (stage: string) => {
     if (stage === lead.stage) { setOpen(false); return }
-    setSaving(true)
-    setOpen(false)
+    setSaving(true); setOpen(false)
     try {
       const updated = await updateCobradorStage(lead.id, stage)
       onUpdate(updated)
@@ -82,11 +87,9 @@ function StageSelector({ lead, onUpdate }: { lead: CobradorLead; onUpdate: (l: C
       <button onClick={() => setOpen(v => !v)} disabled={saving}
         className="flex items-center gap-2 px-3 py-2 rounded-xl border text-sm font-semibold transition-all w-full"
         style={{ border: '1px solid rgba(26,32,53,0.14)', background: '#fff', color: 'var(--text)' }}>
-        {saving ? (
-          <div className="w-3 h-3 border-2 rounded-full animate-spin" style={{ borderColor: 'var(--border)', borderTopColor: 'var(--primary)' }} />
-        ) : (
-          <span className="w-2 h-2 rounded-full" style={{ background: STAGES[lead.stage]?.dot ?? '#6B7280' }} />
-        )}
+        {saving
+          ? <div className="w-3 h-3 border-2 rounded-full animate-spin" style={{ borderColor: 'var(--border)', borderTopColor: 'var(--primary)' }} />
+          : <span className="w-2 h-2 rounded-full" style={{ background: STAGES[lead.stage]?.dot ?? '#6B7280' }} />}
         <span className="flex-1 text-left">{STAGES[lead.stage]?.label ?? lead.stage}</span>
         <ChevronDown size={14} style={{ color: 'var(--text-muted)' }} />
       </button>
@@ -107,12 +110,198 @@ function StageSelector({ lead, onUpdate }: { lead: CobradorLead; onUpdate: (l: C
   )
 }
 
+// ── Chat Tab ──────────────────────────────────────────────────────────────────
+
+function ChatTab({ lead }: { lead: CobradorLead }) {
+  const { user } = useAuthStore()
+  const [messages, setMessages]     = useState<any[]>([])
+  const [configs, setConfigs]       = useState<any[]>([])
+  const [configId, setConfigId]     = useState('')
+  const [msgText, setMsgText]       = useState('')
+  const [sending, setSending]       = useState(false)
+  const [loading, setLoading]       = useState(true)
+  const endRef = useRef<HTMLDivElement>(null)
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  useEffect(() => {
+    getAllWhatsAppConfigs().then((all: any[]) => {
+      // Filter to configs owned by current cobrador
+      const mine = all.filter((c: any) => c.owner_user_id === user?.id || c.is_active)
+      const cobradorsOwn = all.filter((c: any) => c.owner_user_id === user?.id)
+      const list = cobradorsOwn.length > 0 ? cobradorsOwn : mine
+      setConfigs(list)
+      if (list.length > 0) setConfigId(list[0].id.toString())
+    }).catch(() => {})
+  }, [user?.id])
+
+  const loadMessages = () => {
+    if (!lead.contact_id) { setLoading(false); return }
+    getWhatsAppMessages({ contact_id: lead.contact_id })
+      .then((m: any[]) => { setMessages(m.slice().reverse()); setLoading(false) })
+      .catch(() => setLoading(false))
+  }
+
+  useEffect(() => {
+    if (!lead.contact_id) { setLoading(false); return }
+    setLoading(true)
+    loadMessages()
+    markMessagesRead(lead.contact_id).catch(() => {})
+    pollRef.current = setInterval(loadMessages, 5000)
+    return () => { if (pollRef.current) clearInterval(pollRef.current) }
+  }, [lead.contact_id])
+
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
+
+  const handleSend = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!msgText.trim() || !configId || !lead.contact_id) return
+    setSending(true)
+    try {
+      await sendWhatsAppMessage({
+        contact_id: lead.contact_id,
+        whatsapp_config_id: parseInt(configId),
+        message: msgText.trim(),
+        message_type: 'text',
+      })
+      setMsgText('')
+      loadMessages()
+    } catch { toast.error('Error al enviar') }
+    finally { setSending(false) }
+  }
+
+  // No contact linked
+  if (!lead.contact_id) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full p-6 text-center gap-3">
+        <div className="w-14 h-14 rounded-2xl flex items-center justify-center" style={{ background: 'rgba(37,211,102,0.10)', border: '1px solid rgba(37,211,102,0.25)' }}>
+          <MessageSquare size={24} style={{ color: '#25D366' }} />
+        </div>
+        <div>
+          <p className="text-sm font-bold" style={{ color: 'var(--text)' }}>Sin contacto de WhatsApp</p>
+          <p className="text-xs mt-1" style={{ color: 'var(--text-muted)', lineHeight: 1.5 }}>
+            Este cliente aún no tiene un contacto vinculado.<br />
+            {lead.telefono && <span>Teléfono: <strong>{lead.telefono}</strong></span>}
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  // No WA config connected
+  if (!loading && configs.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full p-6 text-center gap-3">
+        <div className="w-14 h-14 rounded-2xl flex items-center justify-center" style={{ background: 'rgba(67,97,238,0.10)', border: '1px solid rgba(67,97,238,0.20)' }}>
+          <Smartphone size={24} style={{ color: '#4361ee' }} />
+        </div>
+        <div>
+          <p className="text-sm font-bold" style={{ color: 'var(--text)' }}>Conecta tu WhatsApp</p>
+          <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+            Para chatear debes vincular tu número primero.
+          </p>
+        </div>
+        <Link to="/mis-whatsapp"
+          className="px-4 py-2 rounded-xl text-sm font-semibold"
+          style={{ background: 'rgba(67,97,238,0.10)', color: '#4361ee', border: '1px solid rgba(67,97,238,0.25)' }}>
+          Ir a Mis WhatsApp
+        </Link>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Config selector */}
+      {configs.length > 1 && (
+        <div className="px-3 py-2 flex-shrink-0" style={{ borderBottom: '1px solid var(--border)', background: 'rgba(26,32,53,0.02)' }}>
+          <select className="input text-xs py-1" value={configId} onChange={e => setConfigId(e.target.value)}>
+            {configs.map((c: any) => (
+              <option key={c.id} value={c.id}>{c.name} ({c.phone_number})</option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto p-3 space-y-2"
+        style={{ background: 'linear-gradient(180deg, #f0f4f8 0%, #e8f5e9 100%)' }}>
+        {loading && (
+          <div className="flex justify-center py-8">
+            <div className="w-5 h-5 border-2 rounded-full animate-spin" style={{ borderColor: 'rgba(0,0,0,0.1)', borderTopColor: '#25D366' }} />
+          </div>
+        )}
+        {!loading && messages.length === 0 && (
+          <div className="flex flex-col items-center justify-center h-32 gap-2" style={{ color: 'rgba(26,32,53,0.40)' }}>
+            <MessageSquare size={28} style={{ opacity: 0.4 }} />
+            <p className="text-xs">Sin mensajes aún</p>
+          </div>
+        )}
+        {messages.map((msg: any) => {
+          const isOut = msg.direction === 'out'
+          const hasMedia = msg.message_type !== 'text' && msg.media_url
+          return (
+            <div key={msg.id} className={`flex ${isOut ? 'justify-end' : 'justify-start'}`}>
+              <div className="max-w-[80%] rounded-2xl px-3 py-2 shadow-sm"
+                style={{
+                  background: isOut ? '#25D366' : '#ffffff',
+                  borderRadius: isOut ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
+                  boxShadow: '0 1px 2px rgba(0,0,0,0.12)',
+                }}>
+                {hasMedia && (
+                  <a href={`${API_BASE_URL}${msg.media_url}`} target="_blank" rel="noopener noreferrer"
+                    className="block mb-1 text-[11px] underline"
+                    style={{ color: isOut ? 'rgba(255,255,255,0.85)' : '#4361ee' }}>
+                    📎 Archivo adjunto
+                  </a>
+                )}
+                <p className="text-sm leading-relaxed whitespace-pre-wrap break-words"
+                  style={{ color: isOut ? '#ffffff' : '#1a2035' }}>
+                  {msg.content}
+                </p>
+                <p className="text-[9px] mt-1 text-right"
+                  style={{ color: isOut ? 'rgba(255,255,255,0.65)' : 'rgba(26,32,53,0.40)' }}>
+                  {msg.created_at ? new Date(msg.created_at).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }) : ''}
+                </p>
+              </div>
+            </div>
+          )
+        })}
+        <div ref={endRef} />
+      </div>
+
+      {/* Send form */}
+      <form onSubmit={handleSend} className="flex gap-2 p-3 flex-shrink-0"
+        style={{ borderTop: '1px solid var(--border)', background: '#fff' }}>
+        <input
+          className="flex-1 rounded-2xl border px-4 py-2 text-sm outline-none focus:border-green-400 transition-colors"
+          style={{ border: '1px solid rgba(26,32,53,0.14)', background: 'rgba(26,32,53,0.03)' }}
+          placeholder="Escribe un mensaje..."
+          value={msgText}
+          onChange={e => setMsgText(e.target.value)}
+          disabled={sending || !configId}
+        />
+        <button type="submit" disabled={sending || !msgText.trim() || !configId}
+          className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0 transition-all disabled:opacity-40"
+          style={{ background: '#25D366', color: '#fff' }}>
+          {sending
+            ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            : <Send size={16} />}
+        </button>
+      </form>
+    </div>
+  )
+}
+
+// ── Detail Panel ──────────────────────────────────────────────────────────────
+
 function DetailPanel({ lead, onUpdate, onClose }: {
   lead: CobradorLead
   onUpdate: (l: CobradorLead) => void
   onClose?: () => void
 }) {
-  const [activeTab, setActiveTab] = useState<'info' | 'notas'>('info')
+  const [activeTab, setActiveTab] = useState<'info' | 'chat' | 'notas'>('info')
   const [notes, setNotes] = useState(lead.notes ?? '')
   const [montoPagado, setMontoPagado] = useState(String(lead.monto_pagado))
   const [savingNotes, setSavingNotes] = useState(false)
@@ -128,26 +317,30 @@ function DetailPanel({ lead, onUpdate, onClose }: {
     setSavingNotes(true)
     try {
       const updated = await updateCobradorNotes(lead.id, notes)
-      onUpdate(updated)
-      toast.success('Notas guardadas')
+      onUpdate(updated); toast.success('Notas guardadas')
     } catch { toast.error('Error al guardar') }
     finally { setSavingNotes(false) }
   }
 
   const handleSaveMonto = async () => {
-    const val = parseFloat(montoPagado.replace(/\D/g, '')) || 0
+    const val = parseFloat(montoPagado) || 0
     if (val === lead.monto_pagado) return
     setSavingMonto(true)
     try {
       const updated = await updateCobradorMontoPagado(lead.id, val)
-      onUpdate(updated)
-      toast.success('Monto actualizado')
+      onUpdate(updated); toast.success('Monto actualizado')
     } catch { toast.error('Error al guardar') }
     finally { setSavingMonto(false) }
   }
 
   const pendiente = lead.monto_deuda - lead.monto_pagado
   const pct = lead.monto_deuda > 0 ? Math.min((lead.monto_pagado / lead.monto_deuda) * 100, 100) : 0
+
+  const TABS = [
+    { key: 'info',  label: 'Info' },
+    { key: 'chat',  label: 'Chat' },
+    { key: 'notas', label: 'Notas' },
+  ] as const
 
   return (
     <div className="flex flex-col h-full">
@@ -175,129 +368,115 @@ function DetailPanel({ lead, onUpdate, onClose }: {
 
       {/* Tabs */}
       <div className="flex gap-1 px-4 py-2 flex-shrink-0" style={{ borderBottom: '1px solid var(--border)', background: 'rgba(26,32,53,0.02)' }}>
-        {(['info', 'notas'] as const).map(t => (
-          <button key={t} onClick={() => setActiveTab(t)}
-            className="px-4 py-2 rounded-lg text-xs font-semibold transition-all capitalize"
-            style={activeTab === t
+        {TABS.map(t => (
+          <button key={t.key} onClick={() => setActiveTab(t.key)}
+            className="px-4 py-2 rounded-lg text-xs font-semibold transition-all"
+            style={activeTab === t.key
               ? { background: '#4361ee', color: '#fff' }
               : { color: 'var(--text-muted)', background: 'transparent' }}>
-            {t === 'info' ? 'Información' : 'Notas'}
+            {t.label}
           </button>
         ))}
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto p-5 space-y-4">
-
-        {activeTab === 'info' && (
-          <>
-            {/* Deuda progress */}
-            <div className="rounded-xl p-4" style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.18)' }}>
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-xs font-bold" style={{ color: '#065f46' }}>Progreso de Cobro</span>
-                <span className="text-xs font-semibold" style={{ color: '#10B981' }}>{pct.toFixed(0)}%</span>
-              </div>
-              <div className="h-2 rounded-full overflow-hidden mb-2" style={{ background: 'rgba(16,185,129,0.15)' }}>
-                <div className="h-full rounded-full transition-all"
-                  style={{ width: `${pct}%`, background: 'linear-gradient(90deg,#10B981,#34d399)' }} />
-              </div>
-              <div className="grid grid-cols-3 gap-2 text-center">
-                <div>
-                  <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>Deuda Total</p>
-                  <p className="text-xs font-bold" style={{ color: 'var(--text)' }}>{fmt(lead.monto_deuda)}</p>
+      {activeTab === 'chat' ? (
+        <ChatTab lead={lead} />
+      ) : (
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          {activeTab === 'info' && (
+            <>
+              {/* Deuda progress */}
+              <div className="rounded-xl p-4" style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.18)' }}>
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-xs font-bold" style={{ color: '#065f46' }}>Progreso de Cobro</span>
+                  <span className="text-xs font-semibold" style={{ color: '#10B981' }}>{pct.toFixed(0)}%</span>
                 </div>
-                <div>
-                  <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>Cobrado</p>
-                  <p className="text-xs font-bold" style={{ color: '#10B981' }}>{fmt(lead.monto_pagado)}</p>
+                <div className="h-2 rounded-full overflow-hidden mb-2" style={{ background: 'rgba(16,185,129,0.15)' }}>
+                  <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: 'linear-gradient(90deg,#10B981,#34d399)' }} />
                 </div>
-                <div>
-                  <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>Pendiente</p>
-                  <p className="text-xs font-bold" style={{ color: pendiente > 0 ? '#EF4444' : '#10B981' }}>{fmt(Math.max(pendiente, 0))}</p>
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div><p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>Deuda Total</p><p className="text-xs font-bold" style={{ color: 'var(--text)' }}>{fmt(lead.monto_deuda)}</p></div>
+                  <div><p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>Cobrado</p><p className="text-xs font-bold" style={{ color: '#10B981' }}>{fmt(lead.monto_pagado)}</p></div>
+                  <div><p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>Pendiente</p><p className="text-xs font-bold" style={{ color: pendiente > 0 ? '#EF4444' : '#10B981' }}>{fmt(Math.max(pendiente, 0))}</p></div>
                 </div>
               </div>
-            </div>
 
-            {/* Stage selector */}
-            <div>
-              <label className="text-xs font-bold uppercase tracking-wider mb-1.5 block" style={{ color: 'var(--text-muted)' }}>Etapa</label>
-              <StageSelector lead={lead} onUpdate={onUpdate} />
-            </div>
-
-            {/* Monto pagado editor */}
-            <div>
-              <label className="text-xs font-bold uppercase tracking-wider mb-1.5 block" style={{ color: 'var(--text-muted)' }}>Monto Cobrado</label>
-              <div className="flex gap-2">
-                <input className="input flex-1" type="number" min="0" step="1000"
-                  value={montoPagado} onChange={e => setMontoPagado(e.target.value)}
-                  onBlur={handleSaveMonto} placeholder="0" />
-                <button onClick={handleSaveMonto} disabled={savingMonto}
-                  className="px-3 py-2 rounded-xl text-xs font-semibold transition-colors"
-                  style={{ background: 'rgba(67,97,238,0.10)', color: '#4361ee', border: '1px solid rgba(67,97,238,0.25)' }}>
-                  {savingMonto ? '...' : 'Guardar'}
-                </button>
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider mb-1.5 block" style={{ color: 'var(--text-muted)' }}>Etapa</label>
+                <StageSelector lead={lead} onUpdate={onUpdate} />
               </div>
-            </div>
 
-            {/* Datos del deudor */}
-            <div className="rounded-xl p-4" style={{ background: '#fff', border: '1px solid var(--border)' }}>
-              <div className="flex items-center gap-2 mb-3">
-                <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'rgba(67,97,238,0.10)' }}>
-                  <User size={13} style={{ color: '#4361ee' }} />
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider mb-1.5 block" style={{ color: 'var(--text-muted)' }}>Monto Cobrado ($)</label>
+                <div className="flex gap-2">
+                  <input className="input flex-1" type="number" min="0" step="1000"
+                    value={montoPagado} onChange={e => setMontoPagado(e.target.value)} onBlur={handleSaveMonto} />
+                  <button onClick={handleSaveMonto} disabled={savingMonto}
+                    className="px-3 py-2 rounded-xl text-xs font-semibold"
+                    style={{ background: 'rgba(67,97,238,0.10)', color: '#4361ee', border: '1px solid rgba(67,97,238,0.25)' }}>
+                    {savingMonto ? '...' : 'OK'}
+                  </button>
                 </div>
-                <h4 className="text-sm font-bold" style={{ color: 'var(--text)' }}>Datos del Deudor</h4>
               </div>
-              <dl>
-                <InfoRow label="Nombre"   value={lead.nombre} />
-                <InfoRow label="RUT"      value={lead.rut} />
-                <InfoRow label="Empresa"  value={lead.empresa} />
-                <InfoRow label="Teléfono" value={lead.telefono} />
-                <InfoRow label="Email"    value={lead.email} />
-              </dl>
-            </div>
 
-            {/* Descripción */}
-            {lead.descripcion && (
               <div className="rounded-xl p-4" style={{ background: '#fff', border: '1px solid var(--border)' }}>
                 <div className="flex items-center gap-2 mb-3">
-                  <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'rgba(245,158,11,0.10)' }}>
-                    <FileText size={13} style={{ color: '#F59E0B' }} />
+                  <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'rgba(67,97,238,0.10)' }}>
+                    <User size={13} style={{ color: '#4361ee' }} />
                   </div>
-                  <h4 className="text-sm font-bold" style={{ color: 'var(--text)' }}>Descripción</h4>
+                  <h4 className="text-sm font-bold" style={{ color: 'var(--text)' }}>Datos del Deudor</h4>
                 </div>
-                <p className="text-sm" style={{ color: 'var(--text-muted)', lineHeight: 1.6 }}>{lead.descripcion}</p>
+                <dl>
+                  <InfoRow label="Nombre"   value={lead.nombre} />
+                  <InfoRow label="RUT"      value={lead.rut} />
+                  <InfoRow label="Empresa"  value={lead.empresa} />
+                  <InfoRow label="Teléfono" value={lead.telefono} />
+                  <InfoRow label="Email"    value={lead.email} />
+                </dl>
               </div>
-            )}
-          </>
-        )}
 
-        {activeTab === 'notas' && (
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'rgba(139,92,246,0.10)' }}>
-                <StickyNote size={13} style={{ color: '#8B5CF6' }} />
+              {lead.descripcion && (
+                <div className="rounded-xl p-4" style={{ background: '#fff', border: '1px solid var(--border)' }}>
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'rgba(245,158,11,0.10)' }}>
+                      <FileText size={13} style={{ color: '#F59E0B' }} />
+                    </div>
+                    <h4 className="text-sm font-bold" style={{ color: 'var(--text)' }}>Descripción</h4>
+                  </div>
+                  <p className="text-sm" style={{ color: 'var(--text-muted)', lineHeight: 1.6 }}>{lead.descripcion}</p>
+                </div>
+              )}
+            </>
+          )}
+
+          {activeTab === 'notas' && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'rgba(139,92,246,0.10)' }}>
+                  <StickyNote size={13} style={{ color: '#8B5CF6' }} />
+                </div>
+                <h4 className="text-sm font-bold" style={{ color: 'var(--text)' }}>Notas internas</h4>
               </div>
-              <h4 className="text-sm font-bold" style={{ color: 'var(--text)' }}>Notas internas</h4>
+              <textarea className="input w-full" rows={10} value={notes}
+                onChange={e => setNotes(e.target.value)}
+                placeholder="Observaciones, acuerdos, historial de contacto..."
+                style={{ resize: 'vertical', minHeight: 180 }} />
+              <button onClick={handleSaveNotes} disabled={savingNotes || notes === (lead.notes ?? '')}
+                className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2"
+                style={{ background: 'rgba(67,97,238,0.10)', color: '#4361ee', border: '1px solid rgba(67,97,238,0.25)', opacity: notes === (lead.notes ?? '') ? 0.5 : 1 }}>
+                {savingNotes && <div className="w-3.5 h-3.5 border-2 rounded-full animate-spin" style={{ borderColor: 'transparent', borderTopColor: '#4361ee' }} />}
+                Guardar Notas
+              </button>
             </div>
-            <textarea
-              className="input w-full"
-              rows={10}
-              value={notes}
-              onChange={e => setNotes(e.target.value)}
-              placeholder="Observaciones, acuerdos, historial de contacto..."
-              style={{ resize: 'vertical', minHeight: 180 }}
-            />
-            <button onClick={handleSaveNotes} disabled={savingNotes || notes === (lead.notes ?? '')}
-              className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2"
-              style={{ background: 'rgba(67,97,238,0.10)', color: '#4361ee', border: '1px solid rgba(67,97,238,0.25)', opacity: notes === (lead.notes ?? '') ? 0.5 : 1 }}>
-              {savingNotes && <div className="w-3.5 h-3.5 border-2 rounded-full animate-spin" style={{ borderColor: 'transparent', borderTopColor: '#4361ee' }} />}
-              Guardar Notas
-            </button>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
+
+// ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function CobradoresCartera() {
   const [leads, setLeads]       = useState<CobradorLead[]>([])
@@ -352,16 +531,11 @@ export default function CobradoresCartera() {
         </p>
       </div>
 
-      {/* Search + filter bar */}
       <div className="flex gap-2 mb-4 flex-shrink-0 flex-wrap">
         <div className="relative flex-1 min-w-[180px]">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
-          <input
-            className="input pl-9 w-full"
-            placeholder="Buscar cliente, empresa, RUT..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
+          <input className="input pl-9 w-full" placeholder="Buscar cliente, empresa, RUT..."
+            value={search} onChange={e => setSearch(e.target.value)} />
           {search && (
             <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }}>
               <X size={13} />
@@ -376,10 +550,9 @@ export default function CobradoresCartera() {
         </select>
       </div>
 
-      {/* Split layout */}
       <div className="flex gap-4 flex-1 min-h-0">
         {/* Left: list */}
-        <div className={`flex flex-col min-h-0 ${showDetail ? 'hidden md:flex md:w-[40%] lg:w-[35%]' : 'w-full md:w-[40%] lg:w-[35%]'} flex-shrink-0`}>
+        <div className={`flex flex-col min-h-0 ${showDetail ? 'hidden md:flex md:w-[38%]' : 'w-full md:w-[38%]'} flex-shrink-0`}>
           <div className="flex-1 overflow-y-auto space-y-2 pr-1">
             {loading && (
               <div className="flex items-center justify-center h-32">
@@ -392,7 +565,7 @@ export default function CobradoresCartera() {
               </div>
             )}
             {filtered.map(lead => {
-              const s = STAGES[lead.stage] ?? { dot: '#6B7280', label: lead.stage }
+              const s = STAGES[lead.stage] ?? { dot: '#6B7280', label: lead.stage, color: 'rgba(107,114,128,0.15)' }
               const pct = lead.monto_deuda > 0 ? Math.min((lead.monto_pagado / lead.monto_deuda) * 100, 100) : 0
               const isSelected = selected?.id === lead.id
               return (
@@ -405,14 +578,12 @@ export default function CobradoresCartera() {
                   }}>
                   <div className="flex items-start gap-2.5">
                     <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 font-bold text-sm text-white"
-                      style={{ background: 'linear-gradient(135deg,#4361ee 0%,#3a0ca3 100%)' }}>
+                      style={{ background: `linear-gradient(135deg,${s.dot} 0%,${s.dot}99 100%)` }}>
                       {lead.nombre.charAt(0).toUpperCase()}
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="font-bold text-sm truncate leading-tight" style={{ color: 'var(--text)' }}>{lead.nombre}</p>
-                      {lead.empresa && (
-                        <p className="text-[10px] truncate mt-0.5" style={{ color: 'var(--text-muted)' }}>{lead.empresa}</p>
-                      )}
+                      {lead.empresa && <p className="text-[10px] truncate mt-0.5" style={{ color: 'var(--text-muted)' }}>{lead.empresa}</p>}
                     </div>
                     <span className="flex items-center gap-1 text-[10px] font-semibold flex-shrink-0 px-2 py-0.5 rounded-full"
                       style={{ background: s.color, color: s.dot }}>
@@ -426,13 +597,12 @@ export default function CobradoresCartera() {
                       <span>{pct.toFixed(0)}% cobrado</span>
                     </div>
                     <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(26,32,53,0.08)' }}>
-                      <div className="h-full rounded-full" style={{ width: `${pct}%`, background: '#10B981' }} />
+                      <div className="h-full rounded-full" style={{ width: `${pct}%`, background: s.dot }} />
                     </div>
                   </div>
                   {lead.telefono && (
                     <div className="flex items-center gap-1 mt-1.5 text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                      <Phone size={9} />
-                      <span>{lead.telefono}</span>
+                      <Phone size={9} /><span>{lead.telefono}</span>
                     </div>
                   )}
                 </button>
@@ -446,12 +616,8 @@ export default function CobradoresCartera() {
           <div className={`flex-1 min-h-0 rounded-2xl overflow-hidden ${!showDetail ? 'hidden md:flex' : 'flex'} flex-col`}
             style={{ background: '#fff', border: '1px solid rgba(26,32,53,0.10)', boxShadow: '0 2px 8px rgba(26,32,53,0.06)' }}>
             {selected ? (
-              <DetailPanel
-                key={selected.id}
-                lead={selected}
-                onUpdate={handleUpdate}
-                onClose={() => { setShowDetail(false); setSelected(null) }}
-              />
+              <DetailPanel key={selected.id} lead={selected} onUpdate={handleUpdate}
+                onClose={() => { setShowDetail(false); setSelected(null) }} />
             ) : (
               <div className="flex flex-col items-center justify-center h-full" style={{ color: 'var(--text-muted)' }}>
                 <User size={32} style={{ marginBottom: 12, opacity: 0.3 }} />

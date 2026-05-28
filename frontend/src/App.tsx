@@ -60,7 +60,7 @@ function AppRoutes() {
       <Route path="/pagos" element={<ProtectedRoute roles={['verificador','superadmin','subadmin']}><Layout><Pagos /></Layout></ProtectedRoute>} />
       <Route path="/notificaciones" element={<ProtectedRoute><Layout><Notificaciones /></Layout></ProtectedRoute>} />
       <Route path="/whatsapp" element={<ProtectedRoute roles={['superadmin','subadmin','agendadora']}><Layout><WhatsApp /></Layout></ProtectedRoute>} />
-      <Route path="/mis-whatsapp" element={<ProtectedRoute roles={['agendadora','superadmin','subadmin']}><Layout><MisWhatsApp /></Layout></ProtectedRoute>} />
+      <Route path="/mis-whatsapp" element={<ProtectedRoute roles={['agendadora','cobrador','superadmin','subadmin']}><Layout><MisWhatsApp /></Layout></ProtectedRoute>} />
       <Route path="/seguimiento" element={<ProtectedRoute roles={['agendadora','superadmin','subadmin']}><Layout><Seguimiento /></Layout></ProtectedRoute>} />
       <Route path="/agente-ia" element={<ProtectedRoute roles={['agendadora','superadmin','subadmin']}><Layout><AgentIA /></Layout></ProtectedRoute>} />
       <Route path="/admin" element={<ProtectedRoute roles={['superadmin','subadmin']}><Layout><Admin /></Layout></ProtectedRoute>} />

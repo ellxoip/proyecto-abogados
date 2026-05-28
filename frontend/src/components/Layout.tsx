@@ -32,9 +32,10 @@ const NAV_SECTIONS = [
   {
     label: 'Cobranza',
     items: [
-      { path: '/cobrador',          icon: LayoutDashboard, label: 'Dashboard',  sublabel: 'Resumen cobranza', roles: ['cobrador'] },
-      { path: '/cobrador/cartera',  icon: Wallet,          label: 'Cartera',    sublabel: 'Mis clientes',     roles: ['cobrador'] },
-      { path: '/cobrador/pipeline', icon: GitBranchIcon,   label: 'Pipeline',   sublabel: 'Embudo cobranza',  roles: ['cobrador'] },
+      { path: '/cobrador',          icon: LayoutDashboard, label: 'Dashboard',   sublabel: 'Resumen cobranza', roles: ['cobrador'] },
+      { path: '/cobrador/cartera',  icon: Wallet,          label: 'Cartera',     sublabel: 'Mis clientes',     roles: ['cobrador'] },
+      { path: '/cobrador/pipeline', icon: GitBranchIcon,   label: 'Pipeline',    sublabel: 'Embudo cobranza',  roles: ['cobrador'] },
+      { path: '/mis-whatsapp',      icon: Smartphone,      label: 'Mis WhatsApp',sublabel: 'Conectar número',  roles: ['cobrador'] },
     ],
   },
   {

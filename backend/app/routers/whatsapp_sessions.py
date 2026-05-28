@@ -66,10 +66,10 @@ async def list_my_sessions(
     current_user: models.User = Depends(get_current_user),
 ):
     """Return QR sessions owned by the current user."""
-    if current_user.role not in ("agendadora", "superadmin", "subadmin", "tecnico"):
+    if current_user.role not in ("agendadora", "cobrador", "superadmin", "subadmin", "tecnico"):
         raise HTTPException(status_code=403, detail="Sin acceso")
 
-    owner_id = current_user.id if current_user.role == "agendadora" else None
+    owner_id = current_user.id if current_user.role in ("agendadora", "cobrador") else None
     q = db.query(models.WhatsAppConfig).options(
         joinedload(models.WhatsAppConfig.group),
         joinedload(models.WhatsAppConfig.owner),
@@ -89,7 +89,7 @@ async def create_my_session(
     current_user: models.User = Depends(get_current_user),
 ):
     """Create a new QR session for the current user, respecting the negocio plan limit."""
-    if current_user.role not in ("agendadora", "superadmin", "subadmin", "tecnico"):
+    if current_user.role not in ("agendadora", "cobrador", "superadmin", "subadmin", "tecnico"):
         raise HTTPException(status_code=403, detail="Sin acceso")
 
     # Enforce plan-level negocio WA limit for ALL roles
@@ -322,8 +322,8 @@ def _get_owned_cfg(config_id: int, current_user: models.User, db: Session) -> mo
         models.WhatsAppConfig.id == config_id,
         models.WhatsAppConfig.api_provider == "qr",
     )
-    # Agendadoras can only access their own; admins/tecnico can access any
-    if current_user.role == "agendadora":
+    # Agendadoras/cobradores can only access their own; admins/tecnico can access any
+    if current_user.role in ("agendadora", "cobrador"):
         q = q.filter(models.WhatsAppConfig.owner_user_id == current_user.id)
 
     cfg = q.first()
