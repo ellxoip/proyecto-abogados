@@ -31,7 +31,7 @@ import {
 
 dotenv.config();
 
-const SIS_CONTABLE_BASE_URL = process.env.SIS_CONTABLE_BASE_URL || 'http://localhost:3001';
+const SIS_CONTABLE_BASE_URL = process.env.SIS_CONTABLE_BASE_URL || 'http://localhost:3000';
 const SIS_CONTABLE_API_KEY = process.env.SIS_CONTABLE_API_KEY || '';
 const SIS_CONTABLE_BEARER_TOKEN = process.env.SIS_CONTABLE_BEARER_TOKEN || '';
 const SIS_CONTABLE_AUTH_METHOD = process.env.SIS_CONTABLE_AUTH_METHOD || 'api_key'; // api_key | bearer
