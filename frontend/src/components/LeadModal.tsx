@@ -96,13 +96,24 @@ export default function LeadModal({ onClose, onSuccess }: Props) {
     const gid = parseInt(form.group_id)
     const aid = parseInt(form.area_id)
     getGroupDefaultAssignment(gid, aid).then((assignment: any) => {
-      setForm(f => ({
-        ...f,
-        agendadora_id: assignment.agendadora ? assignment.agendadora.id.toString() : f.agendadora_id,
-        vendedor_id:   assignment.vendedor   ? assignment.vendedor.id.toString()   : f.vendedor_id,
-      }))
+      setForm(f => {
+        const area = areas.find((a: any) => a.id === aid)
+        const aUsers: any[] = area?.users ?? []
+        const gActive = users.filter((u: any) => u.is_active && u.group_id === gid)
+        const fallbackAgd =
+          aUsers.find((u: any) => u.role === 'agendadora' && u.is_active !== false) ||
+          gActive.find((u: any) => u.role === 'agendadora')
+        const fallbackVnd =
+          aUsers.find((u: any) => ['vendedor','verificador','subadmin'].includes(u.role) && u.is_active !== false) ||
+          gActive.find((u: any) => ['vendedor','verificador','subadmin'].includes(u.role))
+        return {
+          ...f,
+          agendadora_id: assignment.agendadora ? assignment.agendadora.id.toString() : (fallbackAgd?.id?.toString() ?? f.agendadora_id),
+          vendedor_id:   assignment.vendedor   ? assignment.vendedor.id.toString()   : (fallbackVnd?.id?.toString() ?? f.vendedor_id),
+        }
+      })
     }).catch(() => {})
-  }, [form.area_id])
+  }, [form.area_id, areas, users])
 
   // Get users filtered by selected area (if area has assigned users)
   const selectedArea = areas.find((a: any) => a.id === parseInt(form.area_id))
@@ -201,7 +212,7 @@ export default function LeadModal({ onClose, onSuccess }: Props) {
 
             <Field label="Área Legal" required>
               <select className="input" value={form.area_id}
-                onChange={e => { set('area_id', e.target.value); set('agendadora_id', ''); set('vendedor_id', '') }}
+                onChange={e => set('area_id', e.target.value)}
                 required disabled={!form.group_id}>
                 <option value="">Seleccionar...</option>
                 {areas.map((a: any) => (
