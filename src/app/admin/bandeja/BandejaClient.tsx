@@ -110,7 +110,7 @@ export function BandejaClient({ cases, jefes, abogados, role, currentUserId, can
 
   return (
     <>
-      <div className="bg-[var(--surface)] border border-[var(--border-glass)] rounded-sm shadow-sm overflow-hidden mb-6">
+      <div className="bg-[var(--surface)] border border-[var(--border-glass)] rounded-sm shadow-sm overflow-x-auto mb-6">
         {cases.length === 0 ? (
           <EmptyState
             icon={Inbox}
@@ -119,7 +119,7 @@ export function BandejaClient({ cases, jefes, abogados, role, currentUserId, can
             size="lg"
           />
         ) : (
-          <table className="w-full text-left border-collapse">
+          <table className="w-full min-w-[760px] text-left border-collapse">
             <thead>
               <tr style={{ background: "var(--surface-2)" }}>
                 {canDerive && (

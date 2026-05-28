@@ -13,6 +13,7 @@ import {
 } from "react";
 import {
   ArrowDownToLine,
+  ArrowLeft,
   Bell,
   Check,
   CheckCheck,
@@ -675,6 +676,9 @@ export function MessengerCenter({ conversations, teamMembers, onlineCount }: Pro
     "mx-auto flex flex-col gap-3",
     expanded ? "max-w-5xl" : "max-w-4xl",
   ].join(" ");
+  // Master-detail en móvil: si el usuario eligió una conversación, mostramos
+  // SOLO el chat (con botón "volver"); si no, SOLO la lista. En lg+ ambos.
+  const mobileDetailOpen = selectedKey != null;
 
   // ── Render ─────────────────────────────────────────────────────────────
   return (
@@ -774,7 +778,7 @@ export function MessengerCenter({ conversations, teamMembers, onlineCount }: Pro
 
         <div className={layoutClassName}>
           {/* ── Sidebar (conversation list / team) ──────────────────── */}
-          <aside className="flex min-h-0 flex-col border-b border-[var(--border-glass)] bg-[linear-gradient(180deg,var(--surface-2)_0%,var(--surface)_100%)] lg:border-b-0 lg:border-r">
+          <aside className={`${mobileDetailOpen ? "hidden lg:flex" : "flex"} min-h-0 flex-col border-b border-[var(--border-glass)] bg-[linear-gradient(180deg,var(--surface-2)_0%,var(--surface)_100%)] lg:border-b-0 lg:border-r`}>
             <div className="border-b border-[var(--border-glass)] px-4 py-4 space-y-3">
               <div className="relative">
                 <Search
@@ -1001,13 +1005,21 @@ export function MessengerCenter({ conversations, teamMembers, onlineCount }: Pro
           </aside>
 
           {/* ── Main panel ─────────────────────────────────────────── */}
-          <section className="flex min-h-0 flex-col bg-[var(--surface)]">
+          <section className={`${mobileDetailOpen ? "flex" : "hidden lg:flex"} min-h-0 flex-col bg-[var(--surface)]`}>
             {mode === "mensajes" ? (
               active && threadCase ? (
                 <div className="flex h-full min-h-0 flex-col">
                   {/* Conversation header */}
-                  <div className="flex items-start justify-between gap-3 border-b border-[var(--card-border)] bg-[var(--surface)] px-5 py-4 shadow-sm sm:px-6">
-                    <div className="min-w-0">
+                  <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--card-border)] bg-[var(--surface)] px-5 py-4 shadow-sm sm:px-6">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedKey(null)}
+                      className="-ml-1 mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[var(--text-muted)] transition-colors hover:bg-[var(--btn-ghost-hover)] hover:text-[var(--text)] lg:hidden"
+                      aria-label="Volver a conversaciones"
+                    >
+                      <ArrowLeft className="h-5 w-5" />
+                    </button>
+                    <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <h2 className="truncate text-xl font-bold text-[var(--text)]">
                           {threadCase.client.fullName}
@@ -1084,7 +1096,7 @@ export function MessengerCenter({ conversations, teamMembers, onlineCount }: Pro
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <button
                         type="button"
                         onClick={() => togglePinned(activeKey!)}
