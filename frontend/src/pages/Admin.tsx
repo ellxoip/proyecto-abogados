@@ -1330,10 +1330,10 @@ Reglas:
                               <button
                                 onClick={() => handleRemoveMember(u.id)}
                                 title="Quitar del grupo"
-                                className="w-7 h-7 flex items-center justify-center rounded-lg opacity-0 group-hover:opacity-100 transition-all flex-shrink-0"
-                                style={{ color: '#94a3b8' }}
-                                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#ef4444'; (e.currentTarget as HTMLElement).style.background = '#fee2e2' }}
-                                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = '#94a3b8'; (e.currentTarget as HTMLElement).style.background = 'transparent' }}>
+                                className="w-7 h-7 flex items-center justify-center rounded-lg transition-all flex-shrink-0"
+                                style={{ color: '#64748b', background: '#f1f5f9', border: '1px solid #e2e8f0' }}
+                                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#ef4444'; (e.currentTarget as HTMLElement).style.background = '#fee2e2'; (e.currentTarget as HTMLElement).style.borderColor = '#fca5a5' }}
+                                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = '#64748b'; (e.currentTarget as HTMLElement).style.background = '#f1f5f9'; (e.currentTarget as HTMLElement).style.borderColor = '#e2e8f0' }}>
                                 <UserMinus size={13} />
                               </button>
                             </div>
