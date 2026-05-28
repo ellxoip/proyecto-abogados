@@ -766,7 +766,7 @@ export default function Agenda() {
               right: 'dayGridMonth,timeGridWeek,timeGridDay',
             }}
             buttonText={{ today: 'Hoy', month: 'Mes', week: 'Semana', day: 'Día' }}
-            timeZone="America/Santiago"
+            timeZone="local"
             allDaySlot={false}
             selectable
             selectMirror
