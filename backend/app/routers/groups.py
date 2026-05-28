@@ -193,7 +193,15 @@ def list_group_members(
     )
     if not group:
         raise HTTPException(status_code=404, detail="Grupo no encontrado")
-    return [u for u in group.member_users if u.is_active]
+    # Merge M2M members with users whose primary group_id matches
+    primary_users = db.query(models.User).filter(
+        models.User.group_id == group_id,
+        models.User.is_active == True,
+    ).all()
+    merged = {u.id: u for u in group.member_users if u.is_active}
+    for u in primary_users:
+        merged.setdefault(u.id, u)
+    return list(merged.values())
 
 
 @router.post("/{group_id}/members/{user_id}")
