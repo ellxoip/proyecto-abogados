@@ -14,7 +14,7 @@ class Token(BaseModel):
     user: "UserOut"
 
 # ── USER ──────────────────────────────────────────────────
-_VALID_ROLES = Literal["superadmin", "subadmin", "agendadora", "vendedor", "verificador", "tecnico"]
+_VALID_ROLES = Literal["superadmin", "subadmin", "agendadora", "vendedor", "verificador", "tecnico", "cobrador"]
 
 class UserCreate(BaseModel):
     name: str
