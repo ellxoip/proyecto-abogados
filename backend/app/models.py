@@ -481,6 +481,29 @@ class GoogleCalendarToken(Base):
     user = relationship("User", back_populates="google_token")
 
 
+class CobradorLead(Base):
+    __tablename__ = "cobrador_leads"
+    id          = Column(Integer, primary_key=True, index=True)
+    cobrador_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    contact_id  = Column(Integer, ForeignKey("contacts.id"), nullable=True)
+    nombre      = Column(String(150), nullable=False)
+    rut         = Column(String(20), nullable=True)
+    empresa     = Column(String(200), nullable=True)
+    telefono    = Column(String(30), nullable=True)
+    email       = Column(String(100), nullable=True)
+    monto_deuda  = Column(Float, default=0)
+    monto_pagado = Column(Float, default=0)
+    descripcion  = Column(Text, nullable=True)
+    # por_contactar | contactado | negociando | acuerdo_pago | pagado | incobrable
+    stage       = Column(String(50), default="por_contactar", nullable=False)
+    notes       = Column(Text, nullable=True)
+    created_at  = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at  = Column(DateTime(timezone=True), onupdate=func.now())
+
+    cobrador = relationship("User", foreign_keys=[cobrador_id])
+    contact  = relationship("Contact")
+
+
 class SecurityAuditLog(Base):
     """ISO 27001 A.12.4.1 — immutable audit trail for security-relevant events."""
     __tablename__ = "security_audit_logs"

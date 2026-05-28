@@ -21,12 +21,16 @@ import MisWhatsApp from './pages/MisWhatsApp'
 import PagarCuota from './pages/PagarCuota'
 import Seguimiento from './pages/Seguimiento'
 import AgentIA from './pages/AgentIA'
+import CobradoresDashboard from './pages/CobradoresDashboard'
+import CobradoresCartera from './pages/CobradoresCartera'
+import CobradoresPipeline from './pages/CobradoresPipeline'
 
 function homeFor(role?: string) {
   if (role === 'tecnico') return '/tecnico'
   if (role === 'vendedor') return '/'
   if (role === 'verificador') return '/pagos'
   if (role === 'agendadora') return '/'
+  if (role === 'cobrador') return '/cobrador'
   return '/'
 }
 
@@ -61,6 +65,10 @@ function AppRoutes() {
       <Route path="/agente-ia" element={<ProtectedRoute roles={['agendadora','superadmin','subadmin']}><Layout><AgentIA /></Layout></ProtectedRoute>} />
       <Route path="/admin" element={<ProtectedRoute roles={['superadmin','subadmin']}><Layout><Admin /></Layout></ProtectedRoute>} />
       <Route path="/tecnico" element={<ProtectedRoute roles={['tecnico']}><Layout><Tecnico /></Layout></ProtectedRoute>} />
+      {/* Cobrador panel */}
+      <Route path="/cobrador" element={<ProtectedRoute roles={['cobrador','superadmin','subadmin']}><Layout><CobradoresDashboard /></Layout></ProtectedRoute>} />
+      <Route path="/cobrador/cartera" element={<ProtectedRoute roles={['cobrador','superadmin','subadmin']}><Layout><CobradoresCartera /></Layout></ProtectedRoute>} />
+      <Route path="/cobrador/pipeline" element={<ProtectedRoute roles={['cobrador','superadmin','subadmin']}><Layout><CobradoresPipeline /></Layout></ProtectedRoute>} />
       {/* Public payment portal — no auth required */}
       <Route path="/pagar/:token" element={<PagarCuota />} />
       <Route path="*" element={<Navigate to="/" replace />} />

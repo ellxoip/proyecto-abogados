@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Users, UserCheck, GitBranch, Calendar,
-  LogOut, Bell, Menu, CreditCard, Shield, ChevronRight, Wrench, Search, X, Smartphone, MessageSquare, Bot, Building2, QrCode, Building, GitBranch as GitBranchIcon,
+  LogOut, Bell, Menu, CreditCard, Shield, ChevronRight, Wrench, Search, X, Smartphone, MessageSquare, Bot, Building2, QrCode, Building, GitBranch as GitBranchIcon, Wallet,
 } from 'lucide-react'
 import { useAuthStore } from '../store/auth'
 import { getNotificationCount, getAgentQueue, getLeadsCount } from '../api'
@@ -27,6 +27,14 @@ const NAV_SECTIONS = [
       { path: '/mis-whatsapp',  icon: Smartphone,      label: 'Mis WhatsApp',   sublabel: 'Conectar números', roles: ['agendadora'] },
       { path: '/mi-pipeline',icon: GitBranch,       label: 'Mi Pipeline',    sublabel: 'Tus clientes',   roles: ['vendedor'] },
       { path: '/agenda',     icon: Calendar,        label: 'Agenda',         sublabel: 'Mis reuniones',  roles: ['vendedor'] },
+    ],
+  },
+  {
+    label: 'Cobranza',
+    items: [
+      { path: '/cobrador',          icon: LayoutDashboard, label: 'Dashboard',  sublabel: 'Resumen cobranza', roles: ['cobrador'] },
+      { path: '/cobrador/cartera',  icon: Wallet,          label: 'Cartera',    sublabel: 'Mis clientes',     roles: ['cobrador'] },
+      { path: '/cobrador/pipeline', icon: GitBranchIcon,   label: 'Pipeline',   sublabel: 'Embudo cobranza',  roles: ['cobrador'] },
     ],
   },
   {

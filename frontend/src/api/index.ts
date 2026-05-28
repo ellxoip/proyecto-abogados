@@ -87,6 +87,17 @@ export const exportLeads = async (params?: any) => {
 }
 export const searchLeads = (q: string) => api.get('/api/leads', { params: { search: q, limit: 8 } }).then(r => r.data)
 
+// COBRADOR
+export const getCobradorLeads = (params?: any) => api.get('/api/cobrador/leads', { params }).then(r => r.data)
+export const getCobradorLead = (id: number) => api.get(`/api/cobrador/leads/${id}`).then(r => r.data)
+export const updateCobradorStage = (id: number, stage: string) =>
+  api.patch(`/api/cobrador/leads/${id}/stage`, { stage }).then(r => r.data)
+export const updateCobradorNotes = (id: number, notes: string) =>
+  api.patch(`/api/cobrador/leads/${id}/notes`, { notes }).then(r => r.data)
+export const updateCobradorMontoPagado = (id: number, monto_pagado: number) =>
+  api.patch(`/api/cobrador/leads/${id}/monto_pagado`, { monto_pagado }).then(r => r.data)
+export const getCobradorDashboard = () => api.get('/api/cobrador/dashboard').then(r => r.data)
+
 // PAYMENTS
 export const getPayments = (params?: any) => api.get('/api/payments', { params }).then(r => r.data)
 export const confirmPayment = (id: number, data: any) => api.put(`/api/payments/${id}/confirm`, data).then(r => r.data)

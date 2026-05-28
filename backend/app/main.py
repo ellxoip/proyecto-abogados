@@ -17,7 +17,7 @@ if hasattr(time, 'tzset'):
 from sqlalchemy import text
 from .database import engine
 from . import models
-from .routers import auth, users, groups, contacts, leads, payments, calendar, notifications, whatsapp, pdf, webhooks, settings, tecnico, google_calendar, push, whatsapp_qr, whatsapp_sessions, at_informa_integration, legal_finance_integration, pagacuotas_router, ai_agents, pipeline_stages, work_orders, security
+from .routers import auth, users, groups, contacts, leads, payments, calendar, notifications, whatsapp, pdf, webhooks, settings, tecnico, google_calendar, push, whatsapp_qr, whatsapp_sessions, at_informa_integration, legal_finance_integration, pagacuotas_router, ai_agents, pipeline_stages, work_orders, security, cobrador
 from .seed import seed
 from .auth import hash_password
 from .broadcaster import wa_broadcaster
@@ -81,6 +81,7 @@ app.include_router(ai_agents.router)
 app.include_router(work_orders.router)
 app.include_router(pipeline_stages.router)
 app.include_router(security.router)
+app.include_router(cobrador.router)
 
 
 def _ensure_tecnico():
@@ -434,6 +435,13 @@ async def startup():
         _migrate_negocio()  # Must run after seed so superadmin user exists
     except Exception as e:
         print(f"⚠️  _migrate_negocio skipped: {e}")
+    try:
+        from .database import SessionLocal as _SL
+        _db = _SL()
+        cobrador.seed_cobrador(_db)
+        _db.close()
+    except Exception as e:
+        print(f"⚠️  seed_cobrador skipped: {e}")
     await wa_broadcaster.start()
 
 
