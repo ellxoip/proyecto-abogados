@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
-import { Search, X, User, DollarSign, Building2, Phone, FileText, ChevronDown, StickyNote, Send, MessageSquare, Smartphone, RefreshCw, ExternalLink } from 'lucide-react'
+import { Search, X, User, DollarSign, Building2, Phone, FileText, ChevronDown, StickyNote, Send, MessageSquare, Smartphone, RefreshCw, ExternalLink, Paperclip, Mic, Square, Clock, Check, CheckCheck, Trash2, Pencil } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import {
   getCobradorLeads, updateCobradorStage, updateCobradorNotes, updateCobradorMontoPagado,
-  getAllWhatsAppConfigs, getWhatsAppMessages, sendWhatsAppMessage, markMessagesRead,
-  syncCobradorLeads, getCobradorPortalUrl,
+  getAllWhatsAppConfigs, getWhatsAppMessages, sendWhatsAppMessage, sendWhatsAppMedia,
+  markMessagesRead, deleteWhatsAppMessage, editWhatsAppMessage, sendTypingPresence,
+  retryWhatsAppMessage, syncCobradorLeads, getCobradorPortalUrl,
 } from '../api'
 import { API_BASE_URL } from '../api/client'
 import { useAuthStore } from '../store/auth'
@@ -121,6 +122,96 @@ function StageSelector({ lead, onUpdate }: { lead: CobradorLead; onUpdate: (l: C
   )
 }
 
+// ── Chat helpers ──────────────────────────────────────────────────────────────
+
+function formatRecSecs(s: number) {
+  const m = Math.floor(s / 60)
+  const sec = s % 60
+  return `${m}:${sec.toString().padStart(2, '0')}`
+}
+
+const WA_TICK_LABEL: Record<string, string> = { logged: 'Pendiente', sent: 'Enviado', delivered: 'Entregado', read: 'Leído', failed: 'Error' }
+function WaTicks({ status }: { status: string }) {
+  const label = WA_TICK_LABEL[status] ?? 'Enviado'
+  if (status === 'failed')    return <span title={label} style={{ color:'#ef4444', fontSize:13, fontWeight:'bold', lineHeight:1 }}>!</span>
+  if (status === 'logged')    return <span title={label}><Clock size={13} color="rgba(26,32,53,0.45)" /></span>
+  if (status === 'read')      return <span title={label}><CheckCheck size={14} color="#53bdeb" strokeWidth={2.5} /></span>
+  if (status === 'delivered') return <span title={label}><CheckCheck size={14} color="rgba(26,32,53,0.45)" strokeWidth={2.5} /></span>
+  return <span title={label}><Check size={14} color="rgba(26,32,53,0.45)" strokeWidth={2.5} /></span>
+}
+
+function ChatMsgContent({ m }: { m: any }) {
+  const type = m.message_type || 'text'
+  const url = m.media_url || null
+  if (type === 'image' || type === 'sticker' || (url && /\.(jpg|jpeg|png|webp|gif)$/i.test(url))) {
+    if (!url) return <p className="text-xs opacity-60 italic">📷 Imagen</p>
+    return (
+      <a href={url} target="_blank" rel="noreferrer" className="block">
+        <img src={url} alt="imagen" className="rounded-xl max-w-[220px] max-h-[220px] object-cover cursor-zoom-in" />
+        {m.content && m.content !== '[Imagen]' && <p className="mt-1 text-sm whitespace-pre-wrap">{m.content}</p>}
+      </a>
+    )
+  }
+  if (type === 'audio' || (url && /\.(ogg|mp3|m4a|aac|opus|webm)$/i.test(url))) {
+    if (!url) return <p className="text-xs opacity-60 italic">🎤 Audio</p>
+    return <audio controls src={url} className="max-w-[220px] h-10 rounded-xl" />
+  }
+  if (type === 'video' || (url && /\.(mp4|webm|mov)$/i.test(url))) {
+    if (!url) return <p className="text-xs opacity-60 italic">🎥 Video</p>
+    return <video controls src={url} className="rounded-xl max-w-[220px] max-h-[160px]" />
+  }
+  if (type === 'document') {
+    if (!url) return <p className="text-xs opacity-60 italic">📄 {m.content || 'Documento'}</p>
+    const fname = url.split('/').pop() || 'archivo'
+    return (
+      <a href={url} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-sm underline opacity-90">
+        <FileText size={14} className="flex-shrink-0" />
+        <span className="truncate max-w-[180px]">{m.content || fname}</span>
+      </a>
+    )
+  }
+  return <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{m.content}</p>
+}
+
+function ChatMsgMenu({ x, y, msg, onClose, onDelete, onEdit, onRetry }: {
+  x: number; y: number; msg: any
+  onClose: () => void
+  onDelete: (id: number) => void
+  onEdit: (msg: any) => void
+  onRetry: (msg: any) => void
+}) {
+  const isOut = msg.direction === 'out'
+  const canEdit = isOut && msg.message_type === 'text' && msg.status !== 'logged'
+  const canRetry = isOut && msg.status === 'logged' && msg.message_type === 'text'
+  return (
+    <>
+      <div className="fixed inset-0 z-40" onClick={onClose} />
+      <div className="fixed z-50 rounded-xl overflow-hidden"
+        style={{ top: y, left: x, background:'#fff', border:'1px solid rgba(26,32,53,0.12)', boxShadow:'0 8px 24px rgba(0,0,0,0.14)', minWidth:160 }}>
+        {canRetry && (
+          <button onClick={() => { onRetry(msg); onClose() }}
+            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left hover:bg-amber-50 transition-colors"
+            style={{ color:'#d97706' }}>
+            <RefreshCw size={14} color="#d97706" />Reintentar envío
+          </button>
+        )}
+        {canEdit && (
+          <button onClick={() => { onEdit(msg); onClose() }}
+            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left hover:bg-gray-50 transition-colors"
+            style={{ color:'var(--text)' }}>
+            <Pencil size={14} color="#6B7280" />Editar mensaje
+          </button>
+        )}
+        <button onClick={() => { onDelete(msg.id); onClose() }}
+          className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left hover:bg-red-50 transition-colors"
+          style={{ color:'#EF4444' }}>
+          <Trash2 size={14} color="#EF4444" />Eliminar mensaje
+        </button>
+      </div>
+    </>
+  )
+}
+
 // ── Chat Tab ──────────────────────────────────────────────────────────────────
 
 function ChatTab({ lead }: { lead: CobradorLead }) {
@@ -132,15 +223,30 @@ function ChatTab({ lead }: { lead: CobradorLead }) {
   const [sending, setSending]       = useState(false)
   const [loading, setLoading]       = useState(true)
   const [loadingUrl, setLoadingUrl] = useState(false)
-  const endRef = useRef<HTMLDivElement>(null)
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const [mediaFile, setMediaFile]       = useState<File | null>(null)
+  const [mediaPreview, setMediaPreview] = useState<string | null>(null)
+  const [isRecording, setIsRecording]   = useState(false)
+  const [recordSecs, setRecordSecs]     = useState(0)
+  const [ctxMenu, setCtxMenu]   = useState<{ x: number; y: number; msg: any } | null>(null)
+  const [editingMsg, setEditingMsg] = useState<any | null>(null)
+  const [editText, setEditText] = useState('')
+
+  const endRef           = useRef<HTMLDivElement>(null)
+  const fileInputRef     = useRef<HTMLInputElement>(null)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const audioChunksRef   = useRef<Blob[]>([])
+  const recordTimerRef   = useRef<ReturnType<typeof setInterval> | null>(null)
+  const typingTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pollRef          = useRef<ReturnType<typeof setInterval> | null>(null)
+  const sseRef           = useRef<EventSource | null>(null)
+  const sseReconnectRef  = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const sseWatchdogRef   = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const loadMsgsRef      = useRef<() => void>(() => {})
 
   useEffect(() => {
     getAllWhatsAppConfigs().then((all: any[]) => {
-      // Filter to configs owned by current cobrador
-      const mine = all.filter((c: any) => c.owner_user_id === user?.id || c.is_active)
       const cobradorsOwn = all.filter((c: any) => c.owner_user_id === user?.id)
-      const list = cobradorsOwn.length > 0 ? cobradorsOwn : mine
+      const list = cobradorsOwn.length > 0 ? cobradorsOwn : all.filter((c: any) => c.is_active)
       setConfigs(list)
       if (list.length > 0) setConfigId(list[0].id.toString())
     }).catch(() => {})
@@ -149,41 +255,205 @@ function ChatTab({ lead }: { lead: CobradorLead }) {
   const loadMessages = () => {
     if (!lead.contact_id) { setLoading(false); return }
     getWhatsAppMessages({ contact_id: lead.contact_id })
-      .then((m: any[]) => { setMessages(m.slice().reverse()); setLoading(false) })
+      .then((data: any[]) => { setMessages(data.slice().reverse()); setLoading(false) })
       .catch(() => setLoading(false))
   }
+  loadMsgsRef.current = loadMessages
 
   useEffect(() => {
     if (!lead.contact_id) { setLoading(false); return }
     setLoading(true)
     loadMessages()
     markMessagesRead(lead.contact_id).catch(() => {})
-    pollRef.current = setInterval(loadMessages, 5000)
-    return () => { if (pollRef.current) clearInterval(pollRef.current) }
+
+    const token = localStorage.getItem('token')
+    if (token) {
+      const connectSSE = () => {
+        if (sseRef.current) { sseRef.current.close(); sseRef.current = null }
+        const es = new EventSource(`${API_BASE_URL}/api/whatsapp/stream?token=${encodeURIComponent(token)}`)
+        sseRef.current = es
+        const resetWatchdog = () => {
+          if (sseWatchdogRef.current) clearTimeout(sseWatchdogRef.current)
+          sseWatchdogRef.current = setTimeout(() => {
+            es.close(); sseRef.current = null
+            loadMsgsRef.current()
+            sseReconnectRef.current = setTimeout(connectSSE, 200)
+          }, 25000)
+        }
+        resetWatchdog()
+        es.onmessage = (e) => {
+          resetWatchdog()
+          let evt: any
+          try { evt = JSON.parse(e.data) } catch { return }
+          if (evt.type === 'connected' || evt.type === 'keepalive') return
+          if (evt.type === 'new_message') {
+            const msg = evt.message
+            if (msg.contact_id === lead.contact_id) {
+              setMessages(prev => {
+                if (prev.some((m: any) => m.id === msg.id)) return prev
+                return [...prev, msg]
+              })
+              markMessagesRead(lead.contact_id!).catch(() => {})
+            }
+          }
+          if (evt.type === 'status_update') {
+            setMessages(prev => prev.map((m: any) => m.id === evt.db_id ? { ...m, status: evt.status } : m))
+          }
+          if (evt.type === 'refresh') loadMsgsRef.current()
+        }
+        es.onerror = () => {
+          if (sseWatchdogRef.current) clearTimeout(sseWatchdogRef.current)
+          es.close(); sseRef.current = null
+          loadMsgsRef.current()
+          sseReconnectRef.current = setTimeout(connectSSE, 1000)
+        }
+      }
+      connectSSE()
+    }
+
+    pollRef.current = setInterval(() => loadMsgsRef.current(), 30000)
+    return () => {
+      if (sseRef.current) sseRef.current.close()
+      if (sseReconnectRef.current) clearTimeout(sseReconnectRef.current)
+      if (sseWatchdogRef.current) clearTimeout(sseWatchdogRef.current)
+      if (pollRef.current) clearInterval(pollRef.current)
+      if (recordTimerRef.current) clearInterval(recordTimerRef.current)
+    }
   }, [lead.contact_id])
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  const handleSend = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!msgText.trim() || !configId || !lead.contact_id) return
+  const clearMedia = () => {
+    if (mediaPreview) URL.revokeObjectURL(mediaPreview)
+    setMediaFile(null); setMediaPreview(null)
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (file.size > 16 * 1024 * 1024) { toast.error('El archivo no puede superar 16 MB'); return }
+    clearMedia()
+    setMediaFile(file)
+    setMediaPreview(URL.createObjectURL(file))
+  }
+
+  const toggleRecording = async () => {
+    if (isRecording) {
+      if (mediaRecorderRef.current) mediaRecorderRef.current.stop()
+      if (recordTimerRef.current) clearInterval(recordTimerRef.current)
+      setIsRecording(false)
+      return
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      audioChunksRef.current = []
+      const mimeTypes = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/ogg', 'audio/mp4']
+      const mimeType = mimeTypes.find(t => MediaRecorder.isTypeSupported(t)) || ''
+      const ext = mimeType.startsWith('audio/webm') ? 'webm' : mimeType.startsWith('audio/mp4') ? 'mp4' : 'ogg'
+      const mr = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
+      mediaRecorderRef.current = mr
+      mr.ondataavailable = e => { if (e.data.size > 0) audioChunksRef.current.push(e.data) }
+      mr.onstop = () => {
+        stream.getTracks().forEach(t => t.stop())
+        const actualMime = mr.mimeType || mimeType || 'audio/ogg'
+        const blob = new Blob(audioChunksRef.current, { type: actualMime })
+        const file = new File([blob], `audio_${Date.now()}.${ext}`, { type: actualMime })
+        clearMedia()
+        setMediaFile(file)
+        setMediaPreview(URL.createObjectURL(blob))
+        setRecordSecs(0)
+      }
+      mr.start(250)
+      setIsRecording(true)
+      setRecordSecs(0)
+      recordTimerRef.current = setInterval(() => setRecordSecs(s => s + 1), 1000)
+    } catch { toast.error('No se pudo acceder al micrófono') }
+  }
+
+  const handleSend = async () => {
+    if (!lead.contact_id || !configId) return
+    const hasMedia = !!mediaFile
+    const hasText = !!msgText.trim()
+    if (!hasMedia && !hasText) return
+
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current)
+    sendTypingPresence(parseInt(configId), lead.contact_id, false).catch(() => {})
+
+    const optimisticText = hasMedia ? '' : msgText.trim()
+    const optimisticId = Date.now() * -1
+    if (!hasMedia && optimisticText) {
+      setMessages(prev => [...prev, {
+        id: optimisticId, contact_id: lead.contact_id,
+        direction: 'out', message_type: 'text', content: optimisticText,
+        status: 'logged', created_at: new Date().toISOString(),
+      }])
+      setMsgText('')
+    }
+
     setSending(true)
     try {
-      await sendWhatsAppMessage({
-        contact_id: lead.contact_id,
-        whatsapp_config_id: parseInt(configId),
-        message: msgText.trim(),
-        message_type: 'text',
-      })
-      setMsgText('')
+      if (hasMedia) {
+        const fd = new FormData()
+        fd.append('file', mediaFile!)
+        fd.append('contact_id', lead.contact_id.toString())
+        fd.append('whatsapp_config_id', configId)
+        fd.append('caption', msgText.trim())
+        const result = await sendWhatsAppMedia(fd)
+        if (result?.status === 'logged') toast.error('WhatsApp no conectado — archivo guardado sin enviar')
+        clearMedia(); setMsgText('')
+      } else {
+        const result = await sendWhatsAppMessage({
+          contact_id: lead.contact_id,
+          whatsapp_config_id: parseInt(configId),
+          message: optimisticText,
+        })
+        if (result?.status === 'logged') toast.error('WhatsApp no conectado — mensaje guardado sin enviar')
+        if (result?.id) {
+          setMessages(prev => prev.map(m => m.id === optimisticId ? { ...result, direction: 'out' } : m))
+        } else {
+          setMessages(prev => prev.filter(m => m.id !== optimisticId))
+        }
+      }
       loadMessages()
     } catch { toast.error('Error al enviar') }
     finally { setSending(false) }
   }
 
-  // No contact linked
+  const handleDeleteMsg = async (id: number) => {
+    try { await deleteWhatsAppMessage(id); setMessages(prev => prev.filter(m => m.id !== id)) }
+    catch { toast.error('Error al eliminar') }
+  }
+
+  const handleEditMsg = async () => {
+    if (!editingMsg || !editText.trim()) return
+    try {
+      const updated = await editWhatsAppMessage(editingMsg.id, editText)
+      setMessages(prev => prev.map(m => m.id === updated.id ? updated : m))
+      setEditingMsg(null); setEditText('')
+    } catch { toast.error('Error al editar') }
+  }
+
+  const handleRetryMsg = async (msg: any) => {
+    setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, status: 'sent' } : m))
+    try {
+      const updated = await retryWhatsAppMessage(msg.id)
+      setMessages(prev => prev.map(m => m.id === msg.id ? updated : m))
+      if (updated.status === 'logged') {
+        setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, status: 'logged' } : m))
+        toast.error('WhatsApp no conectado — reintenta más tarde')
+      }
+    } catch {
+      setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, status: 'logged' } : m))
+      toast.error('Error al reenviar')
+    }
+  }
+
+  const isImage = mediaFile?.type.startsWith('image/')
+  const isAudio = mediaFile?.type.startsWith('audio/')
+
   if (!lead.contact_id) {
     return (
       <div className="flex flex-col items-center justify-center h-full p-6 text-center gap-3">
@@ -201,7 +471,6 @@ function ChatTab({ lead }: { lead: CobradorLead }) {
     )
   }
 
-  // No WA config connected
   if (!loading && configs.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-full p-6 text-center gap-3">
@@ -210,12 +479,9 @@ function ChatTab({ lead }: { lead: CobradorLead }) {
         </div>
         <div>
           <p className="text-sm font-bold" style={{ color: 'var(--text)' }}>Conecta tu WhatsApp</p>
-          <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-            Para chatear debes vincular tu número primero.
-          </p>
+          <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Para chatear debes vincular tu número primero.</p>
         </div>
-        <Link to="/mis-whatsapp"
-          className="px-4 py-2 rounded-xl text-sm font-semibold"
+        <Link to="/mis-whatsapp" className="px-4 py-2 rounded-xl text-sm font-semibold"
           style={{ background: 'rgba(67,97,238,0.10)', color: '#4361ee', border: '1px solid rgba(67,97,238,0.25)' }}>
           Ir a Mis WhatsApp
         </Link>
@@ -225,67 +491,153 @@ function ChatTab({ lead }: { lead: CobradorLead }) {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Config selector */}
-      {configs.length > 1 && (
-        <div className="px-3 py-2 flex-shrink-0" style={{ borderBottom: '1px solid var(--border)', background: 'rgba(26,32,53,0.02)' }}>
-          <select className="input text-xs py-1" value={configId} onChange={e => setConfigId(e.target.value)}>
-            {configs.map((c: any) => (
-              <option key={c.id} value={c.id}>{c.name} ({c.phone_number})</option>
-            ))}
-          </select>
+      {/* Chat header */}
+      <div className="flex items-center justify-between px-3 py-2 flex-shrink-0"
+        style={{ borderBottom: '1px solid rgba(26,32,53,0.10)', background: '#f0f2f5' }}>
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0"
+            style={{ background: 'linear-gradient(135deg,#25D366 0%,#128C7E 100%)' }}>
+            {lead.nombre.charAt(0).toUpperCase()}
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold truncate" style={{ color: '#1a2035' }}>{lead.nombre}</p>
+            {lead.telefono && <p className="text-[10px]" style={{ color: 'rgba(26,32,53,0.55)' }}>{lead.telefono}</p>}
+          </div>
         </div>
-      )}
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          {configs.length > 1 && (
+            <select className="text-[10px] rounded-lg border px-2 py-1 outline-none"
+              style={{ background: '#fff', border: '1px solid rgba(26,32,53,0.12)', color: '#1a2035' }}
+              value={configId} onChange={e => setConfigId(e.target.value)}>
+              {configs.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          )}
+          {lead.telefono && (
+            <a href={`tel:${lead.telefono}`}
+              className="flex items-center justify-center w-8 h-8 rounded-full transition-colors hover:bg-green-100"
+              style={{ color: '#25D366' }}
+              title={`Llamar a ${lead.nombre}`}>
+              <Phone size={16} />
+            </a>
+          )}
+        </div>
+      </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-2"
-        style={{ background: 'linear-gradient(180deg, #f0f4f8 0%, #e8f5e9 100%)' }}>
+      <div className="flex-1 overflow-y-auto min-h-0 flex flex-col"
+        style={{
+          backgroundColor: '#e5ddd5',
+          backgroundImage: "radial-gradient(circle, rgba(0,0,0,0.04) 1px, transparent 1px)",
+          backgroundSize: "20px 20px",
+        }}>
         {loading && (
           <div className="flex justify-center py-8">
             <div className="w-5 h-5 border-2 rounded-full animate-spin" style={{ borderColor: 'rgba(0,0,0,0.1)', borderTopColor: '#25D366' }} />
           </div>
         )}
         {!loading && messages.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-32 gap-2" style={{ color: 'rgba(26,32,53,0.40)' }}>
+          <div className="flex-1 flex flex-col items-center justify-center gap-2" style={{ color: 'rgba(26,32,53,0.40)' }}>
             <MessageSquare size={28} style={{ opacity: 0.4 }} />
             <p className="text-xs">Sin mensajes aún</p>
           </div>
         )}
-        {messages.map((msg: any) => {
-          const isOut = msg.direction === 'out'
-          const hasMedia = msg.message_type !== 'text' && msg.media_url
-          return (
-            <div key={msg.id} className={`flex ${isOut ? 'justify-end' : 'justify-start'}`}>
-              <div className="max-w-[80%] rounded-2xl px-3 py-2 shadow-sm"
-                style={{
-                  background: isOut ? '#25D366' : '#ffffff',
-                  borderRadius: isOut ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
-                  boxShadow: '0 1px 2px rgba(0,0,0,0.12)',
-                }}>
-                {hasMedia && (
-                  <a href={`${API_BASE_URL}${msg.media_url}`} target="_blank" rel="noopener noreferrer"
-                    className="block mb-1 text-[11px] underline"
-                    style={{ color: isOut ? 'rgba(255,255,255,0.85)' : '#4361ee' }}>
-                    📎 Archivo adjunto
-                  </a>
-                )}
-                <p className="text-sm leading-relaxed whitespace-pre-wrap break-words"
-                  style={{ color: isOut ? '#ffffff' : '#1a2035' }}>
-                  {msg.content}
-                </p>
-                <p className="text-[9px] mt-1 text-right"
-                  style={{ color: isOut ? 'rgba(255,255,255,0.65)' : 'rgba(26,32,53,0.40)' }}>
-                  {msg.created_at ? new Date(msg.created_at).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }) : ''}
-                </p>
-              </div>
+        {messages.length > 0 && (
+          <>
+            <div className="flex-1" />
+            <div className="py-3 px-[3%] space-y-0.5">
+              {messages.map((msg: any) => {
+                const isOut = msg.direction === 'out'
+                const bubbleBg = isOut ? '#dcf8c6' : '#ffffff'
+                return (
+                  <div key={msg.id} className={`flex ${isOut ? 'justify-end' : 'justify-start'} mb-0.5 group`}>
+                    <div className="relative max-w-[78%]"
+                      style={{ marginRight: isOut ? 8 : 0, marginLeft: isOut ? 0 : 8 }}>
+                      <div style={{
+                        position: 'absolute', bottom: 0,
+                        ...(isOut ? { right: -8 } : { left: -8 }),
+                        width: 8, height: 13,
+                        backgroundColor: bubbleBg,
+                        clipPath: isOut ? 'polygon(0 0, 0 100%, 100% 100%)' : 'polygon(100% 0, 0 100%, 100% 100%)',
+                      }} />
+                      <div
+                        onContextMenu={e => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY, msg }) }}
+                        style={{
+                          backgroundColor: bubbleBg,
+                          borderRadius: isOut ? '7.5px 7.5px 0 7.5px' : '7.5px 7.5px 7.5px 0',
+                          padding: '6px 9px 8px 9px',
+                          boxShadow: '0 1px 2px rgba(0,0,0,0.12)',
+                          color: '#1a2035',
+                          position: 'relative', zIndex: 1, cursor: 'default',
+                          wordBreak: 'break-word',
+                          border: '1px solid rgba(0,0,0,0.05)',
+                        }}>
+                        <ChatMsgContent m={msg} />
+                        <div className="flex items-center justify-end gap-1 mt-0.5">
+                          {isOut && msg.status === 'logged' && (
+                            <button onClick={() => handleRetryMsg(msg)} title="No enviado — clic para reintentar"
+                              style={{ fontSize:10, color:'#d97706', cursor:'pointer' }}>
+                              ↺ No enviado
+                            </button>
+                          )}
+                          <span style={{ color:'rgba(26,32,53,0.45)', fontSize:11, whiteSpace:'nowrap' }}>
+                            {msg.created_at ? new Date(msg.created_at).toLocaleTimeString('es-CL', { hour:'2-digit', minute:'2-digit' }) : ''}
+                          </span>
+                          {isOut && <WaTicks status={msg.status} />}
+                        </div>
+                      </div>
+                      <button onClick={e => setCtxMenu({ x: e.clientX, y: e.clientY, msg })}
+                        className="absolute top-1 opacity-0 group-hover:opacity-100 transition-opacity rounded-full p-0.5"
+                        style={{ ...(isOut ? { left: -20 } : { right: -20 }), backgroundColor: bubbleBg, color:'rgba(26,32,53,0.50)' }}>
+                        ▾
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+              <div ref={endRef} />
             </div>
-          )
-        })}
-        <div ref={endRef} />
+          </>
+        )}
       </div>
 
-      {/* Quick action: pre-fill portal URL */}
+      {/* Media preview bar */}
+      {(mediaFile || isRecording) && (
+        <div className="px-3 py-2 flex items-center gap-3 flex-shrink-0"
+          style={{ background: '#f0f2f5', borderTop: '1px solid rgba(26,32,53,0.10)' }}>
+          {isRecording ? (
+            <>
+              <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse flex-shrink-0" />
+              <span className="text-sm font-semibold text-red-500">{formatRecSecs(recordSecs)}</span>
+              <span className="text-xs" style={{ color:'rgba(26,32,53,0.55)' }}>Grabando audio...</span>
+            </>
+          ) : isImage && mediaPreview ? (
+            <>
+              <img src={mediaPreview} alt="preview" className="w-12 h-12 rounded-lg object-cover flex-shrink-0" />
+              <span className="text-xs truncate flex-1" style={{ color:'#1a2035' }}>{mediaFile!.name}</span>
+            </>
+          ) : isAudio ? (
+            <>
+              <Mic size={18} color="#8696a0" className="flex-shrink-0" />
+              <audio controls src={mediaPreview!} className="h-8 flex-1" />
+            </>
+          ) : (
+            <>
+              <FileText size={18} color="#8696a0" className="flex-shrink-0" />
+              <span className="text-xs truncate flex-1" style={{ color:'#1a2035' }}>{mediaFile!.name}</span>
+            </>
+          )}
+          {!isRecording && (
+            <button onClick={clearMedia} className="p-1 rounded-full hover:bg-gray-200 transition-colors flex-shrink-0">
+              <X size={15} style={{ color:'rgba(26,32,53,0.50)' }} />
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Quick action: portal URL */}
       {lead.pagacuotas_cliente_id && (
-        <div className="px-3 py-2 flex-shrink-0" style={{ borderTop: '1px solid rgba(37,211,102,0.20)', background: 'rgba(37,211,102,0.04)' }}>
+        <div className="px-3 py-1.5 flex-shrink-0"
+          style={{ background: 'rgba(37,211,102,0.05)', borderTop: '1px solid rgba(37,211,102,0.15)' }}>
           <button
             onClick={async () => {
               setLoadingUrl(true)
@@ -297,33 +649,109 @@ function ChatTab({ lead }: { lead: CobradorLead }) {
             }}
             disabled={loadingUrl}
             className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg w-full transition-all"
-            style={{ background: 'rgba(37,211,102,0.12)', color: '#16a34a', border: '1px solid rgba(37,211,102,0.30)' }}
-          >
+            style={{ background: 'rgba(37,211,102,0.12)', color: '#16a34a', border: '1px solid rgba(37,211,102,0.25)' }}>
             <ExternalLink size={11} />
             {loadingUrl ? 'Cargando...' : 'Reenviar acceso PagaCuotas'}
           </button>
         </div>
       )}
 
-      {/* Send form */}
-      <form onSubmit={handleSend} className="flex gap-2 p-3 flex-shrink-0"
-        style={{ borderTop: '1px solid var(--border)', background: '#fff' }}>
-        <input
-          className="flex-1 rounded-2xl border px-4 py-2 text-sm outline-none focus:border-green-400 transition-colors"
-          style={{ border: '1px solid rgba(26,32,53,0.14)', background: 'rgba(26,32,53,0.03)' }}
-          placeholder="Escribe un mensaje..."
+      {/* Input bar */}
+      <div className="flex items-end gap-2 px-3 py-2 flex-shrink-0"
+        style={{ background: '#f0f2f5', borderTop: '1px solid rgba(26,32,53,0.10)' }}>
+        <input ref={fileInputRef} type="file"
+          accept="image/*,audio/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx"
+          className="hidden" onChange={handleFileSelect} />
+        <button onClick={() => fileInputRef.current?.click()} disabled={isRecording}
+          className="p-2 rounded-full hover:bg-gray-200 transition-colors flex-shrink-0 disabled:opacity-30"
+          style={{ color:'rgba(26,32,53,0.55)' }} title="Adjuntar archivo">
+          <Paperclip size={20} />
+        </button>
+        <textarea
+          className="flex-1 resize-none text-sm outline-none"
+          style={{
+            backgroundColor: '#fff', color: '#1a2035',
+            borderRadius: 8, padding: '9px 12px',
+            minHeight: 42, maxHeight: 120,
+            border: '1px solid rgba(26,32,53,0.14)', lineHeight: '1.5',
+          }}
+          rows={1}
           value={msgText}
-          onChange={e => setMsgText(e.target.value)}
-          disabled={sending || !configId}
+          placeholder={mediaFile ? 'Añade un pie de foto (opcional)...' : 'Escribe un mensaje...'}
+          onChange={e => {
+            setMsgText(e.target.value)
+            e.target.style.height = 'auto'
+            e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px'
+            if (lead.contact_id && configId) {
+              if (typingTimerRef.current) clearTimeout(typingTimerRef.current)
+              sendTypingPresence(parseInt(configId), lead.contact_id, true).catch(() => {})
+              typingTimerRef.current = setTimeout(() => {
+                sendTypingPresence(parseInt(configId), lead.contact_id!, false).catch(() => {})
+              }, 3000)
+            }
+          }}
+          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
+          disabled={!configId}
         />
-        <button type="submit" disabled={sending || !msgText.trim() || !configId}
-          className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0 transition-all disabled:opacity-40"
+        <button onClick={toggleRecording} disabled={!!mediaFile && !isRecording}
+          title={isRecording ? 'Detener grabación' : 'Grabar audio'}
+          className="p-2 rounded-full transition-colors flex-shrink-0 disabled:opacity-30"
+          style={{ backgroundColor: isRecording ? '#ef4444' : 'transparent', color: isRecording ? '#fff' : 'rgba(26,32,53,0.55)' }}>
+          {isRecording ? <Square size={20} /> : <Mic size={20} />}
+        </button>
+        <button onClick={handleSend}
+          disabled={sending || isRecording || (!msgText.trim() && !mediaFile) || !configId}
+          className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 transition-all disabled:opacity-40"
           style={{ background: '#25D366', color: '#fff' }}>
           {sending
             ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-            : <Send size={16} />}
+            : <Send size={18} />}
         </button>
-      </form>
+      </div>
+
+      {ctxMenu && (
+        <ChatMsgMenu x={ctxMenu.x} y={ctxMenu.y} msg={ctxMenu.msg}
+          onClose={() => setCtxMenu(null)}
+          onDelete={handleDeleteMsg}
+          onEdit={msg => { setEditingMsg(msg); setEditText(msg.content) }}
+          onRetry={handleRetryMsg}
+        />
+      )}
+
+      {editingMsg && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-end justify-center z-50 pb-6 px-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden"
+            style={{ border:'1px solid rgba(26,32,53,0.10)' }}>
+            <div className="px-5 py-3.5 flex items-center justify-between"
+              style={{ borderBottom:'1px solid rgba(26,32,53,0.10)' }}>
+              <p className="font-semibold text-sm" style={{ color:'var(--text)' }}>Editar mensaje</p>
+              <button onClick={() => setEditingMsg(null)} className="p-1 rounded-full hover:bg-gray-100 transition-colors">
+                <X size={16} style={{ color:'rgba(26,32,53,0.50)' }} />
+              </button>
+            </div>
+            <div className="p-4">
+              <textarea autoFocus className="w-full resize-none text-sm rounded-xl px-3 py-2.5 outline-none"
+                style={{ background:'rgba(26,32,53,0.04)', border:'1px solid rgba(26,32,53,0.12)', color:'var(--text)' }}
+                rows={3} value={editText}
+                onChange={e => setEditText(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleEditMsg() } }}
+              />
+            </div>
+            <div className="px-4 pb-4 flex gap-3">
+              <button onClick={() => setEditingMsg(null)}
+                className="flex-1 py-2 rounded-xl text-sm transition-colors"
+                style={{ border:'1px solid rgba(26,32,53,0.12)', color:'rgba(26,32,53,0.60)' }}>
+                Cancelar
+              </button>
+              <button onClick={handleEditMsg}
+                className="flex-1 py-2 rounded-xl text-sm font-semibold"
+                style={{ background:'#25D366', color:'#fff' }}>
+                Guardar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
