@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, createContext, useContext } from 'react'
 import {
   X, Sparkles, Download, Save, Loader2, Trash2,
   ChevronLeft, FileText, CheckCircle, Plus, Minus, Eye, AlertCircle,
@@ -9,6 +9,8 @@ import {
   getOTTypes, createWorkOrder, updateWorkOrder, deleteWorkOrder,
   aiFillWorkOrder, listWorkOrders,
 } from '../api'
+
+const SnapPieContext = createContext<(() => void) | null>(null)
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -64,15 +66,17 @@ function computePaymentFields(fields: Record<string, any>): Record<string, any> 
   const pie = gi(fields.pie_inicial)
   const nc  = gi(fields.num_cuotas) || 1
   if (hon > 0 && nc > 0) {
-    const cuota = Math.round((hon - pie) / nc)
-    return { ...fields, monto_cuota: String(cuota) }
+    const mc = Math.floor((hon - pie) / nc)
+    const pieExact = hon - nc * mc
+    return { ...fields, monto_cuota: String(mc), pie_inicial: String(Math.max(0, pieExact)) }
   }
   return fields
 }
 
-function MoneyBlank({ fieldKey, value, onChange, style }: {
-  fieldKey: string; value: string | number; onChange: (k: string, v: string) => void; style?: React.CSSProperties
+function MoneyBlank({ fieldKey, value, onChange, style, snapOnBlur }: {
+  fieldKey: string; value: string | number; onChange: (k: string, v: string) => void; style?: React.CSSProperties; snapOnBlur?: boolean
 }) {
+  const snapPie = useContext(SnapPieContext)
   const raw = String(value ?? '').replace(/\D/g, '')
   const num = parseInt(raw) || 0
   return (
@@ -84,6 +88,7 @@ function MoneyBlank({ fieldKey, value, onChange, style }: {
         value={raw}
         inputMode="numeric"
         onChange={e => onChange(fieldKey, e.target.value.replace(/\D/g, ''))}
+        onBlur={snapOnBlur && snapPie ? snapPie : undefined}
       />
       {num > 0 && (
         <span className="text-[13px] font-bold text-blue-700 mt-0.5 px-1" style={{ fontWeight: 700 }}>{fmtCLP(raw)}</span>
@@ -171,7 +176,7 @@ function HonorariosSection({ f, ch, showBank }: { f: Record<string, any>; ch: (k
       <div className="flex flex-wrap gap-x-6 mt-1">
         <div className="flex items-end gap-1 mb-[6px]">
           <span className="text-[13px] font-bold text-gray-900 whitespace-nowrap shrink-0">Pie Inicial: </span><span className="text-[13px] font-bold text-gray-900" data-html2canvas-ignore="true">$</span>
-          <MoneyBlank fieldKey="pie_inicial" value={f.pie_inicial ?? ''} onChange={ch} />
+          <MoneyBlank fieldKey="pie_inicial" value={f.pie_inicial ?? ''} onChange={ch} snapOnBlur />
         </div>
         <div className="flex flex-wrap items-end gap-1 mb-[6px]">
           <span className="text-[13px] font-bold text-gray-900 whitespace-nowrap shrink-0">Cuotas:</span>
@@ -741,15 +746,34 @@ export function WorkOrderModal({ leadId, onClose, onSaved, autoOpen, honorarios 
     init()
   }, [leadId, autoOpen])
 
+  const snapPieToExact = useCallback(() => {
+    setFields(prev => {
+      const hon = gi(prev.honorarios)
+      const nc  = gi(prev.num_cuotas) || 1
+      const mc  = gi(prev.monto_cuota)
+      if (hon > 0 && nc > 0 && mc > 0) {
+        const pieExact = hon - nc * mc
+        if (pieExact >= 0) return { ...prev, pie_inicial: String(pieExact) }
+      }
+      return prev
+    })
+  }, [])
+
   const setField = (key: string, value: any) => setFields(prev => {
     const next = { ...prev, [key]: value }
     const hon = gi(key === 'honorarios'  ? value : prev.honorarios)
     const pie = gi(key === 'pie_inicial' ? value : prev.pie_inicial)
     const nc  = gi(key === 'num_cuotas'  ? value : prev.num_cuotas) || 1
     const mc  = gi(key === 'monto_cuota' ? value : prev.monto_cuota)
-    if (['honorarios', 'pie_inicial', 'num_cuotas'].includes(key)) {
-      const cuota = nc > 0 ? Math.round((hon - pie) / nc) : 0
-      next.monto_cuota = String(cuota)
+    if (key === 'honorarios' || key === 'num_cuotas') {
+      const mc_new = nc > 0 ? Math.floor((hon - pie) / nc) : 0
+      next.monto_cuota = String(mc_new)
+      next.pie_inicial = String(Math.max(0, hon - nc * mc_new))
+    } else if (key === 'pie_inicial') {
+      next.monto_cuota = nc > 0 ? String(Math.round((hon - pie) / nc)) : '0'
+    } else if (key === 'monto_cuota') {
+      const pieExact = hon - nc * mc
+      next.pie_inicial = String(Math.max(0, pieExact))
     }
     return next
   })
@@ -1161,14 +1185,16 @@ export function WorkOrderModal({ leadId, onClose, onSaved, autoOpen, honorarios 
           `}</style>
         )}
         <div className={viewOnly ? 'ot-view-only' : ''}>
-          <FullDocument
-            otType={selectedType.key}
-            otTitle={selectedType.label.toUpperCase()}
-            otSubtitle={selectedType.subtitle.toUpperCase()}
-            fields={fields}
-            onChange={isReadOnly ? () => {} : setField}
-            docRef={docRef}
-          />
+          <SnapPieContext.Provider value={isReadOnly ? null : snapPieToExact}>
+            <FullDocument
+              otType={selectedType.key}
+              otTitle={selectedType.label.toUpperCase()}
+              otSubtitle={selectedType.subtitle.toUpperCase()}
+              fields={fields}
+              onChange={isReadOnly ? () => {} : setField}
+              docRef={docRef}
+            />
+          </SnapPieContext.Provider>
         </div>
       </Shell>
     )
