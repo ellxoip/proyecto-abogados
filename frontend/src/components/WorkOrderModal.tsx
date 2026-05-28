@@ -59,6 +59,23 @@ function gi(v: any): number {
   return isNaN(n) ? 0 : Math.round(n)
 }
 
+function computePaymentFields(fields: Record<string, any>): Record<string, any> {
+  const hon = gi(fields.honorarios)
+  const pie = gi(fields.pie_inicial)
+  const nc  = gi(fields.num_cuotas) || 1
+  if (hon > 0 && nc > 0) {
+    const rem  = hon - pie
+    const base = rem > 0 ? Math.floor(rem / nc) : 0
+    const left = rem > 0 ? rem - base * nc : 0
+    return {
+      ...fields,
+      monto_cuota:  String(base),
+      ultima_cuota: (left > 0 && nc > 1) ? String(base + left) : '',
+    }
+  }
+  return fields
+}
+
 function MoneyBlank({ fieldKey, value, onChange, style }: {
   fieldKey: string; value: string | number; onChange: (k: string, v: string) => void; style?: React.CSSProperties
 }) {
@@ -148,6 +165,10 @@ function ClientSection({ f, ch }: { f: Record<string, any>; ch: (k: string, v: s
 }
 
 function HonorariosSection({ f, ch, showBank }: { f: Record<string, any>; ch: (k: string, v: string) => void; showBank?: boolean }) {
+  const nc      = gi(f.num_cuotas) || 1
+  const base    = gi(f.monto_cuota)
+  const ultima  = f.ultima_cuota ? gi(f.ultima_cuota) : 0
+  const hasUltima = ultima > 0 && ultima !== base && nc > 1
   return (
     <>
       <SectionTitle>HONORARIOS PROFESIONALES</SectionTitle>
@@ -172,6 +193,11 @@ function HonorariosSection({ f, ch, showBank }: { f: Record<string, any>; ch: (k
           <MoneyBlank fieldKey="monto_cuota" value={f.monto_cuota ?? ''} onChange={ch} />
         </div>
       </div>
+      {hasUltima && (
+        <p className="text-[12px] font-bold text-gray-600 ml-1 mb-[6px]">
+          (última cuota: {fmtCLP(ultima)})
+        </p>
+      )}
       {showBank && (
         <div className="mt-3 p-3 bg-gray-50 rounded border border-gray-200 text-[12px] font-bold text-gray-700">
           <p className="mb-0.5">DATOS PARA TRANSFERENCIA</p>
@@ -724,7 +750,7 @@ export function WorkOrderModal({ leadId, onClose, onSaved, autoOpen, honorarios 
         // Prefer copia (has current values synced from lead edits)
         const target = list.find((w: WorkOrder) => w.is_copy) ?? list.find((w: WorkOrder) => !w.is_copy) ?? list[0]
         const type = types.find((t: OTType) => t.key === target.ot_type) ?? null
-        setCurrentWO(target); setFields(target.fields_json); setSelectedType(type); setStep('form')
+        setCurrentWO(target); setFields(computePaymentFields(target.fields_json)); setSelectedType(type); setStep('form')
       }
     }
     init()
@@ -737,9 +763,14 @@ export function WorkOrderModal({ leadId, onClose, onSaved, autoOpen, honorarios 
     const nc  = gi(key === 'num_cuotas'  ? value : prev.num_cuotas) || 1
     const mc  = gi(key === 'monto_cuota' ? value : prev.monto_cuota)
     if (['honorarios', 'pie_inicial', 'num_cuotas'].includes(key)) {
-      next.monto_cuota = String(Math.round((hon - pie) / nc))
+      const rem  = hon - pie
+      const base = rem > 0 && nc > 0 ? Math.floor(rem / nc) : 0
+      const left = rem > 0 && nc > 0 ? rem - base * nc : 0
+      next.monto_cuota  = String(base)
+      next.ultima_cuota = (left > 0 && nc > 1) ? String(base + left) : ''
     } else if (key === 'monto_cuota') {
-      next.honorarios = String(Math.round(pie + nc * mc))
+      next.honorarios   = String(pie + nc * mc)
+      next.ultima_cuota = ''
     }
     return next
   })
@@ -751,7 +782,7 @@ export function WorkOrderModal({ leadId, onClose, onSaved, autoOpen, honorarios 
       const copy: WorkOrder = result.copia
       const original: WorkOrder = result.original
       setNewOtIds([original.id, copy.id])
-      setCurrentWO(copy); setFields(copy.fields_json); setSelectedType(type); setIsNewUnsaved(true); setStep('form')
+      setCurrentWO(copy); setFields(computePaymentFields(copy.fields_json)); setSelectedType(type); setIsNewUnsaved(true); setStep('form')
     } catch (e: any) {
       toast.error(e?.response?.data?.detail || 'Error al crear OT')
     } finally { setLoadingNew(false) }
@@ -759,7 +790,7 @@ export function WorkOrderModal({ leadId, onClose, onSaved, autoOpen, honorarios 
 
   const openExisting = (wo: WorkOrder) => {
     const type = otTypes.find(t => t.key === wo.ot_type)
-    setCurrentWO(wo); setFields(wo.fields_json); setSelectedType(type || null); setStep('form')
+    setCurrentWO(wo); setFields(computePaymentFields(wo.fields_json)); setSelectedType(type || null); setStep('form')
   }
 
   const handleSave = async (status?: string) => {
@@ -767,7 +798,7 @@ export function WorkOrderModal({ leadId, onClose, onSaved, autoOpen, honorarios 
     setSaving(true)
     try {
       const updated: WorkOrder = await updateWorkOrder(currentWO.id, { fields_json: fields, status: status || currentWO.status, notify_agendadora: true })
-      setCurrentWO(updated); setFields(updated.fields_json)
+      setCurrentWO(updated); setFields(computePaymentFields(updated.fields_json))
       setIsNewUnsaved(false); setNewOtIds([])
       toast.success('OT guardada'); loadList(); onSaved?.()
     } catch (e: any) { toast.error(e?.response?.data?.detail || 'Error al guardar') }
@@ -781,7 +812,7 @@ export function WorkOrderModal({ leadId, onClose, onSaved, autoOpen, honorarios 
     setAiFilling(true)
     try {
       const updated: WorkOrder = await aiFillWorkOrder(currentWO.id)
-      setCurrentWO(updated); setFields(updated.fields_json)
+      setCurrentWO(updated); setFields(computePaymentFields(updated.fields_json))
       toast.success('Campos completados por IA ✓')
     } catch (e: any) { toast.error(e?.response?.data?.detail || 'Error al llamar la IA') }
     finally { setAiFilling(false) }

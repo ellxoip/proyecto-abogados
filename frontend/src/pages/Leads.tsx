@@ -1286,7 +1286,7 @@ function InfoTab({ lead, onUpdate, onOpenFull }: { lead: Lead; onUpdate: (l: Lea
       const ci = lead.cuota_inicial || 0
       if (nc > 1) {
         // Already has installments — keep cuota_inicial, recalc monto_cuota
-        payload.monto_cuota = Math.round((val - ci) / nc)
+        payload.monto_cuota = Math.floor((val - ci) / nc)
       } else {
         // Single payment default: cuota_inicial = total
         payload.cuota_inicial = val
@@ -1299,12 +1299,12 @@ function InfoTab({ lead, onUpdate, onOpenFull }: { lead: Lead; onUpdate: (l: Lea
       const autoFilled = lead.cuota_inicial === lead.honorarios
       const ci = autoFilled ? 0 : (lead.cuota_inicial || 0)
       if (autoFilled) payload.cuota_inicial = 0
-      payload.monto_cuota = h > 0 && nc > 0 ? Math.round((h - ci) / nc) : 0
+      payload.monto_cuota = h > 0 && nc > 0 ? Math.floor((h - ci) / nc) : 0
     } else if (field === 'cuota_inicial') {
       // Manual change: recalculate monto_cuota
       const h = lead.honorarios || 0
       const nc = lead.num_cuotas || 1
-      payload.monto_cuota = h > 0 && nc > 0 ? Math.round((h - val) / nc) : 0
+      payload.monto_cuota = h > 0 && nc > 0 ? Math.floor((h - val) / nc) : 0
     }
 
     const updated = await updateLead(lead.id, payload)
