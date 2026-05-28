@@ -64,13 +64,12 @@ function computePaymentFields(fields: Record<string, any>): Record<string, any> 
   const pie = gi(fields.pie_inicial)
   const nc  = gi(fields.num_cuotas) || 1
   if (hon > 0 && nc > 0) {
-    const rem  = hon - pie
-    const base = rem > 0 ? Math.floor(rem / nc) : 0
-    const left = rem > 0 ? rem - base * nc : 0
+    const cuota = Math.round((hon - pie) / nc)
     return {
       ...fields,
-      monto_cuota:  String(base),
-      ultima_cuota: (left > 0 && nc > 1) ? String(base + left) : '',
+      monto_cuota:  String(cuota),
+      honorarios:   String(pie + nc * cuota),
+      ultima_cuota: '',
     }
   }
   return fields
@@ -165,10 +164,6 @@ function ClientSection({ f, ch }: { f: Record<string, any>; ch: (k: string, v: s
 }
 
 function HonorariosSection({ f, ch, showBank }: { f: Record<string, any>; ch: (k: string, v: string) => void; showBank?: boolean }) {
-  const nc      = gi(f.num_cuotas) || 1
-  const base    = gi(f.monto_cuota)
-  const ultima  = f.ultima_cuota ? gi(f.ultima_cuota) : 0
-  const hasUltima = ultima > 0 && ultima !== base && nc > 1
   return (
     <>
       <SectionTitle>HONORARIOS PROFESIONALES</SectionTitle>
@@ -193,11 +188,6 @@ function HonorariosSection({ f, ch, showBank }: { f: Record<string, any>; ch: (k
           <MoneyBlank fieldKey="monto_cuota" value={f.monto_cuota ?? ''} onChange={ch} />
         </div>
       </div>
-      {hasUltima && (
-        <p className="text-[12px] font-bold text-gray-600 ml-1 mb-[6px]">
-          (última cuota: {fmtCLP(ultima)})
-        </p>
-      )}
       {showBank && (
         <div className="mt-3 p-3 bg-gray-50 rounded border border-gray-200 text-[12px] font-bold text-gray-700">
           <p className="mb-0.5">DATOS PARA TRANSFERENCIA</p>
@@ -763,11 +753,10 @@ export function WorkOrderModal({ leadId, onClose, onSaved, autoOpen, honorarios 
     const nc  = gi(key === 'num_cuotas'  ? value : prev.num_cuotas) || 1
     const mc  = gi(key === 'monto_cuota' ? value : prev.monto_cuota)
     if (['honorarios', 'pie_inicial', 'num_cuotas'].includes(key)) {
-      const rem  = hon - pie
-      const base = rem > 0 && nc > 0 ? Math.floor(rem / nc) : 0
-      const left = rem > 0 && nc > 0 ? rem - base * nc : 0
-      next.monto_cuota  = String(base)
-      next.ultima_cuota = (left > 0 && nc > 1) ? String(base + left) : ''
+      const cuota       = nc > 0 ? Math.round((hon - pie) / nc) : 0
+      next.monto_cuota  = String(cuota)
+      next.honorarios   = String(pie + nc * cuota)
+      next.ultima_cuota = ''
     } else if (key === 'monto_cuota') {
       next.honorarios   = String(pie + nc * mc)
       next.ultima_cuota = ''

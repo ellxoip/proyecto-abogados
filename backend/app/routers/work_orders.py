@@ -764,24 +764,12 @@ def _build_ot_pdf(wo: models.WorkOrder) -> BytesIO:
         story.append(Spacer(1, 2))
         fp = fields.get("forma_de_pago", "")
         story.append(inline_field("Forma de pago:", fp))
-        pie_val   = fields.get("pie_inicial", "")
-        nc        = fields.get("num_cuotas", 1) or 1
-        mc_val    = fields.get("monto_cuota", "")
-        ult_val   = fields.get("ultima_cuota", "")
-        pie_txt   = f"$ {_fmt_money(pie_val)}" if pie_val else ""
-        mc_txt    = f"$ {_fmt_money(mc_val)}"  if mc_val  else ""
-        try:
-            mc_int  = int(float(mc_val))  if mc_val  else 0
-            ult_int = int(float(ult_val)) if ult_val else 0
-            has_ult = ult_int > 0 and ult_int != mc_int and int(nc) > 1
-        except (ValueError, TypeError):
-            has_ult = False
-        if has_ult:
-            nc_reg     = int(nc) - 1
-            ult_txt    = f"$ {_fmt_money(ult_val)}"
-            cuotas_str = f"{nc_reg} de {mc_txt} + última: {ult_txt}"
-        else:
-            cuotas_str = f"{nc} de {mc_txt}"
+        pie_val    = fields.get("pie_inicial", "")
+        nc         = fields.get("num_cuotas", 1) or 1
+        mc_val     = fields.get("monto_cuota", "")
+        pie_txt    = f"$ {_fmt_money(pie_val)}" if pie_val else ""
+        mc_txt     = f"$ {_fmt_money(mc_val)}"  if mc_val  else ""
+        cuotas_str = f"{nc} de {mc_txt}"
         pie_line = Table(
             [[
                 Paragraph(f"<b>Pie Inicial:</b> {pie_txt}", inline_s),
