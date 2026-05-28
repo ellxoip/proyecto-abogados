@@ -1,14 +1,11 @@
 import { useState, useEffect } from 'react'
 import { getCobradorDashboard } from '../api'
-import { TrendingUp, Users, DollarSign, AlertCircle, CheckCircle, Phone, Handshake, Ban } from 'lucide-react'
+import { TrendingUp, Users, DollarSign, AlertCircle, CheckCircle, Handshake } from 'lucide-react'
 
 const STAGES: Record<string, { label: string; color: string; icon: React.ElementType }> = {
-  por_contactar: { label: 'Por Contactar', color: '#6B7280', icon: Phone },
-  contactado:    { label: 'Contactado',    color: '#3B82F6', icon: Phone },
-  negociando:    { label: 'Negociando',    color: '#F59E0B', icon: Handshake },
-  acuerdo_pago:  { label: 'Acuerdo Pago', color: '#8B5CF6', icon: Handshake },
-  pagado:        { label: 'Pagado',        color: '#10B981', icon: CheckCircle },
-  incobrable:    { label: 'Incobrable',    color: '#EF4444', icon: Ban },
+  lead_moroso:       { label: 'Lead Moroso',       color: '#EF4444', icon: AlertCircle },
+  pago_comprometido: { label: 'Pago Comprometido', color: '#F59E0B', icon: Handshake },
+  pagado:            { label: 'Pagado',             color: '#10B981', icon: CheckCircle },
 }
 
 function fmt(n: number) {
@@ -122,17 +119,17 @@ export default function CobradoresDashboard() {
         </div>
       </div>
 
-      {/* Alert: no activity */}
-      {(porStage.incobrable ?? 0) > 0 && (
+      {/* Alert: morosos sin gestión */}
+      {(porStage.lead_moroso ?? 0) > 0 && (
         <div className="flex items-start gap-3 p-4 rounded-2xl"
           style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.18)' }}>
           <AlertCircle size={16} style={{ color: '#EF4444', flexShrink: 0, marginTop: 2 }} />
           <div>
             <p className="text-sm font-semibold" style={{ color: '#dc2626' }}>
-              {porStage.incobrable} cliente{porStage.incobrable > 1 ? 's' : ''} marcado{porStage.incobrable > 1 ? 's' : ''} como incobrable{porStage.incobrable > 1 ? 's' : ''}
+              {porStage.lead_moroso} lead{porStage.lead_moroso > 1 ? 's' : ''} moroso{porStage.lead_moroso > 1 ? 's' : ''} sin gestión
             </p>
             <p className="text-xs mt-0.5" style={{ color: 'rgba(220,38,38,0.75)' }}>
-              Revisa la cartera para más detalles.
+              Contacta a estos clientes para iniciar la cobranza.
             </p>
           </div>
         </div>

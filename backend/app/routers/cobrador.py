@@ -8,7 +8,7 @@ from ..auth import get_current_user
 
 router = APIRouter(prefix="/api/cobrador", tags=["cobrador"])
 
-STAGES = ["por_contactar", "contactado", "negociando", "acuerdo_pago", "pagado", "incobrable"]
+STAGES = ["lead_moroso", "pago_comprometido", "pagado"]
 
 
 def _to_dict(lead: models.CobradorLead) -> dict:
@@ -206,16 +206,16 @@ def seed_cobrador(db: Session):
         return
 
     fake = [
-        dict(nombre="Juan Carlos Vega",      rut="12.345.678-9", empresa="Servicios Digitales SpA",  telefono="+56912345001", email="jvega@sdigitales.cl",   monto_deuda=4_500_000,  monto_pagado=0,         descripcion="Facturas pendientes Q3 2024. Servicio de desarrollo web.", stage="contactado"),
-        dict(nombre="María Ester Rojas",      rut="15.678.901-2", empresa="Importadora Norte Ltda",   telefono="+56912345002", email="mrojas@impnorte.cl",    monto_deuda=12_000_000, monto_pagado=2_000_000, descripcion="Deuda por importación de mercancía, acuerdo parcial previo.", stage="negociando"),
-        dict(nombre="Pedro Andrés Muñoz",     rut="11.222.333-4", empresa=None,                       telefono="+56912345003", email="pmunoz@gmail.com",       monto_deuda=850_000,    monto_pagado=425_000,   descripcion="Crédito de consumo. Acepta pago en cuotas.", stage="acuerdo_pago"),
-        dict(nombre="Carolina Beatriz Silva", rut="18.999.111-K", empresa="Constructora del Sur SpA", telefono="+56912345004", email="csilva@constsur.cl",     monto_deuda=28_000_000, monto_pagado=0,         descripcion="Incumplimiento contrato de obra. Proceso judicial en curso.", stage="por_contactar"),
+        dict(nombre="Juan Carlos Vega",      rut="12.345.678-9", empresa="Servicios Digitales SpA",  telefono="+56912345001", email="jvega@sdigitales.cl",   monto_deuda=4_500_000,  monto_pagado=0,         descripcion="Facturas pendientes Q3 2024. Servicio de desarrollo web.", stage="lead_moroso"),
+        dict(nombre="María Ester Rojas",      rut="15.678.901-2", empresa="Importadora Norte Ltda",   telefono="+56912345002", email="mrojas@impnorte.cl",    monto_deuda=12_000_000, monto_pagado=2_000_000, descripcion="Deuda por importación de mercancía, acuerdo parcial previo.", stage="pago_comprometido"),
+        dict(nombre="Pedro Andrés Muñoz",     rut="11.222.333-4", empresa=None,                       telefono="+56912345003", email="pmunoz@gmail.com",       monto_deuda=850_000,    monto_pagado=850_000,   descripcion="Crédito de consumo. Pagado completamente.", stage="pagado"),
+        dict(nombre="Carolina Beatriz Silva", rut="18.999.111-K", empresa="Constructora del Sur SpA", telefono="+56912345004", email="csilva@constsur.cl",     monto_deuda=28_000_000, monto_pagado=0,         descripcion="Incumplimiento contrato de obra. Proceso judicial en curso.", stage="lead_moroso"),
         dict(nombre="Roberto Carlos Pinto",   rut="9.876.543-2",  empresa="Transporte Rápido SpA",    telefono="+56912345005", email="rpinto@transrapido.cl",  monto_deuda=6_200_000,  monto_pagado=6_200_000, descripcion="Deuda saldada en su totalidad. Cierre exitoso.", stage="pagado"),
-        dict(nombre="Ana Luisa Torres",       rut="14.555.777-8", empresa="Café Torres SRL",          telefono="+56912345006", email="atorres@cafetorres.cl",  monto_deuda=1_800_000,  monto_pagado=600_000,   descripcion="Arrendamiento impago. Propietario dispuesto a negociar.", stage="contactado"),
-        dict(nombre="Cristóbal Herrera",      rut="10.101.202-3", empresa=None,                       telefono="+56912345007", email=None,                     monto_deuda=450_000,    monto_pagado=0,         descripcion="Deudor ilocalizable. Cambió de domicilio sin aviso.", stage="incobrable"),
-        dict(nombre="Valentina Morales",      rut="16.234.567-0", empresa="Diseño Digital Ltda",      telefono="+56912345008", email="vmorales@ddltda.cl",     monto_deuda=3_100_000,  monto_pagado=500_000,   descripcion="Servicios de diseño gráfico impagos. Negociando descuento.", stage="negociando"),
-        dict(nombre="Diego Alejandro Núñez",  rut="13.777.888-5", empresa="Logística Sur SpA",        telefono="+56912345009", email="dnunez@logsur.cl",       monto_deuda=15_500_000, monto_pagado=5_000_000, descripcion="Acuerdo de pago en 6 cuotas mensuales. Tercera cuota pendiente.", stage="acuerdo_pago"),
-        dict(nombre="Patricia Elena García",  rut="17.432.100-1", empresa="Eventos Exclusivos SpA",   telefono="+56912345010", email="pgarcia@eventosexcl.cl", monto_deuda=2_200_000,  monto_pagado=0,         descripcion="Anticipo de servicio no prestado. Sin respuesta aún.", stage="por_contactar"),
+        dict(nombre="Ana Luisa Torres",       rut="14.555.777-8", empresa="Café Torres SRL",          telefono="+56912345006", email="atorres@cafetorres.cl",  monto_deuda=1_800_000,  monto_pagado=0,         descripcion="Arrendamiento impago. Primera gestión pendiente.", stage="lead_moroso"),
+        dict(nombre="Cristóbal Herrera",      rut="10.101.202-3", empresa=None,                       telefono="+56912345007", email=None,                     monto_deuda=450_000,    monto_pagado=0,         descripcion="Deudor contactado, comprometió pago para fin de mes.", stage="pago_comprometido"),
+        dict(nombre="Valentina Morales",      rut="16.234.567-0", empresa="Diseño Digital Ltda",      telefono="+56912345008", email="vmorales@ddltda.cl",     monto_deuda=3_100_000,  monto_pagado=500_000,   descripcion="Servicios de diseño gráfico impagos. Abono realizado.", stage="pago_comprometido"),
+        dict(nombre="Diego Alejandro Núñez",  rut="13.777.888-5", empresa="Logística Sur SpA",        telefono="+56912345009", email="dnunez@logsur.cl",       monto_deuda=15_500_000, monto_pagado=15_500_000,descripcion="Pagado en su totalidad. Gestión exitosa.", stage="pagado"),
+        dict(nombre="Patricia Elena García",  rut="17.432.100-1", empresa="Eventos Exclusivos SpA",   telefono="+56912345010", email="pgarcia@eventosexcl.cl", monto_deuda=2_200_000,  monto_pagado=0,         descripcion="Anticipo de servicio no prestado. Sin respuesta aún.", stage="lead_moroso"),
     ]
 
     for data in fake:

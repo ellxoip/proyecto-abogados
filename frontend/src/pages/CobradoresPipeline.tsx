@@ -21,12 +21,9 @@ interface CobradorLead {
 }
 
 const STAGES = [
-  { key: 'por_contactar', label: 'Por Contactar', color: '#6B7280', bg: 'rgba(107,114,128,0.08)', border: 'rgba(107,114,128,0.25)' },
-  { key: 'contactado',    label: 'Contactado',    color: '#3B82F6', bg: 'rgba(59,130,246,0.08)',  border: 'rgba(59,130,246,0.25)' },
-  { key: 'negociando',    label: 'Negociando',    color: '#F59E0B', bg: 'rgba(245,158,11,0.08)',  border: 'rgba(245,158,11,0.25)' },
-  { key: 'acuerdo_pago',  label: 'Acuerdo Pago', color: '#8B5CF6', bg: 'rgba(139,92,246,0.08)',  border: 'rgba(139,92,246,0.25)' },
-  { key: 'pagado',        label: 'Pagado',        color: '#10B981', bg: 'rgba(16,185,129,0.08)',  border: 'rgba(16,185,129,0.25)' },
-  { key: 'incobrable',    label: 'Incobrable',    color: '#EF4444', bg: 'rgba(239,68,68,0.08)',   border: 'rgba(239,68,68,0.25)' },
+  { key: 'lead_moroso',       label: 'Lead Moroso',       color: '#EF4444', bg: 'rgba(239,68,68,0.06)',   border: 'rgba(239,68,68,0.25)' },
+  { key: 'pago_comprometido', label: 'Pago Comprometido', color: '#F59E0B', bg: 'rgba(245,158,11,0.06)',  border: 'rgba(245,158,11,0.25)' },
+  { key: 'pagado',            label: 'Pagado',            color: '#10B981', bg: 'rgba(16,185,129,0.06)',  border: 'rgba(16,185,129,0.25)' },
 ]
 
 function fmt(n: number) {

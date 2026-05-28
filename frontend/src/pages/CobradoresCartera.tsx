@@ -22,12 +22,9 @@ interface CobradorLead {
 }
 
 const STAGES: Record<string, { label: string; color: string; dot: string }> = {
-  por_contactar: { label: 'Por Contactar', color: 'rgba(107,114,128,0.15)', dot: '#6B7280' },
-  contactado:    { label: 'Contactado',    color: 'rgba(59,130,246,0.15)',  dot: '#3B82F6' },
-  negociando:    { label: 'Negociando',    color: 'rgba(245,158,11,0.15)',  dot: '#F59E0B' },
-  acuerdo_pago:  { label: 'Acuerdo Pago', color: 'rgba(139,92,246,0.15)',  dot: '#8B5CF6' },
-  pagado:        { label: 'Pagado',        color: 'rgba(16,185,129,0.15)',  dot: '#10B981' },
-  incobrable:    { label: 'Incobrable',    color: 'rgba(239,68,68,0.15)',   dot: '#EF4444' },
+  lead_moroso:       { label: 'Lead Moroso',       color: 'rgba(239,68,68,0.15)',   dot: '#EF4444' },
+  pago_comprometido: { label: 'Pago Comprometido', color: 'rgba(245,158,11,0.15)',  dot: '#F59E0B' },
+  pagado:            { label: 'Pagado',             color: 'rgba(16,185,129,0.15)',  dot: '#10B981' },
 }
 
 function fmt(n: number) {
