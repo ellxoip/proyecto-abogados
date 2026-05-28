@@ -296,7 +296,7 @@ def sync_morosos(db: Session) -> dict:
     if not cobrador:
         return {"ok": False, "error": "No hay usuarios cobrador en Nexio", "created": 0, "updated": 0}
 
-    created = updated = 0
+    created = updated = skipped = 0
 
     for row in rows:
         phone_raw = row.get("telefono") or ""
@@ -309,16 +309,22 @@ def sync_morosos(db: Session) -> dict:
         if phone:
             contact = db.query(models.Contact).filter(models.Contact.phone == phone).first()
             if not contact:
-                contact = models.Contact(
-                    name=row["nombre"],
-                    phone=phone,
-                    email=email,
-                    rut_persona=rut,
-                    group_id=cobrador.group_id,
-                )
-                db.add(contact)
-                db.flush()
-            contact_id = contact.id
+                try:
+                    contact = models.Contact(
+                        name=row["nombre"],
+                        phone=phone,
+                        email=email,
+                        rut_persona=rut,
+                        group_id=cobrador.group_id,
+                        created_by=cobrador.id,
+                    )
+                    db.add(contact)
+                    db.flush()
+                except Exception:
+                    db.rollback()
+                    contact = db.query(models.Contact).filter(models.Contact.phone == phone).first()
+            if contact:
+                contact_id = contact.id
 
         # Find PagaCuotas record by RUT
         pagacuotas_id = None
@@ -372,7 +378,11 @@ def sync_morosos(db: Session) -> dict:
             db.add(lead)
             created += 1
 
-    db.commit()
+    try:
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        return {"ok": False, "error": str(e), "created": created, "updated": updated}
     return {"ok": True, "created": created, "updated": updated, "total": len(rows)}
 
 
@@ -408,28 +418,4 @@ def seed_cobrador(db: Session):
         db.refresh(cobrador)
         print("✅ Cobrador user: cobrador@nexio.cl / Cobrador2024!")
 
-    # Don't seed fake data if real LF data exists
-    if db.query(models.CobradorLead).filter(
-        models.CobradorLead.cobrador_id == cobrador.id
-    ).first():
-        print("DB already seeded.")
-        return
-
-    # Try live sync first
-    result = sync_morosos(db)
-    if result["ok"] and result["total"] > 0:
-        print(f"✅ Synced {result['total']} morosos from Legal Finance")
-        return
-
-    # Fall back to fake seed only if sync fails and table is empty
-    fake = [
-        dict(nombre="Juan Carlos Vega",      rut="12.345.678-9", empresa="Servicios Digitales SpA",  telefono="+56912345001", email="jvega@sdigitales.cl",   monto_deuda=4_500_000,  monto_pagado=0,         num_cuotas=6,  cuota_inicial=500_000,  monto_cuota=666_667,  descripcion="Facturas pendientes Q3 2024.", stage="lead_moroso"),
-        dict(nombre="María Ester Rojas",      rut="15.678.901-2", empresa="Importadora Norte Ltda",   telefono="+56912345002", email="mrojas@impnorte.cl",    monto_deuda=12_000_000, monto_pagado=2_000_000, num_cuotas=12, cuota_inicial=2_000_000, monto_cuota=833_333,  descripcion="Acuerdo parcial previo.", stage="pago_comprometido"),
-        dict(nombre="Carolina Beatriz Silva", rut="18.999.111-K", empresa="Constructora del Sur SpA", telefono="+56912345004", email="csilva@constsur.cl",     monto_deuda=28_000_000, monto_pagado=0,         num_cuotas=24, cuota_inicial=4_000_000, monto_cuota=1_000_000,descripcion="Proceso judicial en curso.", stage="lead_moroso"),
-        dict(nombre="Ana Luisa Torres",       rut="14.555.777-8", empresa="Café Torres SRL",          telefono="+56912345006", email="atorres@cafetorres.cl",  monto_deuda=1_800_000,  monto_pagado=0,         num_cuotas=3,  cuota_inicial=300_000,  monto_cuota=500_000,  descripcion="Arrendamiento impago.", stage="lead_moroso"),
-        dict(nombre="Valentina Morales",      rut="16.234.567-0", empresa="Diseño Digital Ltda",      telefono="+56912345008", email="vmorales@ddltda.cl",     monto_deuda=3_100_000,  monto_pagado=500_000,   num_cuotas=5,  cuota_inicial=500_000,  monto_cuota=520_000,  descripcion="Abono realizado.", stage="pago_comprometido"),
-    ]
-    for data in fake:
-        db.add(models.CobradorLead(cobrador_id=cobrador.id, **data))
-    db.commit()
-    print(f"✅ Seeded {len(fake)} fake cobrador leads (LF sync unavailable)")
+    print("✅ Cobrador user ready.")

@@ -438,10 +438,15 @@ async def startup():
     try:
         from .database import SessionLocal as _SL
         _db = _SL()
-        cobrador.seed_cobrador(_db)
+        cobrador.seed_cobrador(_db)  # ensures cobrador user exists
+        result = cobrador.sync_morosos(_db)
+        if result["ok"]:
+            print(f"✅ LF sync: {result['created']} nuevos, {result['updated']} actualizados ({result['total']} morosos)")
+        else:
+            print(f"⚠️  LF sync failed: {result.get('error')}")
         _db.close()
     except Exception as e:
-        print(f"⚠️  seed_cobrador skipped: {e}")
+        print(f"⚠️  cobrador startup skipped: {e}")
     await wa_broadcaster.start()
 
 
