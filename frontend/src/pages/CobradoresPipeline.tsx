@@ -14,6 +14,9 @@ interface CobradorLead {
   email?: string | null
   monto_deuda: number
   monto_pagado: number
+  num_cuotas?: number | null
+  cuota_inicial?: number | null
+  monto_cuota?: number | null
   descripcion?: string | null
   stage: string
   notes?: string | null

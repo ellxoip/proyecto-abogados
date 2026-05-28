@@ -20,6 +20,9 @@ interface CobradorLead {
   email?: string | null
   monto_deuda: number
   monto_pagado: number
+  num_cuotas?: number | null
+  cuota_inicial?: number | null
+  monto_cuota?: number | null
   descripcion?: string | null
   stage: string
   notes?: string | null
@@ -386,7 +389,21 @@ function DetailPanel({ lead, onUpdate, onClose }: {
         <div className="flex-1 overflow-y-auto p-5 space-y-4">
           {activeTab === 'info' && (
             <>
-              {/* Deuda progress */}
+              {/* HONORARIOS — read-only, data from external system */}
+              <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border)' }}>
+                <div className="px-4 py-2.5 flex items-center gap-2" style={{ background: 'var(--bg-secondary, #f8fafc)', borderBottom: '1px solid var(--border)' }}>
+                  <DollarSign size={13} style={{ color: '#4361ee' }} />
+                  <span className="text-xs font-black uppercase tracking-wider" style={{ color: 'var(--text)' }}>Honorarios</span>
+                </div>
+                <dl>
+                  <InfoRow label="Total" value={lead.monto_deuda > 0 ? fmt(lead.monto_deuda) : undefined} />
+                  <InfoRow label="Nº Cuotas" value={lead.num_cuotas != null ? String(lead.num_cuotas) : '1'} />
+                  <InfoRow label="Cuota inicial" value={lead.cuota_inicial != null ? fmt(lead.cuota_inicial) : undefined} />
+                  <InfoRow label="Monto cuota" value={lead.monto_cuota != null ? fmt(lead.monto_cuota) : undefined} />
+                </dl>
+              </div>
+
+              {/* Progreso de cobro */}
               <div className="rounded-xl p-4" style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.18)' }}>
                 <div className="flex justify-between items-center mb-2">
                   <span className="text-xs font-bold" style={{ color: '#065f46' }}>Progreso de Cobro</span>
@@ -395,8 +412,7 @@ function DetailPanel({ lead, onUpdate, onClose }: {
                 <div className="h-2 rounded-full overflow-hidden mb-2" style={{ background: 'rgba(16,185,129,0.15)' }}>
                   <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: 'linear-gradient(90deg,#10B981,#34d399)' }} />
                 </div>
-                <div className="grid grid-cols-3 gap-2 text-center">
-                  <div><p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>Deuda Total</p><p className="text-xs font-bold" style={{ color: 'var(--text)' }}>{fmt(lead.monto_deuda)}</p></div>
+                <div className="grid grid-cols-2 gap-2 text-center">
                   <div><p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>Cobrado</p><p className="text-xs font-bold" style={{ color: '#10B981' }}>{fmt(lead.monto_pagado)}</p></div>
                   <div><p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>Pendiente</p><p className="text-xs font-bold" style={{ color: pendiente > 0 ? '#EF4444' : '#10B981' }}>{fmt(Math.max(pendiente, 0))}</p></div>
                 </div>
