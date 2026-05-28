@@ -39,6 +39,10 @@ def _to_dict(lead: models.CobradorLead) -> dict:
         "cuota_inicial": lead.cuota_inicial,
         "monto_cuota": lead.monto_cuota,
         "lf_cuotas_vencidas": lead.lf_cuotas_vencidas,
+        "lf_total_facturado": lead.lf_total_facturado,
+        "lf_total_pagado": lead.lf_total_pagado,
+        "proxima_cuota_fecha": lead.proxima_cuota_fecha,
+        "proxima_cuota_monto": lead.proxima_cuota_monto,
         "pagacuotas_cliente_id": lead.pagacuotas_cliente_id,
         "pagacuotas_token": pc.access_token if pc else None,
         "portal_url": f"{PORTAL_BASE}/pagar/{pc.access_token}" if pc else None,
@@ -263,11 +267,20 @@ def _fetch_morosos_from_contable():
                     ct.monto_pago_inicial,
                     ct.saldo_financiado,
                     ct.cantidad_cuotas_original,
-                    COALESCE(SUM(cu.saldo_pendiente) FILTER (WHERE cu.estado = 'PENDIENTE'), 0)
-                        AS deuda_pendiente,
+                    COALESCE(SUM(cu.monto_pagado) FILTER (WHERE cu.estado = 'PAGADA'), 0)
+                        AS total_pagado_lf,
                     COUNT(cu.id) FILTER (
                         WHERE cu.estado = 'PENDIENTE' AND cu.fecha_vencimiento < CURRENT_DATE
-                    ) AS cuotas_vencidas
+                    ) AS cuotas_vencidas,
+                    MIN(cu.fecha_vencimiento) FILTER (WHERE cu.estado = 'PENDIENTE')
+                        AS proxima_cuota_fecha,
+                    MIN(cu.monto_actual) FILTER (
+                        WHERE cu.estado = 'PENDIENTE'
+                        AND cu.fecha_vencimiento = (
+                            SELECT MIN(q.fecha_vencimiento) FROM "Cuota" q
+                            WHERE q.contrato_id = ct.id AND q.estado = 'PENDIENTE'
+                        )
+                    ) AS proxima_cuota_monto
                 FROM "Cliente" c
                 JOIN "Contrato" ct ON ct.cliente_id = c.id
                 LEFT JOIN "Cuota" cu ON cu.contrato_id = ct.id
@@ -346,10 +359,20 @@ def sync_morosos(db: Session) -> dict:
             models.CobradorLead.lf_contrato_id == row["lf_contrato_id"],
         ).first()
 
+        total_facturado  = float(row.get("monto_ccto") or 0)
+        total_pagado_lf  = float(row.get("total_pagado_lf") or 0)
+        pcf = row.get("proxima_cuota_fecha")
+        proxima_fecha    = pcf.isoformat() if pcf and hasattr(pcf, "isoformat") else str(pcf) if pcf else None
+        proxima_monto    = float(row.get("proxima_cuota_monto") or 0) if row.get("proxima_cuota_monto") else None
+
         if lead:
-            # Update debt amounts and sync metadata
-            lead.monto_deuda         = float(row["deuda_pendiente"])
-            lead.lf_cuotas_vencidas  = int(row["cuotas_vencidas"])
+            lead.monto_deuda          = total_facturado
+            lead.monto_pagado         = total_pagado_lf
+            lead.lf_total_facturado   = total_facturado
+            lead.lf_total_pagado      = total_pagado_lf
+            lead.lf_cuotas_vencidas   = int(row["cuotas_vencidas"])
+            lead.proxima_cuota_fecha  = proxima_fecha
+            lead.proxima_cuota_monto  = proxima_monto
             if contact_id and not lead.contact_id:
                 lead.contact_id = contact_id
             if pagacuotas_id and not lead.pagacuotas_cliente_id:
@@ -357,23 +380,27 @@ def sync_morosos(db: Session) -> dict:
             updated += 1
         else:
             lead = models.CobradorLead(
-                cobrador_id          = cobrador.id,
-                contact_id           = contact_id,
-                nombre               = row["nombre"],
-                rut                  = rut,
-                empresa              = row.get("tipo_servicio"),
-                telefono             = phone,
-                email                = email,
-                monto_deuda          = float(row["deuda_pendiente"]),
-                monto_pagado         = 0,
-                num_cuotas           = ncuotas,
-                cuota_inicial        = float(row.get("monto_pago_inicial") or 0),
-                monto_cuota          = monto_cuota,
-                lf_cliente_id        = row["lf_cliente_id"],
-                lf_contrato_id       = row["lf_contrato_id"],
-                lf_cuotas_vencidas   = int(row["cuotas_vencidas"]),
+                cobrador_id           = cobrador.id,
+                contact_id            = contact_id,
+                nombre                = row["nombre"],
+                rut                   = rut,
+                empresa               = row.get("tipo_servicio"),
+                telefono              = phone,
+                email                 = email,
+                monto_deuda           = total_facturado,
+                monto_pagado          = total_pagado_lf,
+                num_cuotas            = ncuotas,
+                cuota_inicial         = float(row.get("monto_pago_inicial") or 0),
+                monto_cuota           = monto_cuota,
+                lf_cliente_id         = row["lf_cliente_id"],
+                lf_contrato_id        = row["lf_contrato_id"],
+                lf_cuotas_vencidas    = int(row["cuotas_vencidas"]),
+                lf_total_facturado    = total_facturado,
+                lf_total_pagado       = total_pagado_lf,
+                proxima_cuota_fecha   = proxima_fecha,
+                proxima_cuota_monto   = proxima_monto,
                 pagacuotas_cliente_id = pagacuotas_id,
-                stage                = "lead_moroso",
+                stage                 = "lead_moroso",
             )
             db.add(lead)
             created += 1

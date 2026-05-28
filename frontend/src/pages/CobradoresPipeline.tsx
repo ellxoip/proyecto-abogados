@@ -17,6 +17,8 @@ interface CobradorLead {
   num_cuotas?: number | null
   cuota_inicial?: number | null
   monto_cuota?: number | null
+  proxima_cuota_fecha?: string | null
+  proxima_cuota_monto?: number | null
   descripcion?: string | null
   stage: string
   notes?: string | null

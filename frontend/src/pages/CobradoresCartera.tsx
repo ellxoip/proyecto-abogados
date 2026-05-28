@@ -25,6 +25,10 @@ interface CobradorLead {
   cuota_inicial?: number | null
   monto_cuota?: number | null
   lf_cuotas_vencidas?: number | null
+  lf_total_facturado?: number | null
+  lf_total_pagado?: number | null
+  proxima_cuota_fecha?: string | null
+  proxima_cuota_monto?: number | null
   pagacuotas_cliente_id?: number | null
   portal_url?: string | null
   descripcion?: string | null
@@ -416,34 +420,49 @@ function DetailPanel({ lead, onUpdate, onClose }: {
         <div className="flex-1 overflow-y-auto p-5 space-y-4">
           {activeTab === 'info' && (
             <>
-              {/* HONORARIOS — read-only, data from external system */}
+              {/* HONORARIOS — datos de Legal Finance, read-only */}
               <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border)' }}>
                 <div className="px-4 py-2.5 flex items-center gap-2" style={{ background: 'var(--bg-secondary, #f8fafc)', borderBottom: '1px solid var(--border)' }}>
                   <DollarSign size={13} style={{ color: '#4361ee' }} />
                   <span className="text-xs font-black uppercase tracking-wider" style={{ color: 'var(--text)' }}>Honorarios</span>
                 </div>
                 <dl>
-                  <InfoRow label="Total" value={lead.monto_deuda > 0 ? fmt(lead.monto_deuda) : undefined} />
+                  <InfoRow label="Total facturado" value={lead.monto_deuda > 0 ? fmt(lead.monto_deuda) : undefined} />
                   <InfoRow label="Nº Cuotas" value={lead.num_cuotas != null ? String(lead.num_cuotas) : '1'} />
-                  <InfoRow label="Cuota inicial" value={lead.cuota_inicial != null ? fmt(lead.cuota_inicial) : undefined} />
-                  <InfoRow label="Monto cuota" value={lead.monto_cuota != null ? fmt(lead.monto_cuota) : undefined} />
+                  <InfoRow label="Cuota inicial" value={lead.cuota_inicial != null && lead.cuota_inicial > 0 ? fmt(lead.cuota_inicial) : undefined} />
+                  <InfoRow label="Monto cuota" value={lead.monto_cuota != null && lead.monto_cuota > 0 ? fmt(lead.monto_cuota) : undefined} />
                 </dl>
               </div>
 
-              {/* Progreso de cobro */}
-              <div className="rounded-xl p-4" style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.18)' }}>
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-xs font-bold" style={{ color: '#065f46' }}>Progreso de Cobro</span>
-                  <span className="text-xs font-semibold" style={{ color: '#10B981' }}>{pct.toFixed(0)}%</span>
+              {/* Saldo de cobranza — 3 cards */}
+              <div className="grid grid-cols-3 gap-2">
+                <div className="rounded-xl p-3 text-center" style={{ background: 'rgba(67,97,238,0.07)', border: '1px solid rgba(67,97,238,0.18)' }}>
+                  <p className="text-[9px] font-bold uppercase tracking-wider mb-1" style={{ color: 'rgba(67,97,238,0.7)' }}>Total facturado</p>
+                  <p className="text-xs font-black" style={{ color: '#4361ee' }}>{fmt(lead.monto_deuda)}</p>
                 </div>
-                <div className="h-2 rounded-full overflow-hidden mb-2" style={{ background: 'rgba(16,185,129,0.15)' }}>
-                  <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: 'linear-gradient(90deg,#10B981,#34d399)' }} />
+                <div className="rounded-xl p-3 text-center" style={{ background: 'rgba(16,185,129,0.07)', border: '1px solid rgba(16,185,129,0.18)' }}>
+                  <p className="text-[9px] font-bold uppercase tracking-wider mb-1" style={{ color: 'rgba(16,185,129,0.8)' }}>Total pagado</p>
+                  <p className="text-xs font-black" style={{ color: '#10B981' }}>{fmt(lead.monto_pagado)}</p>
                 </div>
-                <div className="grid grid-cols-2 gap-2 text-center">
-                  <div><p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>Cobrado</p><p className="text-xs font-bold" style={{ color: '#10B981' }}>{fmt(lead.monto_pagado)}</p></div>
-                  <div><p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>Pendiente</p><p className="text-xs font-bold" style={{ color: pendiente > 0 ? '#EF4444' : '#10B981' }}>{fmt(Math.max(pendiente, 0))}</p></div>
+                <div className="rounded-xl p-3 text-center" style={{ background: pendiente > 0 ? 'rgba(239,68,68,0.07)' : 'rgba(16,185,129,0.07)', border: `1px solid ${pendiente > 0 ? 'rgba(239,68,68,0.18)' : 'rgba(16,185,129,0.18)'}` }}>
+                  <p className="text-[9px] font-bold uppercase tracking-wider mb-1" style={{ color: pendiente > 0 ? 'rgba(239,68,68,0.8)' : 'rgba(16,185,129,0.8)' }}>Saldo pendiente</p>
+                  <p className="text-xs font-black" style={{ color: pendiente > 0 ? '#EF4444' : '#10B981' }}>{fmt(Math.max(pendiente, 0))}</p>
                 </div>
               </div>
+
+              {/* Próxima cuota */}
+              {lead.proxima_cuota_fecha && (
+                <div className="rounded-xl px-4 py-3 flex items-center justify-between"
+                  style={{ background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.22)' }}>
+                  <div>
+                    <p className="text-[9px] font-bold uppercase tracking-wider" style={{ color: '#D97706' }}>Próxima cuota</p>
+                    <p className="text-sm font-black mt-0.5" style={{ color: 'var(--text)' }}>{lead.proxima_cuota_fecha}</p>
+                  </div>
+                  {lead.proxima_cuota_monto != null && lead.proxima_cuota_monto > 0 && (
+                    <p className="text-base font-black" style={{ color: '#F59E0B' }}>{fmt(lead.proxima_cuota_monto)}</p>
+                  )}
+                </div>
+              )}
 
               {/* Cuotas vencidas badge */}
               {(lead.lf_cuotas_vencidas ?? 0) > 0 && (
@@ -461,18 +480,6 @@ function DetailPanel({ lead, onUpdate, onClose }: {
                 <StageSelector lead={lead} onUpdate={onUpdate} />
               </div>
 
-              <div>
-                <label className="text-xs font-bold uppercase tracking-wider mb-1.5 block" style={{ color: 'var(--text-muted)' }}>Monto Cobrado ($)</label>
-                <div className="flex gap-2">
-                  <input className="input flex-1" type="number" min="0" step="1000"
-                    value={montoPagado} onChange={e => setMontoPagado(e.target.value)} onBlur={handleSaveMonto} />
-                  <button onClick={handleSaveMonto} disabled={savingMonto}
-                    className="px-3 py-2 rounded-xl text-xs font-semibold"
-                    style={{ background: 'rgba(67,97,238,0.10)', color: '#4361ee', border: '1px solid rgba(67,97,238,0.25)' }}>
-                    {savingMonto ? '...' : 'OK'}
-                  </button>
-                </div>
-              </div>
 
               <div className="rounded-xl p-4" style={{ background: '#fff', border: '1px solid var(--border)' }}>
                 <div className="flex items-center gap-2 mb-3">
