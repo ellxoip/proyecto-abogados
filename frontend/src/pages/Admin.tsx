@@ -324,7 +324,7 @@ export default function Admin() {
 
   const roleLabel: Record<string, string> = {
     superadmin: 'Super Admin', subadmin: 'Sub Admin', agendadora: 'Agendador/a',
-    vendedor: 'Vendedor', verificador: 'Verificador Pagos', dante: 'Verificador Pagos',
+    vendedor: 'Vendedor', verificador: 'Verificador Pagos', dante: 'Verificador Pagos', cobrador: 'Cobrador',
   }
   const roleBadge: Record<string, string> = {
     superadmin:  'bg-surface-1 text-white border-lime',
@@ -1459,6 +1459,7 @@ Reglas:
                     <option value="agendadora">Agendador/a</option>
                     <option value="vendedor">Vendedor</option>
                     <option value="verificador">Verificador Pagos</option>
+                    <option value="cobrador">Cobrador</option>
                   </select>
                 </div>
                 <div>
