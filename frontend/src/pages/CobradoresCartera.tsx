@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
-import { Search, X, User, DollarSign, Building2, Phone, FileText, ChevronDown, StickyNote, Send, MessageSquare, Smartphone } from 'lucide-react'
+import { Search, X, User, DollarSign, Building2, Phone, FileText, ChevronDown, StickyNote, Send, MessageSquare, Smartphone, RefreshCw, ExternalLink } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import {
   getCobradorLeads, updateCobradorStage, updateCobradorNotes, updateCobradorMontoPagado,
   getAllWhatsAppConfigs, getWhatsAppMessages, sendWhatsAppMessage, markMessagesRead,
+  syncCobradorLeads, getCobradorPortalUrl,
 } from '../api'
 import { API_BASE_URL } from '../api/client'
 import { useAuthStore } from '../store/auth'
@@ -23,6 +24,9 @@ interface CobradorLead {
   num_cuotas?: number | null
   cuota_inicial?: number | null
   monto_cuota?: number | null
+  lf_cuotas_vencidas?: number | null
+  pagacuotas_cliente_id?: number | null
+  portal_url?: string | null
   descripcion?: string | null
   stage: string
   notes?: string | null
@@ -123,6 +127,7 @@ function ChatTab({ lead }: { lead: CobradorLead }) {
   const [msgText, setMsgText]       = useState('')
   const [sending, setSending]       = useState(false)
   const [loading, setLoading]       = useState(true)
+  const [loadingUrl, setLoadingUrl] = useState(false)
   const endRef = useRef<HTMLDivElement>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -274,6 +279,28 @@ function ChatTab({ lead }: { lead: CobradorLead }) {
         <div ref={endRef} />
       </div>
 
+      {/* Quick action: pre-fill portal URL */}
+      {lead.pagacuotas_cliente_id && (
+        <div className="px-3 py-2 flex-shrink-0" style={{ borderTop: '1px solid rgba(37,211,102,0.20)', background: 'rgba(37,211,102,0.04)' }}>
+          <button
+            onClick={async () => {
+              setLoadingUrl(true)
+              try {
+                const r = await getCobradorPortalUrl(lead.id)
+                setMsgText(r.message)
+              } catch { toast.error('Error obteniendo enlace') }
+              finally { setLoadingUrl(false) }
+            }}
+            disabled={loadingUrl}
+            className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg w-full transition-all"
+            style={{ background: 'rgba(37,211,102,0.12)', color: '#16a34a', border: '1px solid rgba(37,211,102,0.30)' }}
+          >
+            <ExternalLink size={11} />
+            {loadingUrl ? 'Cargando...' : 'Reenviar acceso PagaCuotas'}
+          </button>
+        </div>
+      )}
+
       {/* Send form */}
       <form onSubmit={handleSend} className="flex gap-2 p-3 flex-shrink-0"
         style={{ borderTop: '1px solid var(--border)', background: '#fff' }}>
@@ -418,6 +445,17 @@ function DetailPanel({ lead, onUpdate, onClose }: {
                 </div>
               </div>
 
+              {/* Cuotas vencidas badge */}
+              {(lead.lf_cuotas_vencidas ?? 0) > 0 && (
+                <div className="flex items-center gap-2 px-3 py-2 rounded-xl"
+                  style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.20)' }}>
+                  <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: '#EF4444' }} />
+                  <span className="text-xs font-semibold" style={{ color: '#EF4444' }}>
+                    {lead.lf_cuotas_vencidas} cuota{(lead.lf_cuotas_vencidas ?? 0) > 1 ? 's' : ''} vencida{(lead.lf_cuotas_vencidas ?? 0) > 1 ? 's' : ''} · Legal Finance
+                  </span>
+                </div>
+              )}
+
               <div>
                 <label className="text-xs font-bold uppercase tracking-wider mb-1.5 block" style={{ color: 'var(--text-muted)' }}>Etapa</label>
                 <StageSelector lead={lead} onUpdate={onUpdate} />
@@ -497,6 +535,7 @@ function DetailPanel({ lead, onUpdate, onClose }: {
 export default function CobradoresCartera() {
   const [leads, setLeads]       = useState<CobradorLead[]>([])
   const [loading, setLoading]   = useState(true)
+  const [syncing, setSyncing]   = useState(false)
   const [search, setSearch]     = useState('')
   const [stageFilter, setStageFilter] = useState('')
   const [selected, setSelected] = useState<CobradorLead | null>(null)
@@ -514,6 +553,19 @@ export default function CobradoresCartera() {
       })
       .catch(() => toast.error('Error cargando cartera'))
       .finally(() => setLoading(false))
+  }
+
+  const handleSync = async () => {
+    setSyncing(true)
+    try {
+      const r = await syncCobradorLeads()
+      toast.success(`Sync completado — ${r.created} nuevos, ${r.updated} actualizados`)
+      load()
+    } catch {
+      toast.error('Error sincronizando con Legal Finance')
+    } finally {
+      setSyncing(false)
+    }
   }
 
   useEffect(() => { load() }, [])
@@ -539,12 +591,25 @@ export default function CobradoresCartera() {
   return (
     <div className="flex flex-col h-full">
       <div className="mb-4 flex-shrink-0">
-        <h1 className="text-xl font-black" style={{ color: 'var(--text)', fontFamily: '"Space Grotesk", sans-serif' }}>
-          Cartera de Clientes
-        </h1>
-        <p className="text-sm mt-0.5" style={{ color: 'var(--text-muted)' }}>
-          {leads.length} cliente{leads.length !== 1 ? 's' : ''} en tu cartera
-        </p>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h1 className="text-xl font-black" style={{ color: 'var(--text)', fontFamily: '"Space Grotesk", sans-serif' }}>
+              Cartera de Clientes
+            </h1>
+            <p className="text-sm mt-0.5" style={{ color: 'var(--text-muted)' }}>
+              {leads.length} cliente{leads.length !== 1 ? 's' : ''} en tu cartera
+            </p>
+          </div>
+          <button
+            onClick={handleSync}
+            disabled={syncing}
+            className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex-shrink-0"
+            style={{ background: 'rgba(16,185,129,0.10)', color: '#10B981', border: '1.5px solid rgba(16,185,129,0.25)' }}
+          >
+            <RefreshCw size={13} className={syncing ? 'animate-spin' : ''} />
+            {syncing ? 'Sincronizando...' : 'Sync Legal Finance'}
+          </button>
+        </div>
       </div>
 
       <div className="flex gap-2 mb-4 flex-shrink-0 flex-wrap">

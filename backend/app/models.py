@@ -497,14 +497,19 @@ class CobradorLead(Base):
     cuota_inicial = Column(Float, default=0)
     monto_cuota   = Column(Float, default=0)
     descripcion   = Column(Text, nullable=True)
-    # por_contactar | contactado | negociando | acuerdo_pago | pagado | incobrable
-    stage       = Column(String(50), default="por_contactar", nullable=False)
-    notes       = Column(Text, nullable=True)
+    stage         = Column(String(50), default="lead_moroso", nullable=False)
+    notes         = Column(Text, nullable=True)
+    # Legal Finance source IDs (for upsert sync)
+    lf_cliente_id          = Column(Integer, nullable=True, index=True)
+    lf_contrato_id         = Column(Integer, nullable=True, index=True)
+    lf_cuotas_vencidas     = Column(Integer, nullable=True)
+    pagacuotas_cliente_id  = Column(Integer, ForeignKey("pagacuotas_clientes.id"), nullable=True)
     created_at  = Column(DateTime(timezone=True), server_default=func.now())
     updated_at  = Column(DateTime(timezone=True), onupdate=func.now())
 
-    cobrador = relationship("User", foreign_keys=[cobrador_id])
-    contact  = relationship("Contact")
+    cobrador         = relationship("User", foreign_keys=[cobrador_id])
+    contact          = relationship("Contact")
+    pagacuotas       = relationship("PagaCuotasCliente", foreign_keys=[pagacuotas_cliente_id])
 
 
 class SecurityAuditLog(Base):
