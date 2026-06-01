@@ -53,22 +53,11 @@ export function validateEnvironment() {
     if (!process.env.APP_URL?.startsWith('https://')) {
       errors.push('APP_URL must be https in PAYMENT_ENVIRONMENT=production');
     }
-    if ((process.env.PAYMENT_DEFAULT_PROVIDER || '').includes('simulator')) {
-      errors.push('PAYMENT_DEFAULT_PROVIDER cannot be simulator in production');
+    if ((process.env.PAYMENT_DEFAULT_PROVIDER || 'flow') !== 'flow') {
+      errors.push('PAYMENT_DEFAULT_PROVIDER must be flow');
     }
-    if (process.env.MERCADOPAGO_ENABLED !== 'false') {
-      addRequired(errors, 'MERCADOPAGO_ACCESS_TOKEN', ['TEST-', 'APP_USR-...']);
-      addRequired(errors, 'MERCADOPAGO_PUBLIC_KEY', ['TEST-', 'APP_USR-...']);
-      addRequired(errors, 'MERCADOPAGO_WEBHOOK_SECRET', ['webhook_secret_from_mercadopago_panel']);
-    }
-    if (process.env.TRANSBANK_ENABLED === 'true') {
-      addRequired(errors, 'TRANSBANK_COMMERCE_CODE', ['597055555532']);
-      addRequired(errors, 'TRANSBANK_API_KEY', ['change_me']);
-    }
-    if (process.env.FLOW_ENABLED === 'true') {
-      addRequired(errors, 'FLOW_API_KEY', ['change_me']);
-      addRequired(errors, 'FLOW_SECRET_KEY', ['change_me']);
-    }
+    addRequired(errors, 'FLOW_API_KEY', ['change_me']);
+    addRequired(errors, 'FLOW_SECRET_KEY', ['change_me']);
   }
 
   if (process.env.BILLING_ENABLED === 'true') {

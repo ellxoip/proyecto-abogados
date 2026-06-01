@@ -76,16 +76,9 @@ export class PaymentService {
       };
     }
 
-    // Step 2: Resolve payment provider (validator already enforces 'mercadopago')
-    const providerName = data.provider as ProviderName;
+    // Step 2: Resolve payment provider.
+    const providerName = this.resolveProviderName(data.provider);
     const provider: IPaymentProvider = providerRegistry.get(providerName);
-    if (providerRegistry.getEnvironment() === 'production' && provider.name === 'simulator') {
-      throw {
-        message: `El proveedor ${provider.name} no esta habilitado para cobros productivos.`,
-        status: 400,
-        code: 'PROVIDER_NOT_ALLOWED_IN_PRODUCTION',
-      };
-    }
 
     // Step 3: Create transaction with the provider
     const providerResponse = await provider.createTransaction({
@@ -100,6 +93,8 @@ export class PaymentService {
         cliente_id: data.cliente_contable_id,
         contrato_id: data.contrato_contable_id,
         cuota_ids: data.cuota_ids,
+        identifier: data.identifier,
+        external_attempt_id,
       },
     });
 
@@ -142,45 +137,12 @@ export class PaymentService {
       where: { provider_transaction_id: token },
     });
 
-    if (!attempt && providerName === 'mercadopago') {
-      const provider = providerRegistry.get('mercadopago');
-      const confirmation = await provider.confirmTransaction(token);
-      const externalAttemptId = String(confirmation.raw_response?.external_reference || '');
-      if (externalAttemptId) {
-        attempt = await prisma.paymentAttempt.findUnique({ where: { external_attempt_id: externalAttemptId } });
-        if (attempt) {
-          await prisma.paymentAttempt.update({
-            where: { id: attempt.id },
-            data: { provider_transaction_id: confirmation.provider_transaction_id },
-          });
-          return confirmation.approved
-            ? this.processApprovedPayment(attempt, {
-                external_attempt_id: attempt.external_attempt_id,
-                provider_transaction_id: confirmation.provider_transaction_id,
-                status: 'approved',
-                amount: confirmation.amount || Number(attempt.amount),
-                method: confirmation.payment_method,
-                authorization_code: confirmation.authorization_code,
-              })
-            : this.processRejectedPayment(attempt, {
-                external_attempt_id: attempt.external_attempt_id,
-                provider_transaction_id: confirmation.provider_transaction_id,
-                status: 'rejected',
-                amount: Number(attempt.amount),
-                error_message: confirmation.reason,
-                error_code: confirmation.error_code,
-              });
-        }
-      }
-    }
-
     if (!attempt) {
       throw { message: 'Transaction not found', status: 404, code: 'TRANSACTION_NOT_FOUND' };
     }
 
     // Get provider and confirm
-    const resolvedName = (providerName || attempt.provider || 'simulator') as ProviderName;
-    const provider = providerRegistry.get(resolvedName);
+    const provider = providerRegistry.get((attempt.provider || 'flow') as ProviderName);
     const confirmation = await provider.confirmTransaction(token);
 
     // Update attempt with provider response
@@ -241,15 +203,13 @@ export class PaymentService {
       throw { message: 'Invalid webhook signature', status: 401, code: 'INVALID_WEBHOOK_SIGNATURE' };
     }
 
-    const paymentId = providerName === 'mercadopago'
-      ? String(query?.['data.id'] || query?.id || body?.data?.id || body?.id || '')
-      : String(body?.token || query?.token || body?.token_ws || query?.token_ws || body?.provider_transaction_id || '');
+    const paymentId = String(body?.token || query?.token || body?.token_ws || query?.token_ws || body?.provider_transaction_id || '');
     if (!paymentId) {
       throw { message: 'Missing provider payment id', status: 400, code: 'MISSING_PAYMENT_ID' };
     }
 
     const confirmation = await provider.confirmTransaction(paymentId);
-    const externalAttemptId = String(confirmation.raw_response?.external_reference || '');
+    const externalAttemptId = this.extractExternalAttemptId(confirmation.raw_response);
     const attempt = externalAttemptId
       ? await prisma.paymentAttempt.findUnique({ where: { external_attempt_id: externalAttemptId } })
       : await prisma.paymentAttempt.findFirst({ where: { provider_transaction_id: paymentId } });
@@ -319,9 +279,7 @@ export class PaymentService {
     const cuotaIds = attempt.cuota_ids_json as string[];
 
     const transactionNumber = providerData.authorization_code || providerData.provider_transaction_id;
-    const providerReceiptUrl = attempt.provider === 'mercadopago'
-      ? `https://www.mercadopago.cl/payments/${providerData.provider_transaction_id}/ticket`
-      : null;
+    const providerReceiptUrl = null;
 
     const paidAt = new Date();
     const payment = await prisma.payment.create({
@@ -342,8 +300,7 @@ export class PaymentService {
       },
     });
 
-    // Fictional receipt — always generated. For real providers (e.g. mercadopago)
-    // it complements the provider's ticket; for simulator it IS the comprobante.
+    // Fictional receipt is always generated until Flow receipt URLs are mapped.
     let receipt: GeneratedReceipt | null = null;
     try {
       const debts = await sisContableClient
@@ -378,8 +335,7 @@ export class PaymentService {
         transactionNumber: transactionNumber ?? null,
       });
 
-      // Only overwrite receipt_url when we don't already have a provider-issued
-      // ticket. Provider receipts (mercadopago, webpay) are authoritative.
+      // Flow does not expose an authoritative public receipt URL in this flow.
       if (!providerReceiptUrl) {
         await prisma.payment.update({
           where: { id: payment.id },
@@ -595,6 +551,14 @@ export class PaymentService {
   // Sync: Payment → CRM
   // ===========================================================
   async syncPaymentWithCrm(payment: any, attempt: any) {
+    if (process.env.CRM_ENABLED === 'false') {
+      await prisma.payment.update({
+        where: { id: payment.id },
+        data: { crm_sync_status: 'skipped', crm_sync_error: null },
+      });
+      return;
+    }
+
     try {
       let clienteName = '';
       let servicio = '';
@@ -632,6 +596,34 @@ export class PaymentService {
       });
       throw error;
     }
+  }
+
+  private extractExternalAttemptId(raw: any): string {
+    const direct = raw?.external_reference || raw?.commerceOrder || raw?.buy_order || raw?.external_attempt_id;
+    if (direct) return String(direct);
+
+    const optional = raw?.optional;
+    if (typeof optional === 'string') {
+      try {
+        const parsed = JSON.parse(optional);
+        return String(parsed?.external_attempt_id || '');
+      } catch {
+        return '';
+      }
+    }
+    if (optional && typeof optional === 'object') {
+      return String(optional.external_attempt_id || '');
+    }
+
+    return '';
+  }
+
+  private resolveProviderName(requestedProvider?: string): ProviderName {
+    if (providerRegistry.getEnvironment() === 'production') return 'flow';
+
+    const candidate = (requestedProvider || process.env.PAYMENT_DEFAULT_PROVIDER || 'simulator') as ProviderName;
+    if (candidate === 'simulator') return 'simulator';
+    return 'flow';
   }
 }
 

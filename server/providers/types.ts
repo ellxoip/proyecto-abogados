@@ -10,7 +10,7 @@ export type ProviderEnvironment = 'sandbox' | 'production';
 /**
  * Supported payment providers in PagaCuotas.
  */
-export type ProviderName = 'mercadopago' | 'transbank' | 'flow' | 'simulator';
+export type ProviderName = 'flow' | 'simulator';
 
 /**
  * Request to initiate a payment transaction with a provider.

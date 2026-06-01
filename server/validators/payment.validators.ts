@@ -10,7 +10,7 @@ export const createPaymentIntentSchema = z.object({
   contrato_contable_id: z.string().min(1, 'contrato_contable_id is required'),
   cuota_ids: z.array(z.string()).min(1, 'At least one cuota_id is required'),
   amount: z.number().positive('Amount must be positive'),
-  provider: z.enum(['mercadopago', 'transbank', 'flow', 'simulator']).default('mercadopago'),
+  provider: z.enum(['flow', 'simulator']).default('flow'),
 });
 
 export const createIntegrationPaymentIntentSchema = z.object({
@@ -75,7 +75,7 @@ export const paginationSchema = z.object({
 
 export const paymentAttemptsQuerySchema = paginationSchema.extend({
   status: z.enum(['iniciado', 'pendiente', 'autorizado', 'confirmado', 'rechazado', 'expirado', 'error', 'reversado']).optional(),
-  provider: z.enum(['mercadopago', 'transbank', 'flow', 'simulator']).optional(),
+  provider: z.enum(['flow', 'simulator']).optional(),
 });
 
 export const paymentsQuerySchema = paginationSchema.extend({

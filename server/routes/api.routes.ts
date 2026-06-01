@@ -87,6 +87,7 @@ router.post('/auto-login', crmIntegrationController.autoLogin);
 // Provider Callback (redirect after payment page)
 // ===========================================================
 router.get('/payments/callback', paymentController.handleProviderCallback);
+router.post('/payments/callback', paymentController.handleProviderCallback);
 
 // ===========================================================
 // Provider Webhooks (server-to-server)

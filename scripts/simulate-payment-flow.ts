@@ -12,7 +12,7 @@
  *
  * Usage:
  *   npm run integration:simulate-flow
- *   npm run integration:simulate-flow -- --provider=mercadopago
+ *   npm run integration:simulate-flow -- --provider=flow
  */
 
 import { providerRegistry } from '../server/providers';
@@ -20,7 +20,7 @@ import type { ProviderName } from '../server/providers/types';
 
 async function simulatePaymentFlow() {
   const providerArg = process.argv.find(a => a.startsWith('--provider='));
-  const selectedProvider = (providerArg?.split('=')[1] || 'simulator') as ProviderName;
+  const selectedProvider = (providerArg?.split('=')[1] || 'flow') as ProviderName;
 
   console.log('╔══════════════════════════════════════════════════════════╗');
   console.log('║         PagaCuotas — Payment Flow Simulation            ║');
@@ -92,23 +92,8 @@ async function simulatePaymentFlow() {
   console.log(`   Status: ${statusResult.status}`);
   console.log();
 
-  // Step 5: Simulate rejected payment (amount ending in 99)
-  if (provider.name === 'simulator') {
-    console.log('─── Step 5: Simulate REJECTED Payment (amount = $99,999) ───');
-    const rejectedTxn = await provider.createTransaction({
-      ...txnRequest,
-      external_attempt_id: `pc_sim_rej_${Date.now()}`,
-      amount: 99999, // Ends in 99 → rejected
-    });
-    const rejectedResult = await provider.confirmTransaction(rejectedTxn.provider_transaction_id);
-    console.log(`   Approved: ${rejectedResult.approved ? '✅' : '❌ REJECTED'}`);
-    console.log(`   Reason: ${rejectedResult.reason || 'N/A'}`);
-    console.log(`   Error Code: ${rejectedResult.error_code || 'N/A'}`);
-    console.log();
-  }
-
-  // Step 6: Refund
-  console.log('─── Step 6: Refund Transaction ───');
+  // Step 5: Refund
+  console.log('─── Step 5: Refund Transaction ───');
   const refundResult = await provider.refundTransaction(created.provider_transaction_id, 150000);
   console.log(`   Refund Success: ${refundResult.success ? '✅' : '❌'}`);
   console.log(`   Refund ID: ${refundResult.provider_refund_id || 'N/A'}`);
@@ -121,7 +106,7 @@ async function simulatePaymentFlow() {
   console.log('╚══════════════════════════════════════════════════════════╝');
   console.log(`   Provider: ${provider.name}`);
   console.log(`   Environment: ${provider.environment}`);
-  console.log(`   Flows tested: Create → Confirm → Status → Reject → Refund`);
+  console.log(`   Flows tested: Create → Confirm → Status → Refund`);
   console.log();
 }
 

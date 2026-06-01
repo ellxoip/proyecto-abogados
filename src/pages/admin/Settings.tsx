@@ -21,9 +21,7 @@ type ProvidersResponse = {
 };
 
 const providerDisplayNames: Record<string, string> = {
-  simulator: 'Pago de Prueba',
-  mercadopago: 'MercadoPago',
-  transbank: 'Webpay Plus',
+  simulator: 'PagaCuotas Prueba',
   flow: 'Flow',
 };
 

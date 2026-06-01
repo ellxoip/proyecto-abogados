@@ -19,10 +19,13 @@ app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors());
 app.use(morgan('dev'));
 app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
 
 // Static uploads (payment receipts, etc). Helmet CSP disabled above so
 // inline-styled HTML receipts render correctly in the browser.
-const uploadsDir = path.resolve(process.cwd(), 'public', 'uploads');
+const uploadsDir = process.env.VERCEL
+  ? path.join('/tmp', 'pagacuotas', 'uploads')
+  : path.resolve(process.cwd(), 'public', 'uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 app.use('/uploads', express.static(uploadsDir, { fallthrough: true, maxAge: '1d' }));
 

@@ -9,3 +9,10 @@ coverage/
 !.env.example
 .claude/
 .vercel/
+
+.vercel
+
+# deploy artifacts
+*.tar.gz
+*.tgz
+.deploy/

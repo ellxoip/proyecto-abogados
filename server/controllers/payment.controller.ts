@@ -23,7 +23,7 @@ export class PaymentController {
   async getAdminSummary(_req: Request, res: Response) {
     try {
       const [payments, attempts, failedSis, failedCrm, logs] = await Promise.all([
-        prisma.payment.findMany({ where: { status: 'confirmado' }, orderBy: { paid_at: 'desc' }, take: 500 }),
+        prisma.payment.findMany({ where: { status: 'confirmado' }, orderBy: { paid_at: 'desc' }, take: 500, include: { attempt: true } }),
         prisma.paymentAttempt.findMany({ orderBy: { created_at: 'desc' }, take: 500 }),
         prisma.payment.count({ where: { sis_contable_sync_status: 'failed' } }),
         prisma.payment.count({ where: { crm_sync_status: 'failed' } }),
@@ -31,20 +31,37 @@ export class PaymentController {
       ]);
 
       const confirmedTotal = payments.reduce((acc, payment) => acc + Number(payment.amount), 0);
+      const flowPayments = payments.filter((payment) => payment.provider === 'flow');
       const pendingAttempts = attempts.filter((attempt) => attempt.status === 'iniciado').length;
       const rejectedAttempts = attempts.filter((attempt) => attempt.status === 'rechazado').length;
+      const recentPaidClients = payments.slice(0, 8).map((payment) => ({
+        payment_id: payment.external_payment_id,
+        cliente_contable_id: payment.cliente_contable_id,
+        identifier: payment.attempt?.cliente_identifier || payment.cliente_contable_id,
+        contrato_contable_id: payment.contrato_contable_id,
+        provider: payment.provider,
+        amount: Number(payment.amount),
+        method: payment.method,
+        status: payment.status,
+        paid_at: payment.paid_at,
+        sis_contable_sync_status: payment.sis_contable_sync_status,
+        crm_sync_status: payment.crm_sync_status,
+      }));
 
       res.json({
         ok: true,
         metrics: {
           confirmed_total: confirmedTotal,
           confirmed_count: payments.length,
+          flow_confirmed_total: flowPayments.reduce((acc, payment) => acc + Number(payment.amount), 0),
+          flow_confirmed_count: flowPayments.length,
           attempts_count: attempts.length,
           pending_attempts: pendingAttempts,
           rejected_attempts: rejectedAttempts,
           sis_contable_failed: failedSis,
           crm_failed: failedCrm,
         },
+        recent_paid_clients: recentPaidClients,
         recent_logs: logs,
       });
     } catch (error: any) {
@@ -170,7 +187,7 @@ export class PaymentController {
     try {
       const attempts = await prisma.paymentAttempt.findMany({
         orderBy: { created_at: 'desc' },
-        take: 200,
+        take: 500,
         include: { payments: true },
       });
 
@@ -183,15 +200,28 @@ export class PaymentController {
           contracts: new Set<string>(),
           attempts: 0,
           confirmed_payments: 0,
+          rejected_attempts: 0,
+          providers: new Set<string>(),
           total_paid: 0,
+          last_payment_at: null,
+          last_payment_provider: null,
           last_activity: attempt.created_at,
           sync_errors: 0,
         };
         current.contracts.add(attempt.contrato_contable_id);
+        current.providers.add(attempt.provider);
         current.attempts += 1;
+        if (attempt.status === 'rechazado') current.rejected_attempts += 1;
         current.confirmed_payments += attempt.payments.filter((payment) => payment.status === 'confirmado').length;
         current.total_paid += attempt.payments.reduce((acc, payment) => acc + Number(payment.amount), 0);
         current.sync_errors += attempt.payments.filter((payment) => payment.sis_contable_sync_status === 'failed' || payment.crm_sync_status === 'failed').length;
+        const latestPayment = attempt.payments
+          .filter((payment) => payment.status === 'confirmado')
+          .sort((a, b) => new Date(b.paid_at || b.created_at).getTime() - new Date(a.paid_at || a.created_at).getTime())[0];
+        if (latestPayment && (!current.last_payment_at || new Date(latestPayment.paid_at || latestPayment.created_at) > new Date(current.last_payment_at))) {
+          current.last_payment_at = latestPayment.paid_at || latestPayment.created_at;
+          current.last_payment_provider = latestPayment.provider;
+        }
         if (attempt.created_at > current.last_activity) current.last_activity = attempt.created_at;
         byClient.set(key, current);
       }
@@ -199,6 +229,7 @@ export class PaymentController {
       const clients = Array.from(byClient.values()).map((client) => ({
         ...client,
         contracts: Array.from(client.contracts),
+        providers: Array.from(client.providers),
         status: client.sync_errors > 0 ? 'REQUIERE_REVISION' : client.confirmed_payments > 0 ? 'CON_PAGOS' : 'SIN_PAGOS_CONFIRMADOS',
       }));
 
@@ -257,7 +288,9 @@ export class PaymentController {
   // ===========================================================
   async createIntegrationPaymentIntent(req: Request, res: Response) {
     try {
-      const provider = process.env.PAYMENT_PROVIDER || 'simulator';
+      const provider = (process.env.PAYMENT_ENVIRONMENT || 'sandbox') === 'production'
+        ? 'flow'
+        : (process.env.PAYMENT_DEFAULT_PROVIDER || process.env.PAYMENT_PROVIDER || 'simulator');
       const intent = await paymentService.createPaymentIntent({ ...req.body, provider });
       res.status(201).json({ ok: true, ...intent });
     } catch (error: any) {
@@ -272,11 +305,10 @@ export class PaymentController {
   // ===========================================================
   async handleProviderCallback(req: Request, res: Response) {
     try {
-      // MercadoPago uses payment_id/preference_id
-      const token = (req.query.payment_id || req.query.preference_id || req.query.token || req.query.token_ws) as string;
-      const providerName = req.query.provider as string | undefined;
-      const source = String(req.query.source || '');
-      const simulated = String(req.query.simulated || '') === 'true';
+      const token = (req.query.payment_id || req.query.preference_id || req.query.token || req.query.token_ws || req.body?.token || req.body?.token_ws) as string;
+      const providerName = (req.query.provider || req.body?.provider) as string | undefined;
+      const source = String(req.query.source || req.body?.source || '');
+      const simulated = String(req.query.simulated || req.body?.simulated || '') === 'true';
 
       if (!token) {
         res.status(400).json({ ok: false, code: 'MISSING_TOKEN', message: 'No payment token received' });

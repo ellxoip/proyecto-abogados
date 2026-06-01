@@ -55,19 +55,19 @@ const checks: Check[] = [
     message: 'Debe existir x-api-key o bearer token compartido con SIS.CONTABLE.',
   },
   {
-    name: 'MERCADOPAGO_ACCESS_TOKEN',
-    ok: hasValue('MERCADOPAGO_ACCESS_TOKEN') && !process.env.MERCADOPAGO_ACCESS_TOKEN?.startsWith('TEST-'),
-    message: 'Debe ser access token productivo, normalmente APP_USR-...',
+    name: 'PAYMENT_DEFAULT_PROVIDER',
+    ok: (process.env.PAYMENT_DEFAULT_PROVIDER || 'flow') === 'flow',
+    message: 'Debe ser flow; PagaCuotas solo opera con Flow.',
   },
   {
-    name: 'MERCADOPAGO_PUBLIC_KEY',
-    ok: hasValue('MERCADOPAGO_PUBLIC_KEY') && !process.env.MERCADOPAGO_PUBLIC_KEY?.startsWith('TEST-'),
-    message: 'Debe ser public key productiva.',
+    name: 'FLOW_API_KEY',
+    ok: hasValue('FLOW_API_KEY') && !process.env.FLOW_API_KEY?.includes('change_me'),
+    message: 'Debe ser la API Key productiva de Flow.',
   },
   {
-    name: 'MERCADOPAGO_WEBHOOK_SECRET',
-    ok: hasValue('MERCADOPAGO_WEBHOOK_SECRET') && process.env.MERCADOPAGO_WEBHOOK_SECRET !== 'webhook_secret_from_mercadopago_panel',
-    message: 'Debe ser el secret de Webhooks configurado en MercadoPago.',
+    name: 'FLOW_SECRET_KEY',
+    ok: hasValue('FLOW_SECRET_KEY') && !process.env.FLOW_SECRET_KEY?.includes('change_me'),
+    message: 'Debe ser la Secret Key productiva de Flow.',
   },
 ];
 

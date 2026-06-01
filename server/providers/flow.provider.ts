@@ -41,7 +41,10 @@ export class FlowProvider implements IPaymentProvider {
       email: request.customer_email || 'cliente@pagacuotas.local',
       urlConfirmation: `${request.notification_url}/flow`,
       urlReturn: `${request.return_url}?provider=flow`,
-      optional: JSON.stringify(request.metadata || {}),
+      optional: JSON.stringify({
+        ...(request.metadata || {}),
+        external_attempt_id: request.external_attempt_id,
+      }),
     };
     const response = await this.postSigned('/payment/create', params);
 
@@ -57,16 +60,17 @@ export class FlowProvider implements IPaymentProvider {
     if (this.environment === 'sandbox' && token.startsWith('flow_sandbox_')) return this.sandboxConfirm(token);
 
     const data = await this.getSigned('/payment/getStatus', { apiKey: this.apiKey, token });
-    const approved = Number(data.status) === 2;
+    const status = Number(data.status);
+    const approved = status === 2;
     return {
       approved,
       provider_transaction_id: token,
       authorization_code: data.flowOrder ? String(data.flowOrder) : undefined,
-      payment_method: data.paymentData?.media || 'flow',
+      payment_method: data.paymentData?.media || data.paymentData?.paymentMethod || 'flow',
       amount: Number(data.amount || 0),
-      status: approved ? 'approved' : Number(data.status) === 1 ? 'pending' : 'rejected',
+      status: approved ? 'approved' : status === 1 ? 'pending' : 'rejected',
       reason: approved ? undefined : data.status_desc || data.status,
-      error_code: approved ? undefined : String(data.status),
+      error_code: approved ? undefined : String(status),
       raw_response: data,
     };
   }
@@ -103,7 +107,7 @@ export class FlowProvider implements IPaymentProvider {
     if (this.environment === 'production' && missing) {
       return { healthy: false, message: 'Flow production credentials missing' };
     }
-    return { healthy: true, message: `Flow ${this.environment} configured` };
+    return { healthy: true, message: `Flow ${this.environment} configured - API Key: ${this.apiKey.slice(0, 8)}...` };
   }
 
   private async postSigned(path: string, params: Record<string, any>) {

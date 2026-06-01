@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { AlertCircle, AlertTriangle, Bell, CheckCircle, RefreshCw, ShieldAlert, Wallet } from 'lucide-react';
+import { AlertCircle, AlertTriangle, Bell, Landmark, RefreshCw, ShieldAlert, Wallet } from 'lucide-react';
 import { adminRequest } from '../../lib/adminApi';
 import { formatCurrency } from '../../lib/clientPortal';
 
@@ -43,6 +43,8 @@ type SummaryResponse = {
   metrics: {
     confirmed_total: number;
     confirmed_count: number;
+    flow_confirmed_total: number;
+    flow_confirmed_count: number;
     attempts_count: number;
     pending_attempts: number;
     rejected_attempts: number;
@@ -56,6 +58,18 @@ type SummaryResponse = {
     status: number | null;
     error_message: string | null;
     created_at: string;
+  }>;
+  recent_paid_clients: Array<{
+    payment_id: string;
+    cliente_contable_id: string;
+    identifier: string;
+    contrato_contable_id: string;
+    provider: string;
+    amount: number;
+    method: string | null;
+    paid_at: string | null;
+    sis_contable_sync_status: string;
+    crm_sync_status: string;
   }>;
 };
 
@@ -131,11 +145,11 @@ export default function Dashboard() {
 
           <div className="bg-white p-6 rounded-xl border border-border-subtle shadow-sm border-t-[3px] border-t-success-green">
             <div className="flex items-center justify-between mb-4">
-              <span className="font-label-caps text-slate-500 uppercase">Intentos de pago</span>
-              <CheckCircle className="w-6 h-6 text-success-green" />
+              <span className="font-label-caps text-slate-500 uppercase">Flow pago rapido</span>
+              <Landmark className="w-6 h-6 text-success-green" />
             </div>
-            <span className="font-display-lg text-primary">{metrics?.attempts_count || 0}</span>
-            <p className="text-[10px] text-slate-400 mt-2 font-medium">{metrics?.pending_attempts || 0} iniciados, {metrics?.rejected_attempts || 0} rechazados</p>
+            <span className="font-display-lg text-primary">{formatCurrency(metrics?.flow_confirmed_total || 0)}</span>
+            <p className="text-[10px] text-slate-400 mt-2 font-medium">{metrics?.flow_confirmed_count || 0} pagos confirmados por Flow</p>
           </div>
 
           <div className="bg-white p-6 rounded-xl border border-border-subtle shadow-sm border-t-[3px] border-t-error-red">
@@ -147,6 +161,54 @@ export default function Dashboard() {
             <p className="text-[10px] text-slate-400 mt-2 font-medium">SIS.CONTABLE: {metrics?.sis_contable_failed || 0} / CRM: {metrics?.crm_failed || 0}</p>
           </div>
         </div>
+
+        <section className="bg-white rounded-xl border border-border-subtle shadow-sm overflow-hidden">
+          <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+            <div>
+              <h3 className="font-headline-md text-primary">Clientes pagadores detectados</h3>
+              <p className="text-xs text-slate-500">Clientes absorbidos desde intentos reales y confirmaciones de pasarela.</p>
+            </div>
+            <span className="text-xs font-bold text-slate-400">{metrics?.attempts_count || 0} intentos monitoreados</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead className="bg-slate-50/50">
+                <tr>
+                  <th className="px-6 py-4 font-label-caps text-slate-500 text-[10px]">Cliente</th>
+                  <th className="px-6 py-4 font-label-caps text-slate-500 text-[10px]">Contrato</th>
+                  <th className="px-6 py-4 font-label-caps text-slate-500 text-[10px]">Pasarela</th>
+                  <th className="px-6 py-4 font-label-caps text-slate-500 text-[10px] text-right">Monto</th>
+                  <th className="px-6 py-4 font-label-caps text-slate-500 text-[10px]">Sincronizacion</th>
+                  <th className="px-6 py-4 font-label-caps text-slate-500 text-[10px]">Pago</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {(summary?.recent_paid_clients || []).map((client) => (
+                  <tr key={client.payment_id}>
+                    <td className="px-6 py-4 text-sm">
+                      <div className="font-bold text-slate-800">{client.identifier}</div>
+                      <div className="text-[11px] text-slate-400">ID contable: {client.cliente_contable_id}</div>
+                    </td>
+                    <td className="px-6 py-4 text-sm font-mono text-slate-700">{client.contrato_contable_id}</td>
+                    <td className="px-6 py-4 text-sm font-bold text-slate-700">{client.provider}</td>
+                    <td className="px-6 py-4 text-sm font-bold text-right">{formatCurrency(client.amount)}</td>
+                    <td className="px-6 py-4 text-xs text-slate-600">
+                      SIS: {client.sis_contable_sync_status} / CRM: {client.crm_sync_status}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-slate-500">
+                      {client.paid_at ? new Date(client.paid_at).toLocaleString('es-CL') : '-'}
+                    </td>
+                  </tr>
+                ))}
+                {!isLoading && (summary?.recent_paid_clients.length || 0) === 0 && (
+                  <tr>
+                    <td className="px-6 py-8 text-center text-sm text-slate-500" colSpan={6}>Todavia no hay pagos confirmados.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
 
         {/* ─── Warnings de Morosidad (10/20/30 días) — refleja CuotaWarning de financial ─── */}
         <section className="bg-white rounded-xl border border-border-subtle shadow-sm overflow-hidden">

@@ -9,7 +9,11 @@ type ClientRow = {
   contracts: string[];
   attempts: number;
   confirmed_payments: number;
+  rejected_attempts: number;
+  providers: string[];
   total_paid: number;
+  last_payment_at: string | null;
+  last_payment_provider: string | null;
   last_activity: string;
   sync_errors: number;
   status: 'REQUIERE_REVISION' | 'CON_PAGOS' | 'SIN_PAGOS_CONFIRMADOS';
@@ -50,7 +54,7 @@ export default function Clients() {
   }, []);
 
   const filteredClients = clients.filter((client) => {
-    const haystack = `${client.identifier} ${client.cliente_contable_id} ${client.contracts.join(' ')}`.toLowerCase();
+    const haystack = `${client.identifier} ${client.cliente_contable_id} ${client.contracts.join(' ')} ${client.providers.join(' ')}`.toLowerCase();
     return haystack.includes(query.toLowerCase());
   });
 
@@ -87,8 +91,10 @@ export default function Clients() {
                   <th className="px-6 py-4 font-label-caps text-slate-500 whitespace-nowrap">Cliente</th>
                   <th className="px-6 py-4 font-label-caps text-slate-500 whitespace-nowrap">Contratos</th>
                   <th className="px-6 py-4 font-label-caps text-slate-500 whitespace-nowrap">Intentos</th>
+                  <th className="px-6 py-4 font-label-caps text-slate-500 whitespace-nowrap">Pasarelas</th>
                   <th className="px-6 py-4 font-label-caps text-slate-500 whitespace-nowrap">Pagos confirmados</th>
                   <th className="px-6 py-4 font-label-caps text-slate-500 whitespace-nowrap">Total pagado</th>
+                  <th className="px-6 py-4 font-label-caps text-slate-500 whitespace-nowrap">Ultimo pago</th>
                   <th className="px-6 py-4 font-label-caps text-slate-500 whitespace-nowrap">Ultima actividad</th>
                   <th className="px-6 py-4 font-label-caps text-slate-500 whitespace-nowrap">Estado</th>
                 </tr>
@@ -101,9 +107,17 @@ export default function Clients() {
                       <div className="text-slate-400 text-xs font-body-sm">ID contable: {client.cliente_contable_id}</div>
                     </td>
                     <td className="px-6 py-4 text-sm">{client.contracts.join(', ') || '-'}</td>
-                    <td className="px-6 py-4 font-numeric-data text-sm">{client.attempts}</td>
+                    <td className="px-6 py-4 font-numeric-data text-sm">
+                      {client.attempts}
+                      {client.rejected_attempts > 0 && <div className="text-[11px] text-red-500">{client.rejected_attempts} rechazados</div>}
+                    </td>
+                    <td className="px-6 py-4 text-sm">{client.providers.join(', ') || '-'}</td>
                     <td className="px-6 py-4 font-numeric-data text-sm">{client.confirmed_payments}</td>
                     <td className="px-6 py-4 font-numeric-data text-sm">{formatCurrency(client.total_paid)}</td>
+                    <td className="px-6 py-4 text-sm whitespace-nowrap">
+                      {client.last_payment_at ? formatDate(client.last_payment_at) : '-'}
+                      {client.last_payment_provider && <div className="text-[11px] text-slate-400">{client.last_payment_provider}</div>}
+                    </td>
                     <td className="px-6 py-4 text-sm whitespace-nowrap">{formatDate(client.last_activity)}</td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${statusStyles[client.status]}`}>
@@ -115,7 +129,7 @@ export default function Clients() {
                 ))}
                 {!isLoading && filteredClients.length === 0 && (
                   <tr>
-                    <td className="px-6 py-10 text-center text-sm text-slate-500" colSpan={7}>No hay clientes registrados desde pagos reales todavia.</td>
+                    <td className="px-6 py-10 text-center text-sm text-slate-500" colSpan={9}>No hay clientes registrados desde pagos reales todavia.</td>
                   </tr>
                 )}
               </tbody>

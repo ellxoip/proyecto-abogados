@@ -8,7 +8,10 @@ const PUBLIC_BASE_URL =
   process.env.APP_URL ||
   `http://localhost:${process.env.PORT || 4000}`;
 
-const RECEIPTS_DIR = path.resolve(process.cwd(), 'public', 'uploads', 'receipts');
+const UPLOADS_DIR = process.env.VERCEL
+  ? path.join('/tmp', 'pagacuotas', 'uploads')
+  : path.resolve(process.cwd(), 'public', 'uploads');
+const RECEIPTS_DIR = path.join(UPLOADS_DIR, 'receipts');
 
 type ReceiptInput = {
   externalPaymentId: string;

@@ -1,17 +1,15 @@
-import { UploadCloud, Server, MessageCircle, Bell, CreditCard, Shield, RefreshCw, FileText, Landmark } from 'lucide-react';
+import { Bell, FileText, Landmark, MessageCircle, RefreshCw, Server, Shield, UploadCloud } from 'lucide-react';
 
 export default function Integrations() {
   return (
     <div className="p-6 lg:p-10 w-full overflow-y-auto bg-background-main h-full">
       <div className="max-w-5xl mx-auto">
         <header className="mb-10">
-          <h1 className="font-display-lg text-display-lg text-text-charcoal mb-2">Integraciones y Configuración</h1>
-          <p className="font-body-base text-on-surface-variant">Conecta tus herramientas favoritas para automatizar la gestión de cobros y comunicaciones.</p>
+          <h1 className="font-display-lg text-display-lg text-text-charcoal mb-2">Integraciones y Configuracion</h1>
+          <p className="font-body-base text-on-surface-variant">Operaciones de cobro centralizadas en Flow y sincronizadas con PagaCuotas.</p>
         </header>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          
-          {/* Base de Datos Section */}
           <section className="bg-surface-container-lowest p-6 rounded-xl border border-border-subtle shadow-sm flex flex-col h-full">
             <div className="flex items-center gap-3 mb-6">
               <div className="w-12 h-12 rounded-lg bg-green-50 flex items-center justify-center">
@@ -48,7 +46,6 @@ export default function Integrations() {
             </div>
           </section>
 
-          {/* Comunicaciones Section */}
           <section className="bg-surface-container-lowest p-6 rounded-xl border border-border-subtle shadow-sm flex flex-col h-full">
             <div className="flex items-center gap-3 mb-6">
               <div className="w-12 h-12 rounded-lg bg-green-100 flex items-center justify-center">
@@ -69,72 +66,51 @@ export default function Integrations() {
                   Conectar WhatsApp
                 </button>
               </div>
-              
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 bg-surface-container-low rounded-lg gap-4">
-                  <div className="flex gap-3">
-                    <Bell className="w-5 h-5 text-primary" />
-                    <div>
-                      <p className="font-body-base font-medium">Notificaciones Automáticas</p>
-                      <p className="text-body-sm text-on-surface-variant">Avisos de cobro y vencimiento</p>
-                    </div>
+
+              <div className="flex items-center justify-between p-4 bg-surface-container-low rounded-lg gap-4">
+                <div className="flex gap-3">
+                  <Bell className="w-5 h-5 text-primary" />
+                  <div>
+                    <p className="font-body-base font-medium">Notificaciones Automaticas</p>
+                    <p className="text-body-sm text-on-surface-variant">Avisos de cobro y vencimiento</p>
                   </div>
-                  <label className="relative inline-flex items-center cursor-pointer shrink-0">
-                    <input type="checkbox" defaultChecked className="sr-only peer" />
-                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-secondary"></div>
-                  </label>
                 </div>
-                <div className="p-4 border border-border-subtle rounded-lg border-l-4 border-l-warning-orange bg-orange-50/50">
-                  <p className="text-body-sm text-on-tertiary-fixed-variant">
-                    <span className="font-bold">Nota:</span> Se requiere una cuenta de Meta Business configurada para habilitar plantillas de mensaje.
-                  </p>
-                </div>
+                <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                  <input type="checkbox" defaultChecked className="sr-only peer" />
+                  <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-secondary"></div>
+                </label>
               </div>
             </div>
           </section>
 
-          {/* Pasarelas de Pago Section */}
           <section className="lg:col-span-2 bg-surface-container-lowest p-6 rounded-xl border border-border-subtle shadow-sm">
             <div className="flex items-center gap-3 mb-8">
               <div className="w-12 h-12 rounded-lg bg-indigo-50 flex items-center justify-center">
-                <CreditCard className="w-8 h-8 text-indigo-600" />
+                <Landmark className="w-8 h-8 text-indigo-600" />
               </div>
               <div>
-                <h2 className="font-headline-md text-headline-md text-primary">Pasarelas de Pagos</h2>
-                <p className="text-body-sm text-on-surface-variant">Configura cómo tus clientes realizan el pago en CLP</p>
+                <h2 className="font-headline-md text-headline-md text-primary">Pasarela de Pago</h2>
+                <p className="text-body-sm text-on-surface-variant">PagaCuotas opera solo con Flow para pagos CLP rapidos.</p>
               </div>
             </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="p-6 border border-green-200 bg-green-50/60 rounded-xl flex flex-col items-center text-center space-y-4">
-                <CreditCard className="h-8 w-8 text-red-600" />
-                <div className="space-y-1">
-                  <h3 className="font-body-base font-bold">Transbank Webpay Plus</h3>
-                  <p className="text-body-sm text-on-surface-variant">Principal Chile CLP</p>
-                </div>
-                <span className="w-full py-2 bg-green-600 text-white rounded-lg font-label-caps">
-                  Activo sandbox
-                </span>
-              </div>
 
-              <div className="p-6 border border-border-subtle rounded-xl flex flex-col items-center text-center space-y-4 hover:border-indigo-400 transition-colors group">
+            <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(260px,0.45fr)] gap-6">
+              <div className="p-6 border border-green-200 bg-green-50/60 rounded-xl flex flex-col items-center text-center space-y-4">
                 <Landmark className="h-8 w-8 text-blue-700" />
                 <div className="space-y-1">
-                  <h3 className="font-body-base font-bold">Flow</h3>
-                  <p className="text-body-sm text-on-surface-variant">Tarjetas y transferencias</p>
+                  <h3 className="font-body-base font-bold">Flow Pago Rapido</h3>
+                  <p className="text-body-sm text-on-surface-variant">Tarjetas, transferencias y medios habilitados por Flow.</p>
                 </div>
-                <span className="w-full py-2 bg-white border border-primary text-primary rounded-lg font-label-caps">
-                  Activo sandbox
+                <span className="w-full py-2 bg-green-600 text-white rounded-lg font-label-caps">
+                  Unica pasarela activa
                 </span>
               </div>
 
-              <div className="p-6 border border-border-subtle rounded-xl flex flex-col items-center text-center space-y-4 hover:border-indigo-400 transition-colors group">
-                <div className="h-8 flex items-center font-black text-xl text-blue-500 tracking-tighter">MercadoPago</div>
-                <div className="space-y-1">
-                  <h3 className="font-body-base font-bold">MercadoPago</h3>
-                  <p className="text-body-sm text-on-surface-variant">Tarjetas y Efectivo</p>
-                </div>
-                <span className="w-full py-2 bg-white border border-primary text-primary rounded-lg font-label-caps">Respaldo</span>
+              <div className="rounded-xl border border-slate-200 bg-white p-6">
+                <h3 className="font-body-base font-bold text-primary">Politica de cobro</h3>
+                <p className="mt-2 text-body-sm text-on-surface-variant">
+                  Webpay, MercadoPago y simulador quedan fuera del flujo operativo. Toda intencion de pago se crea con Flow.
+                </p>
               </div>
             </div>
           </section>
@@ -171,19 +147,15 @@ export default function Integrations() {
           </section>
         </div>
 
-        {/* Footer Summary Card */}
         <div className="mt-8 p-4 bg-primary-container rounded-xl flex flex-col md:flex-row items-center justify-between gap-4 mb-20 md:mb-0">
           <div className="flex items-center gap-4">
             <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center shrink-0">
               <Shield className="w-5 h-5 text-white" />
             </div>
             <p className="text-white text-body-sm">
-              <span className="font-bold">Seguridad de Datos:</span> Todas las conexiones utilizan cifrado AES-256. PagaCuotas no almacena tus credenciales de pago.
+              <span className="font-bold">Seguridad de Datos:</span> Todas las conexiones usan cifrado y PagaCuotas no almacena datos de tarjetas.
             </p>
           </div>
-          <button className="px-6 py-2 bg-secondary text-white rounded-lg font-label-caps shadow-lg hover:scale-105 transition-transform shrink-0">
-            Guardar Cambios
-          </button>
         </div>
       </div>
     </div>

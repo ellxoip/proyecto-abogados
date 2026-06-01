@@ -1,53 +1,30 @@
 import { useEffect, useState } from 'react';
 import {
-  CreditCard,
   FileText,
   Globe2,
   Landmark,
   ShieldCheck,
   TicketPercent,
-  Wallet,
   CheckCircle2,
 } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { cn } from '../../lib/utils';
 import { createPaymentIntent, formatCurrency, getSelectedPayment } from '../../lib/clientPortal';
+import { getPaymentProvider } from '../../lib/env';
 
-type PaymentMethodId = 'transbank' | 'flow' | 'wallet';
 type PaymentStatus = 'idle' | 'processing' | 'ready' | 'error';
 
-const paymentMethods = [
-  {
-    id: 'transbank' as const,
-    label: 'Webpay Plus',
-    icon: CreditCard,
-    provider: 'transbank',
-    title: 'Transbank Webpay Plus',
-    description: 'Seras dirigido a Webpay Plus para pagar con tarjeta de debito, credito o prepago.',
-  },
-  {
-    id: 'flow' as const,
-    label: 'Flow',
-    icon: Landmark,
-    provider: 'flow',
-    title: 'Flow',
-    description: 'Seras dirigido a Flow para pagar por tarjeta, transferencia u otros medios habilitados.',
-  },
-  {
-    id: 'wallet' as const,
-    label: 'MercadoPago',
-    icon: Wallet,
-    provider: 'mercadopago',
-    title: 'MercadoPago',
-    description: 'Seras dirigido a MercadoPago para autorizar el pago de forma segura.',
-  },
-];
+const flowPaymentMethod = {
+  label: 'Flow',
+  icon: Landmark,
+  provider: 'flow',
+  title: 'Flow Pago Rapido',
+  description: 'Seras dirigido a Flow para pagar por tarjeta, transferencia u otros medios habilitados.',
+};
 
 export default function Payment() {
   const selectedPayment = getSelectedPayment();
   const [searchParams] = useSearchParams();
-  const [selectedMethod, setSelectedMethod] = useState<PaymentMethodId>('transbank');
-  const [walletEmail, setWalletEmail] = useState('');
   const [selectedCountry, setSelectedCountry] = useState('Chile');
   const [showCountrySelector, setShowCountrySelector] = useState(false);
   const [showCoupon, setShowCoupon] = useState(false);
@@ -58,39 +35,33 @@ export default function Payment() {
   const [paymentMessage, setPaymentMessage] = useState('');
   const [successBanner, setSuccessBanner] = useState('');
 
-  const selectedPaymentMethod = paymentMethods.find((method) => method.id === selectedMethod) ?? paymentMethods[0];
+  const selectedPaymentMethod = flowPaymentMethod;
+  const paymentProvider = getPaymentProvider();
   const amount = selectedPayment?.amount || 0;
   const totalAmount = amount;
 
   useEffect(() => {
     const result = searchParams.get('result');
-    const provider = searchParams.get('provider');
     const source = searchParams.get('source');
     const simulated = searchParams.get('simulated') === 'true';
 
-    if (result === 'success' && provider === 'mercadopago' && simulated) {
-      setSuccessBanner('Pago exitoso simulado por MercadoPago.');
+    if (result === 'success' && simulated) {
+      setSuccessBanner('Pago exitoso simulado por Flow.');
       return;
     }
 
-    if (result === 'success' && provider === 'mercadopago' && source === 'mercadopago') {
-      setSuccessBanner('Pago exitoso de prueba por MercadoPago.');
+    if (result === 'success' && source) {
+      setSuccessBanner('Pago exitoso de prueba por Flow.');
       return;
     }
 
-    if (result === 'success' && provider === 'mercadopago') {
-      setSuccessBanner('Pago exitoso por MercadoPago.');
+    if (result === 'success') {
+      setSuccessBanner('Pago exitoso por Flow.');
       return;
     }
 
     setSuccessBanner('');
   }, [searchParams]);
-
-  const handleMethodChange = (methodId: PaymentMethodId) => {
-    setSelectedMethod(methodId);
-    setPaymentStatus('idle');
-    setPaymentMessage('');
-  };
 
   const applyCoupon = () => {
     const normalizedCoupon = couponCode.trim().toUpperCase();
@@ -112,10 +83,6 @@ export default function Payment() {
   };
 
   const validatePaymentForm = () => {
-    if (selectedMethod === 'wallet' && !walletEmail.includes('@')) {
-      return 'Ingresa el correo asociado a MercadoPago.';
-    }
-
     if (!selectedPayment) {
       return 'No hay una cuota real seleccionada para pagar. Vuelve al portal y selecciona una cuota.';
     }
@@ -132,7 +99,7 @@ export default function Payment() {
     }
 
     setPaymentStatus('processing');
-    setPaymentMessage(`Creando intencion de pago con ${selectedPaymentMethod.label}...`);
+    setPaymentMessage(`Creando intencion de pago con ${paymentProvider === 'simulator' ? 'PagaCuotas Prueba' : selectedPaymentMethod.label}...`);
 
     try {
       if (!selectedPayment) {
@@ -145,7 +112,7 @@ export default function Payment() {
         contrato_contable_id: selectedPayment.contrato_contable_id,
         cuota_ids: selectedPayment.cuota_ids,
         amount: totalAmount,
-        provider: selectedPaymentMethod.provider,
+        provider: paymentProvider,
       });
 
       const data = await response.json().catch(() => ({}));
@@ -212,23 +179,18 @@ export default function Payment() {
               ))}
             </div>
 
-            <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-4">
-              {paymentMethods.map(({ id, label, icon: Icon }) => (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => handleMethodChange(id as PaymentMethodId)}
-                  className={cn(
-                    'flex h-16 items-center justify-center gap-2 rounded-md border bg-white px-3 text-left text-xs font-semibold transition',
-                    selectedMethod === id
-                      ? 'border-[#69a5c9] text-[#4f93c4] shadow-[0_0_0_1px_rgba(79,147,196,0.28)]'
-                      : 'border-[#d9d9d9] text-[#9b9b9b] hover:border-[#b8c7d2]'
-                  )}
-                >
-                  <Icon className="h-6 w-6 shrink-0" />
-                  <span className="leading-tight">{label}</span>
-                </button>
-              ))}
+            <div className="mb-8 rounded-md border border-[#69a5c9] bg-[#f5fbff] px-4 py-4 text-[#4f83aa] shadow-[0_0_0_1px_rgba(79,147,196,0.18)]">
+              <div className="flex items-center gap-3">
+                <Landmark className="h-7 w-7 shrink-0" />
+                <div>
+                  <p className="text-sm font-black uppercase">{paymentProvider === 'simulator' ? 'PagaCuotas Prueba' : 'PagaCuotas a Flow'}</p>
+                  <p className="text-xs font-semibold text-[#637b90]">
+                    {paymentProvider === 'simulator'
+                      ? 'Simula pagos contra el flujo real y registra el resultado en superadmin.'
+                      : 'Pasarela unica habilitada para pago rapido.'}
+                  </p>
+                </div>
+              </div>
             </div>
 
             <div className="rounded-md border border-[#d8d8d8] bg-white">
@@ -243,20 +205,6 @@ export default function Payment() {
                 <div className="rounded-md border border-[#d4d8dd] bg-[#fafafa] p-4 text-sm leading-relaxed text-[#737a82]">
                   {selectedPaymentMethod.description}
                 </div>
-                {selectedMethod === 'wallet' && (
-                  <label className="block">
-                    <span className="mb-2 block text-[11px] font-bold uppercase text-[#8b8f95]">
-                      Correo MercadoPago
-                    </span>
-                    <input
-                      className="h-12 w-full rounded-md border border-[#d4d8dd] px-4 text-sm outline-none transition focus:border-[#69a5c9] focus:ring-2 focus:ring-[#69a5c9]/20"
-                      value={walletEmail}
-                      onChange={(event) => setWalletEmail(event.target.value)}
-                      type="email"
-                      placeholder="correo@ejemplo.com"
-                    />
-                  </label>
-                )}
                 <div className="rounded-md border border-[#d6e6d2] bg-[#f6fbf4] p-4">
                   <div className="flex items-start gap-3">
                     <FileText className="mt-0.5 h-5 w-5 shrink-0 text-[#5fae4d]" />
@@ -394,28 +342,8 @@ export default function Payment() {
                   {couponMessage && <p className="text-xs font-semibold text-[#737a82]">{couponMessage}</p>}
                 </div>
               )}
-              <div className="flex flex-wrap items-center justify-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleMethodChange('transbank')}
-                  className="flex h-9 min-w-[70px] items-center justify-center rounded-sm bg-white px-3 text-[10px] font-black text-[#d7352a] shadow-sm transition hover:-translate-y-0.5"
-                >
-                  Webpay
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleMethodChange('flow')}
-                  className="flex h-9 min-w-[70px] items-center justify-center rounded-sm bg-white px-3 text-[10px] font-black text-[#234a86] shadow-sm transition hover:-translate-y-0.5"
-                >
-                  Flow
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleMethodChange('wallet')}
-                  className="flex h-9 min-w-[70px] items-center justify-center rounded-sm bg-white px-3 text-[10px] font-black text-[#2d5c9f] shadow-sm transition hover:-translate-y-0.5"
-                >
-                  MercadoPago
-                </button>
+              <div className="flex items-center justify-center rounded-sm bg-white px-3 py-3 text-[10px] font-black uppercase text-[#234a86] shadow-sm">
+                Flow habilitado
               </div>
             </div>
           </aside>

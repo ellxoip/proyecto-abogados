@@ -107,7 +107,7 @@ async function runTests() {
     contrato_contable_id: 'con_123',
     cuota_ids: ['cuota_001', 'cuota_002'],
     amount: 200000,
-    provider: 'mercadopago',
+    provider: 'flow',
   });
   console.log(`✅ Intent created: ${intent.external_attempt_id}`);
   console.log(`   Payment URL: ${intent.payment_url}`);
@@ -116,7 +116,7 @@ async function runTests() {
   console.log('\n--- TEST 4: Webhook Pago Aprobado ---');
   const payment = await paymentService.processWebhook({
     external_attempt_id: intent.external_attempt_id,
-    provider_transaction_id: 'mp_999',
+    provider_transaction_id: 'flow_999',
     status: 'approved',
     amount: 200000,
     method: 'tarjeta',
@@ -127,7 +127,7 @@ async function runTests() {
   console.log('\n--- TEST 5: Webhook Duplicado (Idempotencia) ---');
   const duplicatePayment = await paymentService.processWebhook({
     external_attempt_id: intent.external_attempt_id,
-    provider_transaction_id: 'mp_999',
+    provider_transaction_id: 'flow_999',
     status: 'approved',
     amount: 200000,
     method: 'tarjeta',
@@ -143,11 +143,11 @@ async function runTests() {
     contrato_contable_id: 'con_123',
     cuota_ids: ['cuota_001'],
     amount: 100000,
-    provider: 'mercadopago',
+    provider: 'flow',
   });
   const rejected = await paymentService.processWebhook({
     external_attempt_id: intent2.external_attempt_id,
-    provider_transaction_id: 'mp_rejected_001',
+    provider_transaction_id: 'flow_rejected_001',
     status: 'rejected',
     amount: 100000,
     error_message: 'Fondos insuficientes',
@@ -159,7 +159,7 @@ async function runTests() {
   console.log('\n--- TEST 7: Reversa de Pago ---');
   const reversal = await paymentService.processReversal({
     external_payment_id: (payment as any)?.external_payment_id,
-    provider_transaction_id: 'mp_999',
+    provider_transaction_id: 'flow_999',
     amount: 200000,
     reason: 'Reversa solicitada por el banco',
     provider_reversal_code: 'REV_001',

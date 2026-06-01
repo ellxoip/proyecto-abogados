@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Shield, Fingerprint, ArrowRight, Verified, Lock, HelpCircle, Loader2, Eye, EyeOff, Sparkles } from 'lucide-react';
+import { ArrowRight, Eye, EyeOff, Fingerprint, HelpCircle, Loader2, Lock, ShieldCheck, Sparkles, Wallet } from 'lucide-react';
 import { clientLogin, saveClientSession } from '../../lib/clientPortal';
 
 const DEMO_CLIENT = {
@@ -72,312 +72,151 @@ export default function ClientLogin() {
     await performLogin(DEMO_CLIENT.identifier, DEMO_CLIENT.password);
   };
 
-  // Paleta clavada al fondo: negro carbón #0B0C10, oro #E0B84A / #C9A84C,
-  // ámbar profundo #9C7E2C, crema #F5E7B8.
   return (
-    <div
-      className="relative min-h-screen w-full flex flex-col items-center justify-between text-white overflow-hidden"
-      style={{
-        backgroundColor: '#0B0C10',
-        backgroundImage: "url('/brand/login-bg.png')",
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-        backgroundRepeat: 'no-repeat',
-      }}
-    >
-      {/* Overlay oscuro con vignette — atenúa el fondo en bordes, deja la
-          zona central (donde está el hexágono y el logo del fondo) más
-          visible para que el logo del header NO compita y el card central
-          quede legible. */}
-      <div
-        aria-hidden
-        className="absolute inset-0 pointer-events-none"
-        style={{
-          background:
-            'radial-gradient(110% 80% at 50% 45%, rgba(11,12,16,0.20) 0%, rgba(11,12,16,0.68) 60%, rgba(11,12,16,0.92) 100%)',
-        }}
-      />
-
-      {/* Header — logo del producto en pill semitransparente para que el
-          fondo se vea sin tapar la marca. */}
-      <header className="relative z-10 w-full h-20 flex items-center justify-center px-6 pt-6">
-        <div
-          className="flex items-center gap-2 px-4 py-2 rounded-full backdrop-blur-md"
-          style={{
-            background: 'rgba(11,12,16,0.45)',
-            border: '1px solid rgba(224,184,74,0.45)',
-            boxShadow: '0 4px 18px rgba(0,0,0,0.45), 0 0 24px rgba(224,184,74,0.18)',
-          }}
-        >
-          <div
-            className="p-2 rounded-lg"
-            style={{ background: 'linear-gradient(180deg, #E0B84A 0%, #9C7E2C 100%)' }}
-          >
-            <Shield className="w-5 h-5" style={{ color: '#0B0C10', fill: '#0B0C10' }} />
-          </div>
-          <span
-            className="font-headline-md text-display-lg tracking-tight"
-            style={{ color: '#F5E7B8' }}
-          >
-            PagaCuotas
-          </span>
-        </div>
-      </header>
-
-      <main className="relative z-10 w-full max-w-[420px] flex-grow flex flex-col justify-center px-4 pb-12">
-        <div className="mb-8 text-center">
-          <h1
-            className="font-headline-md text-display-lg mb-2"
-            style={{ color: '#F5E7B8' }}
-          >
-            Acceso a tu Portal
-          </h1>
-          <p
-            className="font-body-base"
-            style={{ color: 'rgba(245,231,184,0.7)' }}
-          >
-            Gestiona tus pagos con seguridad y rapidez.
-          </p>
-        </div>
-
-        <div
-          className="rounded-2xl p-8 backdrop-blur-xl"
-          style={{
-            background:
-              'linear-gradient(180deg, rgba(20,22,30,0.78) 0%, rgba(13,14,20,0.85) 100%)',
-            border: '1px solid rgba(224,184,74,0.35)',
-            boxShadow:
-              '0 30px 80px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.04) inset, 0 0 60px rgba(224,184,74,0.10)',
-          }}
-        >
-          <form onSubmit={handleLogin} className="space-y-6">
-            <div className="space-y-2">
-              <label
-                className="font-label-caps text-label-caps flex items-center gap-2"
-                htmlFor="identifier"
-                style={{ color: '#E0B84A' }}
-              >
-                IDENTIFICACION DEL CLIENTE
-              </label>
-              <div className="relative">
-                <input
-                  className="w-full px-4 py-4 pr-12 rounded-lg outline-none transition-all font-body-base text-white placeholder:text-white/40 focus:ring-2"
-                  style={{
-                    background: 'rgba(11,12,16,0.6)',
-                    border: '1px solid rgba(224,184,74,0.30)',
-                  }}
-                  id="identifier"
-                  placeholder="Ingresa tu RUT"
-                  type="text"
-                  value={identifier}
-                  onChange={(event) => {
-                    setIdentifier(event.target.value);
-                    if (errorMessage) setErrorMessage('');
-                  }}
-                  autoComplete="username"
-                  inputMode="text"
-                  aria-invalid={Boolean(errorMessage)}
-                  disabled={isLoading}
-                  required
-                />
-                <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                  <Fingerprint className="w-6 h-6" style={{ color: 'rgba(224,184,74,0.6)' }} />
-                </div>
+    <div className="bg-background-main min-h-screen flex flex-col">
+      <main className="flex-grow flex items-center justify-center px-4 py-12">
+        <div className="w-full max-w-md">
+          <div className="flex flex-col items-center mb-8">
+            <div className="flex items-center gap-2 mb-6">
+              <div className="w-10 h-10 bg-primary-container rounded-lg flex items-center justify-center">
+                <Wallet className="w-6 h-6 text-white" />
               </div>
-              <p className="text-[11px] font-body-sm px-1" style={{ color: 'rgba(245,231,184,0.55)' }}>
-                Usa el mismo RUT que recibiste en el mensaje de acceso.
-              </p>
+              <span className="text-display-lg font-extrabold tracking-tight text-primary">PagaCuotas</span>
             </div>
+            <div className="text-center">
+              <h1 className="text-headline-md font-bold text-text-charcoal mb-2">Acceso a tu Portal</h1>
+              <p className="text-body-sm text-on-surface-variant">Gestiona tus pagos con seguridad y rapidez</p>
+            </div>
+          </div>
 
-            <div className="space-y-2">
-              <label
-                className="font-label-caps text-label-caps flex items-center gap-2"
-                htmlFor="password"
-                style={{ color: '#E0B84A' }}
-              >
-                CLAVE DE ACCESO
+          <div className="bg-surface-container-lowest border border-border-subtle rounded-lg shadow-sm p-8">
+            <form onSubmit={handleLogin} className="space-y-6">
+              <label className="block">
+                <span className="block text-label-caps uppercase text-on-surface-variant mb-2">Identificacion del cliente</span>
+                <div className="relative">
+                  <Fingerprint className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-outline-variant" />
+                  <input
+                    className="w-full pl-10 pr-4 py-3 bg-surface-container-low border border-border-subtle rounded-lg focus:ring-2 focus:ring-secondary focus:border-secondary transition-all text-body-base outline-none"
+                    id="identifier"
+                    placeholder="Ingresa tu RUT"
+                    type="text"
+                    value={identifier}
+                    onChange={(event) => {
+                      setIdentifier(event.target.value);
+                      if (errorMessage) setErrorMessage('');
+                    }}
+                    autoComplete="username"
+                    inputMode="text"
+                    aria-invalid={Boolean(errorMessage)}
+                    disabled={isLoading}
+                    required
+                  />
+                </div>
+                <p className="mt-2 text-[11px] text-on-surface-variant">
+                  Usa el mismo RUT que recibiste en el mensaje de acceso.
+                </p>
               </label>
-              <div className="relative">
-                <input
-                  className="w-full px-4 py-4 pr-12 rounded-lg outline-none transition-all font-body-base text-white placeholder:text-white/40 focus:ring-2"
-                  style={{
-                    background: 'rgba(11,12,16,0.6)',
-                    border: '1px solid rgba(224,184,74,0.30)',
-                  }}
-                  id="password"
-                  placeholder="Clave de 6 caracteres"
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  maxLength={6}
-                  minLength={6}
-                  pattern="[A-Za-z0-9]{6}"
-                  autoComplete="current-password"
-                  aria-invalid={Boolean(errorMessage)}
-                  onChange={(event) => {
-                    setPassword(event.target.value.toUpperCase());
-                    if (errorMessage) setErrorMessage('');
-                  }}
-                  disabled={isLoading}
-                  required
-                />
+
+              <label className="block">
+                <span className="block text-label-caps uppercase text-on-surface-variant mb-2">Clave de acceso</span>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-outline-variant" />
+                  <input
+                    className="w-full pl-10 pr-12 py-3 bg-surface-container-low border border-border-subtle rounded-lg focus:ring-2 focus:ring-secondary focus:border-secondary transition-all text-body-base outline-none"
+                    id="password"
+                    placeholder="Clave de 6 caracteres"
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    maxLength={6}
+                    minLength={6}
+                    pattern="[A-Za-z0-9]{6}"
+                    autoComplete="current-password"
+                    aria-invalid={Boolean(errorMessage)}
+                    onChange={(event) => {
+                      setPassword(event.target.value.toUpperCase());
+                      if (errorMessage) setErrorMessage('');
+                    }}
+                    disabled={isLoading}
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((visible) => !visible)}
+                    aria-label={showPassword ? 'Ocultar clave' : 'Mostrar clave'}
+                    aria-pressed={showPassword}
+                    disabled={isLoading}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-outline-variant transition-colors hover:bg-surface-container-high disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  </button>
+                </div>
+                <p className="mt-2 text-[11px] text-on-surface-variant">
+                  La clave fue entregada por WhatsApp y puedes cambiarla dentro del portal.
+                </p>
+              </label>
+
+              {errorMessage && (
+                <div className="rounded-lg border border-error-red/30 bg-error-red/10 px-4 py-3 text-sm font-semibold text-error-red">
+                  {errorMessage}
+                </div>
+              )}
+
+              <button
+                className="w-full py-4 bg-primary text-white font-manrope font-bold text-body-base rounded-lg shadow-md hover:bg-primary-container active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-70"
+                type="submit"
+                disabled={isLoading}
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    Consultando datos
+                  </>
+                ) : (
+                  <>
+                    Ver el estado de mi servicio
+                    <ArrowRight className="w-5 h-5" />
+                  </>
+                )}
+              </button>
+            </form>
+
+            {SHOW_DEMO && (
+              <div className="mt-6 rounded-lg border border-dashed border-secondary/40 bg-secondary/5 p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Sparkles className="w-4 h-4 text-secondary" />
+                  <span className="text-xs font-bold uppercase tracking-wide text-secondary">Demo cliente</span>
+                </div>
+                <div className="text-xs text-on-surface-variant mb-3 space-y-0.5">
+                  <p>RUT: <span className="font-mono">{DEMO_CLIENT.identifier}</span></p>
+                  <p>Clave: <span className="font-mono">{DEMO_CLIENT.password}</span></p>
+                </div>
                 <button
                   type="button"
-                  onClick={() => setShowPassword((visible) => !visible)}
-                  aria-label={showPassword ? 'Ocultar clave' : 'Mostrar clave'}
-                  aria-pressed={showPassword}
+                  onClick={useDemo}
                   disabled={isLoading}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-1.5 transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
-                  style={{ color: 'rgba(224,184,74,0.75)' }}
+                  className="w-full py-2 bg-secondary/10 hover:bg-secondary/20 text-secondary border border-secondary/30 rounded-md text-xs font-semibold transition-all disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  {isLoading ? 'Entrando...' : 'Usar credenciales demo'}
                 </button>
-              </div>
-              <p className="text-[11px] font-body-sm px-1" style={{ color: 'rgba(245,231,184,0.55)' }}>
-                La clave fue entregada por WhatsApp y puedes cambiarla dentro del portal.
-              </p>
-            </div>
-
-            {errorMessage && (
-              <div
-                className="rounded-lg px-4 py-3 text-sm font-semibold"
-                style={{
-                  background: 'rgba(180,40,40,0.18)',
-                  border: '1px solid rgba(180,40,40,0.45)',
-                  color: '#FFB4B4',
-                }}
-              >
-                {errorMessage}
               </div>
             )}
 
-            <button
-              className="w-full h-[56px] font-headline-md text-body-base rounded-lg active:scale-[0.98] transition-all flex items-center justify-center gap-2 group disabled:cursor-not-allowed disabled:opacity-70 uppercase tracking-[0.14em]"
-              type="submit"
-              disabled={isLoading}
-              style={{
-                background:
-                  'linear-gradient(180deg, #E0B84A 0%, #C9A84C 50%, #9C7E2C 100%)',
-                color: '#0B0C10',
-                boxShadow:
-                  '0 8px 24px rgba(201,168,76,0.35), 0 0 0 1px rgba(255,225,140,0.4) inset',
-              }}
-            >
-              {isLoading ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  Consultando datos
-                </>
-              ) : (
-                <>
-                  Ver el estado de mi servicio
-                  <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-                </>
-              )}
-            </button>
-          </form>
-
-          {SHOW_DEMO && (
-            <div
-              className="mt-6 rounded-lg p-4"
-              style={{
-                background: 'rgba(224,184,74,0.06)',
-                border: '1px dashed rgba(224,184,74,0.5)',
-              }}
-            >
-              <div className="flex items-center gap-2 mb-2">
-                <Sparkles className="w-4 h-4" style={{ color: '#E0B84A' }} />
-                <span
-                  className="text-xs font-bold uppercase tracking-wide"
-                  style={{ color: '#E0B84A' }}
-                >
-                  Demo cliente
-                </span>
+            <div className="mt-8 pt-6 border-t border-border-subtle flex flex-col items-center gap-4">
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-surface-container-high rounded-full">
+                <ShieldCheck className="w-4 h-4 text-success-green" />
+                <span className="text-label-caps text-on-surface-variant">Acceso seguro</span>
               </div>
-              <div className="text-xs mb-3 space-y-0.5" style={{ color: 'rgba(245,231,184,0.75)' }}>
-                <p>RUT: <span className="font-mono">{DEMO_CLIENT.identifier}</span></p>
-                <p>Clave: <span className="font-mono">{DEMO_CLIENT.password}</span></p>
-                <p className="text-[10px] mt-1" style={{ color: 'rgba(245,231,184,0.45)' }}>
-                  Requiere SIS_CONTABLE_LOCAL_FIXTURES=true
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={useDemo}
-                disabled={isLoading}
-                className="w-full py-2 rounded-md text-xs font-semibold transition-all disabled:opacity-60 disabled:cursor-not-allowed"
-                style={{
-                  background: 'rgba(224,184,74,0.12)',
-                  border: '1px solid rgba(224,184,74,0.45)',
-                  color: '#E0B84A',
-                }}
+              <Link
+                className="inline-flex items-center gap-2 text-body-sm font-semibold text-secondary hover:underline"
+                to="/client/support"
               >
-                {isLoading ? 'Entrando…' : 'Usar credenciales demo'}
-              </button>
-            </div>
-          )}
-
-          <div
-            className="mt-8 pt-6 flex items-center justify-center gap-4"
-            style={{ borderTop: '1px solid rgba(224,184,74,0.18)' }}
-          >
-            <div className="flex items-center gap-1.5" style={{ color: 'rgba(245,231,184,0.55)' }}>
-              <Verified className="w-4 h-4" />
-              <span className="text-[10px] font-semibold tracking-wide uppercase">Encriptacion SSL</span>
-            </div>
-            <div
-              className="w-1 h-1 rounded-full"
-              style={{ background: 'rgba(224,184,74,0.45)' }}
-            />
-            <div className="flex items-center gap-1.5" style={{ color: 'rgba(245,231,184,0.55)' }}>
-              <Lock className="w-4 h-4" />
-              <span className="text-[10px] font-semibold tracking-wide uppercase">Acceso Seguro</span>
+                <HelpCircle className="w-4 h-4" />
+                Contactar soporte
+              </Link>
             </div>
           </div>
         </div>
-
-        <div className="mt-8 flex flex-col items-center gap-4 z-10">
-          <Link
-            className="font-body-sm font-semibold flex items-center gap-1.5 hover:underline decoration-2 underline-offset-4"
-            to="/client/support"
-            style={{ color: '#E0B84A' }}
-          >
-            Problemas para ingresar?
-          </Link>
-          <Link
-            to="/client/support"
-            className="px-6 py-3 rounded-full font-body-sm font-medium flex items-center gap-2 transition-colors backdrop-blur-md"
-            style={{
-              background: 'rgba(11,12,16,0.55)',
-              border: '1px solid rgba(224,184,74,0.40)',
-              color: '#F5E7B8',
-            }}
-          >
-            <HelpCircle className="w-5 h-5" style={{ color: '#E0B84A' }} />
-            Contactar soporte
-          </Link>
-        </div>
       </main>
-
-      <footer className="relative z-10 w-full pb-10 flex flex-col items-center">
-        <div className="flex gap-4 mb-4">
-          {['CL', 'PE', 'CO'].map((c) => (
-            <div
-              key={c}
-              className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-xs backdrop-blur-md"
-              style={{
-                background: 'rgba(11,12,16,0.55)',
-                border: '1px solid rgba(224,184,74,0.4)',
-                color: '#F5E7B8',
-              }}
-            >
-              {c}
-            </div>
-          ))}
-        </div>
-        <p className="text-[12px] font-body-sm" style={{ color: 'rgba(245,231,184,0.5)' }}>
-          © 2026 PagaCuotas Financial Services
-        </p>
-      </footer>
     </div>
   );
 }

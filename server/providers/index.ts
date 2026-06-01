@@ -1,9 +1,7 @@
 import dotenv from 'dotenv';
 import type { IPaymentProvider, ProviderName, ProviderEnvironment, ProviderConfig } from './types.js';
-import { SimulatorProvider } from './simulator.provider.js';
-import { MercadoPagoProvider } from './mercadopago.provider.js';
-import { TransbankProvider } from './transbank.provider.js';
 import { FlowProvider } from './flow.provider.js';
+import { SimulatorProvider } from './simulator.provider.js';
 import { logger } from '../lib/logger.js';
 
 dotenv.config();
@@ -21,7 +19,9 @@ class PaymentProviderRegistry {
 
   constructor() {
     this.globalEnvironment = (process.env.PAYMENT_ENVIRONMENT as ProviderEnvironment) || 'sandbox';
-    this.defaultProviderName = (process.env.PAYMENT_DEFAULT_PROVIDER as ProviderName) || 'mercadopago';
+    this.defaultProviderName = this.globalEnvironment === 'production'
+      ? 'flow'
+      : ((process.env.PAYMENT_DEFAULT_PROVIDER as ProviderName) || 'simulator');
 
     this.registerAllProviders();
   }
@@ -103,37 +103,15 @@ class PaymentProviderRegistry {
   // Internal: Register providers from env config
   // ===========================================================
   private registerAllProviders() {
-    // Always register the simulator
-    this.providers.set('simulator', new SimulatorProvider({
-      delayMs: parseInt(process.env.SIMULATOR_DELAY_MS || '300'),
+    this.providers.set('flow', new FlowProvider({
+      environment: this.globalEnvironment,
+      apiKey: process.env.FLOW_API_KEY || 'change_me_flow_api_key',
+      secretKey: process.env.FLOW_SECRET_KEY || 'change_me_flow_secret_key',
     }));
 
-    // MercadoPago
-    const mpEnabled = process.env.MERCADOPAGO_ENABLED !== 'false';
-    if (mpEnabled) {
-      this.providers.set('mercadopago', new MercadoPagoProvider({
-        environment: this.globalEnvironment,
-        accessToken: process.env.MERCADOPAGO_ACCESS_TOKEN || 'TEST-sandbox-token',
-        publicKey: process.env.MERCADOPAGO_PUBLIC_KEY || 'TEST-sandbox-public-key',
-        webhookSecret: process.env.MERCADOPAGO_WEBHOOK_SECRET || '',
-      }));
-    }
-
-    const transbankEnabled = process.env.TRANSBANK_ENABLED === 'true';
-    if (transbankEnabled) {
-      this.providers.set('transbank', new TransbankProvider({
-        environment: (process.env.TRANSBANK_ENVIRONMENT as ProviderEnvironment) || this.globalEnvironment,
-        commerceCode: process.env.TRANSBANK_COMMERCE_CODE || '597055555532',
-        apiKey: process.env.TRANSBANK_API_KEY || 'change_me_transbank_api_key',
-      }));
-    }
-
-    const flowEnabled = process.env.FLOW_ENABLED === 'true';
-    if (flowEnabled) {
-      this.providers.set('flow', new FlowProvider({
-        environment: this.globalEnvironment,
-        apiKey: process.env.FLOW_API_KEY || 'change_me_flow_api_key',
-        secretKey: process.env.FLOW_SECRET_KEY || 'change_me_flow_secret_key',
+    if (this.globalEnvironment !== 'production' && process.env.SIMULATOR_ENABLED !== 'false') {
+      this.providers.set('simulator', new SimulatorProvider({
+        delayMs: parseInt(process.env.SIMULATOR_DELAY_MS || '300'),
       }));
     }
 
