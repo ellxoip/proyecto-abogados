@@ -7,11 +7,13 @@ import {
 import { useAuthStore } from '../store/auth'
 import { getNotificationCount, getAgentQueue, getLeadsCount } from '../api'
 import { playMessageSound, playNewLeadSound, playNotificationSound } from '../hooks/useNotificationSound'
+import { reRegisterPush } from '../hooks/usePushNotifications'
 import { canDo } from '../utils/plans'
 import InstallPWA from './InstallPWA'
 import GlobalSearch from './GlobalSearch'
 import NotificationPanel from './NotificationPanel'
 import { NexioLogo } from './NexioLogo'
+import toast from 'react-hot-toast'
 
 const NAV_SECTIONS = [
   {
@@ -72,6 +74,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const [mobile, setMobile]       = useState(false)
   const [unread, setUnread]       = useState(0)
   const [agentCount, setAgentCount] = useState(0)
+  const [pushRegistering, setPushRegistering] = useState(false)
   const [leadsCount, setLeadsCount] = useState(0)
   const [showSearch, setShowSearch] = useState(false)
   const [showNotifPanel, setShowNotifPanel] = useState(false)
@@ -127,6 +130,21 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   }, [])
 
   const handleLogout = () => { logout(); navigate('/login') }
+
+  const handleReRegisterPush = async () => {
+    setPushRegistering(true)
+    try {
+      const result = await reRegisterPush()
+      if (result === 'ok') toast.success('Notificaciones push activadas en este dispositivo')
+      else if (result === 'denied') toast.error('Permiso de notificaciones denegado — habilítalo en ajustes del navegador')
+      else if (result === 'unsupported') toast.error('Este navegador no soporta notificaciones push')
+      else toast.error('Error al activar notificaciones')
+    } catch {
+      toast.error('Error al activar notificaciones')
+    } finally {
+      setPushRegistering(false)
+    }
+  }
 
   const allItems = NAV_SECTIONS.flatMap(s => s.items)
   const pathItems = allItems.filter((n: any) => location.pathname === n.path || (n.path !== '/' && location.pathname.startsWith(n.path)))
@@ -280,6 +298,16 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             <div className="flex-1 min-w-0">
               <p className="text-xs font-semibold truncate leading-tight" style={{ color: '#ffffff' }}>{user?.name}</p>
             </div>
+            <button
+              onClick={handleReRegisterPush}
+              disabled={pushRegistering}
+              title="Activar notificaciones push en este dispositivo"
+              className="p-1.5 rounded-lg transition-all flex-shrink-0"
+              style={{ color: 'rgba(255,255,255,0.35)' }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#25d366'; (e.currentTarget as HTMLElement).style.background = 'rgba(37,211,102,0.15)' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.35)'; (e.currentTarget as HTMLElement).style.background = '' }}>
+              <Bell size={13} className={pushRegistering ? 'animate-pulse' : ''} />
+            </button>
             <button onClick={handleLogout} title="Cerrar sesión"
               className="p-1.5 rounded-lg transition-all flex-shrink-0"
               style={{ color: 'rgba(255,255,255,0.35)' }}
@@ -289,7 +317,17 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             </button>
           </div>
         ) : (
-          <div className="flex justify-center">
+          <div className="flex flex-col items-center gap-1">
+            <button
+              onClick={handleReRegisterPush}
+              disabled={pushRegistering}
+              title="Activar notificaciones push"
+              className="p-2 rounded-xl transition-all"
+              style={{ color: 'rgba(255,255,255,0.35)' }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#25d366'; (e.currentTarget as HTMLElement).style.background = 'rgba(37,211,102,0.15)' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.35)'; (e.currentTarget as HTMLElement).style.background = '' }}>
+              <Bell size={15} className={pushRegistering ? 'animate-pulse' : ''} />
+            </button>
             <button onClick={handleLogout} title="Cerrar sesión"
               className="p-2 rounded-xl transition-all"
               style={{ color: 'rgba(255,255,255,0.35)' }}

@@ -143,7 +143,7 @@ def send_push_to_user(db: Session, user_id: int, title: str, body: str, url: str
         except Exception as e:
             err = str(e)
             print(f"⚠️  Push send failed for sub {sub.id}: {err[:120]}")
-            if "410" in err or "404" in err:
+            if "410" in err or "404" in err or "400" in err:
                 dead.append(sub.id)
 
     if dead:

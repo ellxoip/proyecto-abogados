@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { getPushVapidKey, subscribePush } from '../api'
+import { getPushVapidKey, subscribePush, unsubscribePush } from '../api'
 
 function urlBase64ToUint8Array(base64String: string) {
   const padding = '='.repeat((4 - base64String.length % 4) % 4)
@@ -10,20 +10,26 @@ function urlBase64ToUint8Array(base64String: string) {
   return outputArray
 }
 
-async function registerPush() {
-  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return
+async function _doRegister(forceNew = false): Promise<'ok' | 'denied' | 'unsupported' | 'error'> {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return 'unsupported'
 
-  // Explicitly request permission — browser shows the system dialog
   const permission = await Notification.requestPermission()
-  if (permission !== 'granted') return
+  if (permission !== 'granted') return 'denied'
 
   const reg = await navigator.serviceWorker.ready
 
-  // Get or create subscription
+  if (forceNew) {
+    const existing = await reg.pushManager.getSubscription()
+    if (existing) {
+      try { await unsubscribePush(existing.endpoint) } catch {}
+      await existing.unsubscribe()
+    }
+  }
+
   let sub = await reg.pushManager.getSubscription()
   if (!sub) {
     const { public_key } = await getPushVapidKey()
-    if (!public_key) return
+    if (!public_key) return 'error'
     sub = await reg.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(public_key),
@@ -31,14 +37,19 @@ async function registerPush() {
   }
 
   const json = sub.toJSON()
-  if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) return
+  if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) return 'error'
 
-  // Always POST so the server always has the current subscription
   await subscribePush({
     endpoint: json.endpoint,
     p256dh: json.keys.p256dh,
     auth: json.keys.auth,
   })
+  return 'ok'
+}
+
+/** Force unsubscribe + resubscribe — call from UI button */
+export async function reRegisterPush(): Promise<'ok' | 'denied' | 'unsupported' | 'error'> {
+  return _doRegister(true)
 }
 
 export function usePushNotifications(isAuthenticated: boolean) {
@@ -49,8 +60,8 @@ export function usePushNotifications(isAuthenticated: boolean) {
     if (registered.current) return
     registered.current = true
 
-    registerPush().catch(() => {
-      registered.current = false // allow retry on next mount
+    _doRegister(false).catch(() => {
+      registered.current = false
     })
   }, [isAuthenticated])
 }
