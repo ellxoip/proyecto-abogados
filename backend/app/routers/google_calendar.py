@@ -24,6 +24,11 @@ SCOPES = " ".join([
     "https://www.googleapis.com/auth/userinfo.email",
 ])
 
+SCOPES_GMAIL = " ".join([
+    "https://www.googleapis.com/auth/gmail.send",
+    "https://www.googleapis.com/auth/userinfo.email",
+])
+
 
 # ── Helpers ─────────────────────────────────────────────────
 
@@ -195,6 +200,116 @@ def disconnect_google(
     ).first()
     if token:
         db.delete(token)
+        db.commit()
+    return {"ok": True}
+
+
+@router.get("/gmail/auth-url")
+def get_gmail_auth_url(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    client_id, _, redirect_uri = _get_credentials(db)
+    # Use same redirect_uri but different scope + state prefix
+    gmail_redirect = redirect_uri.replace("/callback", "/gmail-callback")
+    params = (
+        f"?client_id={client_id}"
+        f"&redirect_uri={gmail_redirect}"
+        f"&response_type=code"
+        f"&scope={SCOPES_GMAIL.replace(' ', '%20')}"
+        f"&access_type=offline"
+        f"&prompt=consent"
+        f"&state={current_user.id}"
+    )
+    return {"url": GOOGLE_AUTH_URL + params}
+
+
+@router.get("/gmail/status")
+def gmail_status(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    token = db.query(models.GoogleCalendarToken).filter(
+        models.GoogleCalendarToken.user_id == current_user.id,
+    ).first()
+    configured = bool(_get_setting(db, "google_client_id"))
+    connected = bool(token and token.gmail_access_token)
+    return {
+        "configured": configured,
+        "connected": connected,
+        "gmail_email": token.gmail_email if connected else None,
+    }
+
+
+@router.get("/gmail-callback")
+async def gmail_callback(
+    code: Optional[str] = None,
+    state: Optional[str] = None,
+    error: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    if error or not code or not state:
+        return HTMLResponse(_popup_html(success=False, message=error or "Autenticación cancelada", type="gmail"))
+    try:
+        user_id = int(state)
+    except (ValueError, TypeError):
+        return HTMLResponse(_popup_html(success=False, message="Estado inválido", type="gmail"))
+
+    client_id, client_secret, redirect_uri = _get_credentials(db)
+    gmail_redirect = redirect_uri.replace("/callback", "/gmail-callback")
+
+    async with httpx.AsyncClient() as client:
+        token_resp = await client.post(GOOGLE_TOKEN_URL, data={
+            "code": code, "client_id": client_id, "client_secret": client_secret,
+            "redirect_uri": gmail_redirect, "grant_type": "authorization_code",
+        })
+    if token_resp.status_code != 200:
+        return HTMLResponse(_popup_html(success=False, message="Error al obtener tokens", type="gmail"))
+
+    token_data = token_resp.json()
+    access_token  = token_data.get("access_token")
+    refresh_token = token_data.get("refresh_token")
+    expiry = datetime.now(timezone.utc) + timedelta(seconds=token_data.get("expires_in", 3600))
+
+    google_email = None
+    async with httpx.AsyncClient() as client:
+        info_resp = await client.get(GOOGLE_USERINFO, headers={"Authorization": f"Bearer {access_token}"})
+    if info_resp.status_code == 200:
+        google_email = info_resp.json().get("email")
+
+    existing = db.query(models.GoogleCalendarToken).filter(
+        models.GoogleCalendarToken.user_id == user_id,
+    ).first()
+    if existing:
+        existing.gmail_access_token = access_token
+        if refresh_token:
+            existing.gmail_refresh_token = refresh_token
+        existing.gmail_token_expiry = expiry
+        existing.gmail_email = google_email
+    else:
+        db.add(models.GoogleCalendarToken(
+            user_id=user_id, access_token="",
+            gmail_access_token=access_token,
+            gmail_refresh_token=refresh_token or "",
+            gmail_token_expiry=expiry, gmail_email=google_email,
+        ))
+    db.commit()
+    return HTMLResponse(_popup_html(success=True, message=google_email or "Gmail conectado", type="gmail"))
+
+
+@router.delete("/gmail/disconnect")
+def disconnect_gmail(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    token = db.query(models.GoogleCalendarToken).filter(
+        models.GoogleCalendarToken.user_id == current_user.id,
+    ).first()
+    if token:
+        token.gmail_access_token = None
+        token.gmail_refresh_token = None
+        token.gmail_token_expiry = None
+        token.gmail_email = None
         db.commit()
     return {"ok": True}
 
@@ -381,20 +496,22 @@ def _crm_event_to_google(event: models.CalendarEvent) -> dict:
     }
 
 
-def _popup_html(success: bool, message: str) -> str:
+def _popup_html(success: bool, message: str, type: str = "calendar") -> str:
+    title = "Gmail" if type == "gmail" else "Google Calendar"
+    msg_key = "googleGmail" if type == "gmail" else "googleCalendar"
     if success:
         status_html = f"""
         <div class="icon success">✓</div>
-        <h2>¡Google Calendar conectado!</h2>
+        <h2>¡{title} conectado!</h2>
         <p class="email">{message}</p>
         <p class="sub">Esta ventana se cerrará automáticamente.</p>
         """
         script = """
         if (window.opener) {
-          window.opener.postMessage({ googleCalendar: 'connected', email: '%s' }, '*');
+          window.opener.postMessage({ %s: 'connected', email: '%s' }, '*');
         }
         setTimeout(() => window.close(), 2000);
-        """ % message
+        """ % (msg_key, message)
     else:
         status_html = f"""
         <div class="icon error">✗</div>
@@ -404,9 +521,9 @@ def _popup_html(success: bool, message: str) -> str:
         """
         script = """
         if (window.opener) {
-          window.opener.postMessage({ googleCalendar: 'error' }, '*');
+          window.opener.postMessage({ %s: 'error' }, '*');
         }
-        """
+        """ % msg_key
 
     return f"""<!DOCTYPE html>
 <html lang="es">

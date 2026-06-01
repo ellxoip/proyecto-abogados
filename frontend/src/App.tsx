@@ -24,6 +24,7 @@ import AgentIA from './pages/AgentIA'
 import CobradoresDashboard from './pages/CobradoresDashboard'
 import CobradoresCartera from './pages/CobradoresCartera'
 import CobradoresPipeline from './pages/CobradoresPipeline'
+import CobradoresHistorial from './pages/CobradoresHistorial'
 
 function homeFor(role?: string) {
   if (role === 'tecnico') return '/tecnico'
@@ -59,7 +60,7 @@ function AppRoutes() {
       <Route path="/mi-pipeline" element={<ProtectedRoute roles={['vendedor']}><Layout><VendorPipeline /></Layout></ProtectedRoute>} />
       <Route path="/pagos" element={<ProtectedRoute roles={['verificador','superadmin','subadmin']}><Layout><Pagos /></Layout></ProtectedRoute>} />
       <Route path="/notificaciones" element={<ProtectedRoute><Layout><Notificaciones /></Layout></ProtectedRoute>} />
-      <Route path="/whatsapp" element={<ProtectedRoute roles={['superadmin','subadmin','agendadora']}><Layout><WhatsApp /></Layout></ProtectedRoute>} />
+      <Route path="/whatsapp" element={<ProtectedRoute roles={['superadmin','subadmin','agendadora','cobrador']}><Layout><WhatsApp /></Layout></ProtectedRoute>} />
       <Route path="/mis-whatsapp" element={<ProtectedRoute roles={['agendadora','cobrador','superadmin','subadmin']}><Layout><MisWhatsApp /></Layout></ProtectedRoute>} />
       <Route path="/seguimiento" element={<ProtectedRoute roles={['agendadora','superadmin','subadmin']}><Layout><Seguimiento /></Layout></ProtectedRoute>} />
       <Route path="/agente-ia" element={<ProtectedRoute roles={['agendadora','superadmin','subadmin']}><Layout><AgentIA /></Layout></ProtectedRoute>} />
@@ -69,6 +70,7 @@ function AppRoutes() {
       <Route path="/cobrador" element={<ProtectedRoute roles={['cobrador','superadmin','subadmin']}><Layout><CobradoresDashboard /></Layout></ProtectedRoute>} />
       <Route path="/cobrador/cartera" element={<ProtectedRoute roles={['cobrador','superadmin','subadmin']}><Layout><CobradoresCartera /></Layout></ProtectedRoute>} />
       <Route path="/cobrador/pipeline" element={<ProtectedRoute roles={['cobrador','superadmin','subadmin']}><Layout><CobradoresPipeline /></Layout></ProtectedRoute>} />
+      <Route path="/cobrador/historial" element={<ProtectedRoute roles={['cobrador','superadmin','subadmin']}><Layout><CobradoresHistorial /></Layout></ProtectedRoute>} />
       {/* Public payment portal — no auth required */}
       <Route path="/pagar/:token" element={<PagarCuota />} />
       <Route path="*" element={<Navigate to="/" replace />} />

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Users, UserCheck, GitBranch, Calendar,
-  LogOut, Bell, Menu, CreditCard, Shield, ChevronRight, Wrench, Search, X, Smartphone, MessageSquare, Bot, Building2, QrCode, Building, GitBranch as GitBranchIcon, Wallet,
+  LogOut, Bell, Menu, CreditCard, Shield, ChevronRight, Wrench, Search, X, Smartphone, MessageSquare, Bot, Building2, QrCode, Building, GitBranch as GitBranchIcon, Wallet, Archive,
 } from 'lucide-react'
 import { useAuthStore } from '../store/auth'
 import { getNotificationCount, getAgentQueue, getLeadsCount } from '../api'
@@ -35,6 +35,7 @@ const NAV_SECTIONS = [
       { path: '/cobrador',          icon: LayoutDashboard, label: 'Dashboard',   sublabel: 'Resumen cobranza', roles: ['cobrador'] },
       { path: '/cobrador/cartera',  icon: Wallet,          label: 'Cartera',     sublabel: 'Mis clientes',     roles: ['cobrador'] },
       { path: '/cobrador/pipeline', icon: GitBranchIcon,   label: 'Pipeline',    sublabel: 'Embudo cobranza',  roles: ['cobrador'] },
+      { path: '/cobrador/historial', icon: Archive,         label: 'Historial',   sublabel: 'Clientes pagados', roles: ['cobrador'] },
       { path: '/mis-whatsapp',      icon: Smartphone,      label: 'Mis WhatsApp',sublabel: 'Conectar número',  roles: ['cobrador'] },
     ],
   },
@@ -196,7 +197,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   const searchTab = new URLSearchParams(location.search).get('tab')
                   const active = navTab
                     ? location.pathname === path && (searchTab === navTab || (!location.search && DEFAULT_TABS[path] === navTab))
-                    : location.pathname === path || (path !== '/' && location.pathname.startsWith(path))
+                    : location.pathname === path || (path !== '/' && location.pathname.startsWith(path + '/') && !visible.some((o: any) => o.path !== path && location.pathname.startsWith(o.path)))
                   const badge = path === '/agente-ia' ? agentCount : path === '/leads' ? leadsCount : 0
                   const to = navTab ? `${path}?tab=${navTab}` : path
                   return (

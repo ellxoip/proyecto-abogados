@@ -765,6 +765,49 @@ async def _run_agent_bg(config_id: int, contact_id: int, lead_id: int | None, ms
         db.close()
 
 
+@webhook_router.post("/qr-update-media")
+async def qr_update_media(body: dict, db: Session = Depends(get_db)):
+    """Called by Node service after async media download completes.
+    Updates media_url on the message and broadcasts a refresh so clients reload it."""
+    message_id = body.get("message_id")
+    media_url = body.get("media_url")
+    if not message_id or not media_url:
+        return {"ok": False}
+
+    # Rewrite localhost Node media URLs to relative paths
+    if media_url and "localhost:3001" in media_url:
+        from urllib.parse import urlparse
+        media_url = urlparse(media_url).path
+
+    msg = db.query(models.WhatsAppMessage).filter(
+        models.WhatsAppMessage.message_id == message_id,
+    ).first()
+    if not msg:
+        return {"ok": False, "error": "message not found"}
+
+    msg.media_url = media_url
+    db.commit()
+    db.refresh(msg)
+
+    await wa_broadcaster.broadcast("new_message", {
+        "contact_id": msg.contact_id,
+        "message": {
+            "id": msg.id,
+            "contact_id": msg.contact_id,
+            "lead_id": msg.lead_id,
+            "whatsapp_config_id": msg.whatsapp_config_id,
+            "direction": msg.direction,
+            "message_type": msg.message_type,
+            "content": msg.content,
+            "media_url": msg.media_url,
+            "status": msg.status,
+            "is_read": msg.is_read,
+            "created_at": msg.created_at.isoformat() if msg.created_at else None,
+        },
+    })
+    return {"ok": True}
+
+
 @webhook_router.post("/qr-status-update")
 async def qr_status_update(body: dict, db: Session = Depends(get_db)):
     """Called by Node service when a sent message is delivered or read."""
@@ -797,4 +840,59 @@ async def qr_status_update(body: dict, db: Session = Depends(get_db)):
             "status": status,
         })
 
+    return {"ok": True}
+
+
+@webhook_router.post("/qr-incoming-call")
+async def qr_incoming_call(body: dict, db: Session = Depends(get_db)):
+    """Called by Node service when someone calls the QR WhatsApp number."""
+    from_phone = (body.get("from_phone") or "").strip()
+    call_id = body.get("call_id", "")
+    session_id = body.get("session_id", "")
+    is_video = bool(body.get("is_video", False))
+
+    if not from_phone:
+        return {"ok": False}
+
+    # Normalize phone
+    if from_phone and not from_phone.startswith("+"):
+        from_phone = "+" + from_phone
+
+    # Find contact name
+    contact = db.query(models.Contact).filter(models.Contact.phone == from_phone).first()
+    contact_name = contact.name if contact else from_phone
+    contact_id = contact.id if contact else None
+
+    await wa_broadcaster.broadcast("incoming_call", {
+        "call_id": call_id,
+        "session_id": session_id,
+        "from_phone": from_phone,
+        "contact_name": contact_name,
+        "contact_id": contact_id,
+        "is_video": is_video,
+    })
+    return {"ok": True}
+
+
+@webhook_router.post("/qr-call-ended")
+async def qr_call_ended(body: dict):
+    """Called when a call times out, is rejected, or accepted."""
+    call_id = body.get("call_id", "")
+    status = body.get("status", "ended")
+    await wa_broadcaster.broadcast("call_ended", {"call_id": call_id, "status": status})
+    return {"ok": True}
+
+
+@router.post("/reject-call")
+async def reject_call(body: dict, current_user: models.User = Depends(require_tecnico)):
+    """Reject an incoming WhatsApp call via the QR service."""
+    session_id = body.get("session_id")
+    call_id = body.get("call_id")
+    from_phone = body.get("from_phone", "").lstrip("+")
+    async with httpx.AsyncClient() as client:
+        await client.post(
+            f"{QR_SERVICE_URL}/sessions/{session_id}/reject-call",
+            json={"callId": call_id, "from": from_phone},
+            timeout=5,
+        )
     return {"ok": True}

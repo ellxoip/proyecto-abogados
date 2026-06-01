@@ -475,6 +475,11 @@ class GoogleCalendarToken(Base):
     token_expiry = Column(DateTime, nullable=True)
     google_email = Column(String(200), nullable=True)
     google_calendar_id = Column(String(200), default="primary")
+    # Gmail fields (separate OAuth grant with gmail.send scope)
+    gmail_access_token = Column(Text, nullable=True)
+    gmail_refresh_token = Column(Text, nullable=True)
+    gmail_token_expiry = Column(DateTime, nullable=True)
+    gmail_email = Column(String(200), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -508,6 +513,10 @@ class CobradorLead(Base):
     proxima_cuota_fecha    = Column(String(20), nullable=True)
     proxima_cuota_monto    = Column(Float, nullable=True)
     pagacuotas_cliente_id  = Column(Integer, ForeignKey("pagacuotas_clientes.id"), nullable=True)
+    is_new          = Column(Boolean, default=True, nullable=False, server_default="true")
+    is_contactado   = Column(Boolean, default=False, nullable=False, server_default="false")
+    contactado_at   = Column(DateTime(timezone=True), nullable=True)
+    pagado_at       = Column(DateTime(timezone=True), nullable=True)
     created_at  = Column(DateTime(timezone=True), server_default=func.now())
     updated_at  = Column(DateTime(timezone=True), onupdate=func.now())
 

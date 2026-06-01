@@ -1,4 +1,4 @@
-const CACHE = 'crm-v3'
+const CACHE = 'crm-v7'
 const PRECACHE = ['/', '/index.html']
 
 self.addEventListener('install', e => {

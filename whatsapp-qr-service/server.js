@@ -187,7 +187,7 @@ async function startSession(sessionId) {
     syncFullHistory: false,
     generateHighQualityLinkPreview: false,
     msgRetryCounterCache: session.retryCache,
-    retryRequestDelayMs: 5000,
+    retryRequestDelayMs: 250,
     defaultQueryTimeoutMs: 60000,
     getMessage: async (key) => {
       const stored = session.msgStore.get(key.id)
@@ -380,22 +380,29 @@ async function startSession(sessionId) {
           : msg.message?.stickerMessage  ? 'sticker'
           : msg.message?.documentMessage ? 'document'
           : 'text'
-        let mediaUrl = null
-        if (msgType !== 'text') {
-          const saved = await saveMedia(msg, sock, sessionId)
-          if (saved) mediaUrl = saved.mediaUrl
-        }
         console.log(`[QR] Session ${sessionId}: outgoing-from-phone to=${to} type=${msgType} id=${msg.key.id}`)
-        await notifyFastAPI('/api/webhooks/qr-incoming', {
+        notifyFastAPI('/api/webhooks/qr-incoming', {
           session_id: String(sessionId),
           from_phone: to,
           content: content || '',
           message_type: msgType,
-          media_url: mediaUrl,
+          media_url: null,
           message_id: msg.key.id,
           timestamp: msg.messageTimestamp,
           is_from_me: true,
-        })
+        }).then(() => {
+          if (msgType !== 'text') {
+            saveMedia(msg, sock, sessionId).then(saved => {
+              if (saved) {
+                notifyFastAPI('/api/webhooks/qr-update-media', {
+                  session_id: String(sessionId),
+                  message_id: msg.key.id,
+                  media_url: saved.mediaUrl,
+                }).catch(() => {})
+              }
+            }).catch(() => {})
+          }
+        }).catch(() => {})
         continue
       }
 
@@ -425,26 +432,56 @@ async function startSession(sessionId) {
         : msg.message?.documentMessage ? 'document'
         : 'text'
 
-      // Download media if present
-      let mediaUrl = null
-      if (msgType !== 'text') {
-        const saved = await saveMedia(msg, sock, sessionId)
-        if (saved) mediaUrl = saved.mediaUrl
-      }
-
       console.log(`[QR] Session ${sessionId}: incoming from=${from} type=${msgType} id=${msg.key.id}`)
-      await notifyFastAPI('/api/webhooks/qr-incoming', {
+      // Notify backend immediately so the message appears in the UI right away.
+      // For media messages, we send media_url=null now and update it after download completes.
+      notifyFastAPI('/api/webhooks/qr-incoming', {
         session_id: String(sessionId),
         from_phone: from,
         content: content || '',
         message_type: msgType,
-        media_url: mediaUrl,
+        media_url: null,
         message_id: msg.key.id,
         timestamp: msg.messageTimestamp,
-      })
-      console.log(`[QR] Session ${sessionId}: webhook sent for ${from}`)
+      }).then(() => {
+        // After backend confirmed the message, download media and update URL
+        if (msgType !== 'text') {
+          saveMedia(msg, sock, sessionId).then(saved => {
+            if (saved) {
+              notifyFastAPI('/api/webhooks/qr-update-media', {
+                session_id: String(sessionId),
+                message_id: msg.key.id,
+                media_url: saved.mediaUrl,
+              }).catch(() => {})
+            }
+          }).catch(e => console.error(`[QR] Session ${sessionId}: media download failed:`, e.message))
+        }
+      }).catch(() => {})
       // Fetch and push profile picture async (non-blocking)
       pushProfilePic(sock, msg.key.remoteJid)
+    }
+  })
+
+  // Incoming WhatsApp calls — notify backend so cobrador sees alert in browser
+  sock.ev.on('call', async (calls) => {
+    for (const call of calls) {
+      const from = (call.from || '').replace('@s.whatsapp.net', '').replace('@lid', '')
+      console.log(`[QR] Session ${sessionId}: call event status=${call.status} from=${from} id=${call.id}`)
+      if (call.status === 'offer') {
+        notifyFastAPI('/api/webhooks/qr-incoming-call', {
+          session_id: String(sessionId),
+          from_phone: from,
+          call_id: call.id,
+          is_video: call.isVideo || false,
+        }).catch(() => {})
+      }
+      if (call.status === 'timeout' || call.status === 'reject' || call.status === 'accept') {
+        notifyFastAPI('/api/webhooks/qr-call-ended', {
+          session_id: String(sessionId),
+          call_id: call.id,
+          status: call.status,
+        }).catch(() => {})
+      }
     }
   })
 
@@ -820,6 +857,20 @@ app.post('/sessions/:sessionId/sync-msgstore', async (req, res) => {
 
   console.log(`[QR] Session ${sessionId}: sync-msgstore pushed ${toImport.length} messages, fetching pics for ${uniquePhones.length} contacts`)
   res.json({ ok: true, pushed: toImport.length })
+})
+
+// Reject an incoming call
+app.post('/sessions/:sessionId/reject-call', async (req, res) => {
+  const { sessionId } = req.params
+  const { callId, from } = req.body
+  const session = sessions.get(sessionId)
+  if (!session || session.status !== 'connected') return res.status(404).json({ error: 'not connected' })
+  try {
+    await session.sock.rejectCall(callId, from + '@s.whatsapp.net')
+    res.json({ ok: true })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
 })
 
 // Send typing presence to a contact (composing / paused)

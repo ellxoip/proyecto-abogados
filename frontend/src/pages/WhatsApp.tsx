@@ -361,11 +361,14 @@ export default function WhatsApp() {
   // Keep ref in sync with state (needed for SSE callbacks which close over stale state)
   selectedConvRef.current = selectedConv
 
-  // Auto-select conversation when navigating from /pipeline?lead_id=X
+  // Auto-select conversation from ?lead_id=X or ?contact_id=X
   useEffect(() => {
+    if (autoSelectRef.current || conversations.length === 0) return
     const leadId = searchParams.get('lead_id')
-    if (!leadId || autoSelectRef.current || conversations.length === 0) return
-    const target = conversations.find(c => c.lead_id === parseInt(leadId))
+    const contactId = searchParams.get('contact_id')
+    let target = null
+    if (leadId) target = conversations.find(c => c.lead_id === parseInt(leadId)) || null
+    if (!target && contactId) target = conversations.find(c => c.contact.id === parseInt(contactId)) || null
     if (target) {
       autoSelectRef.current = true
       setSelectedConv(target)
@@ -416,17 +419,19 @@ export default function WhatsApp() {
       if (evt.type === 'new_message') {
         const msg = evt.message
         const conv = selectedConvRef.current
-        // If this message belongs to the open conversation, append it immediately
         if (conv && msg.contact_id === conv.contact.id) {
           setMessages(prev => {
-            if (prev.some((m: any) => m.id === msg.id)) return prev
+            const idx = prev.findIndex((m: any) => m.id === msg.id)
+            if (idx !== -1) {
+              const updated = [...prev]
+              updated[idx] = { ...prev[idx], ...msg }
+              return updated
+            }
             return [...prev, msg]
           })
         } else {
-          // New message in another conversation — play sound notification
           playMessageSound()
         }
-        // Always refresh conversations list to update last message & unread count
         loadConvsRef.current()
         return
       }
@@ -1034,7 +1039,7 @@ export default function WhatsApp() {
                                 }}>
                                 <MsgContent m={m} />
                                 <div className="flex items-center justify-end gap-1 mt-1" style={{minHeight:16}}>
-                                  {isOut && m.status === 'logged' && (
+                                  {isOut && m.status === 'logged' && m.id > 0 && (
                                     <button
                                       onClick={() => handleRetryMsg(m)}
                                       title="No enviado — haz clic para reintentar"

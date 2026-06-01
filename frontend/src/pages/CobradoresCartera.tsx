@@ -1,15 +1,19 @@
-import { useState, useEffect, useRef } from 'react'
-import { Search, X, User, DollarSign, Building2, Phone, FileText, ChevronDown, StickyNote, Send, MessageSquare, Smartphone, RefreshCw, ExternalLink, Paperclip, Mic, Square, Clock, Check, CheckCheck, Trash2, Pencil } from 'lucide-react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
+import { Search, X, User, DollarSign, Building2, Phone, FileText, ChevronDown, StickyNote, Send, MessageSquare, Smartphone, RefreshCw, ExternalLink, Paperclip, Mic, Square, Clock, Check, CheckCheck, Trash2, Pencil, CheckCircle, RotateCcw, ChevronRight, Mail } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import {
   getCobradorLeads, updateCobradorStage, updateCobradorNotes, updateCobradorMontoPagado,
   getAllWhatsAppConfigs, getWhatsAppMessages, sendWhatsAppMessage, sendWhatsAppMedia,
-  markMessagesRead, deleteWhatsAppMessage, editWhatsAppMessage, sendTypingPresence,
-  retryWhatsAppMessage, syncCobradorLeads, getCobradorPortalUrl,
+  markMessagesRead, deleteWhatsAppMessage, editWhatsAppMessage,
+  getCobradorPortalUrl, markCobradorLeadSeen, markCobradorContactado, unmarkCobradorContactado, sendCobradorEmail,
+  getGmailStatus, getGmailAuthUrl, disconnectGmail,
 } from '../api'
-import { API_BASE_URL } from '../api/client'
+import { apiUrl } from '../api/client'
 import { useAuthStore } from '../store/auth'
+import { format, isToday, isYesterday } from 'date-fns'
+import { es } from 'date-fns/locale'
+import { parseDate as parseAsUTC } from '../utils/dates'
 
 interface CobradorLead {
   id: number
@@ -35,11 +39,15 @@ interface CobradorLead {
   descripcion?: string | null
   stage: string
   notes?: string | null
+  is_new?: boolean
+  is_contactado?: boolean
+  contactado_at?: string | null
   created_at?: string
   contact?: { id: number; name: string; phone: string; email: string | null } | null
 }
 
 const STAGES: Record<string, { label: string; color: string; dot: string }> = {
+  pendiente_moroso:  { label: 'Pendiente Moroso',  color: 'rgba(139,92,246,0.15)',  dot: '#8B5CF6' },
   lead_moroso:       { label: 'Lead Moroso',       color: 'rgba(239,68,68,0.15)',   dot: '#EF4444' },
   pago_comprometido: { label: 'Pago Comprometido', color: 'rgba(245,158,11,0.15)',  dot: '#F59E0B' },
   pagado:            { label: 'Pagado',             color: 'rgba(16,185,129,0.15)',  dot: '#10B981' },
@@ -63,9 +71,9 @@ function StageBadge({ stage }: { stage: string }) {
 function InfoRow({ label, value }: { label: string; value?: string | null }) {
   if (!value) return null
   return (
-    <div className="flex items-start justify-between py-2 gap-4" style={{ borderBottom: '1px solid var(--border)' }}>
-      <dt className="text-xs font-medium flex-shrink-0 w-28" style={{ color: 'var(--text-muted)' }}>{label}</dt>
-      <dd className="text-sm font-semibold text-right break-all" style={{ color: 'var(--text)' }}>{value}</dd>
+    <div className="flex items-start justify-between py-2 gap-4 border-b border-white/[0.06]">
+      <dt className="text-xs font-medium flex-shrink-0 w-28 text-white/45">{label}</dt>
+      <dd className="text-sm font-semibold text-right break-all text-white/85">{value}</dd>
     </div>
   )
 }
@@ -122,13 +130,30 @@ function StageSelector({ lead, onUpdate }: { lead: CobradorLead; onUpdate: (l: C
   )
 }
 
-// ── Chat helpers ──────────────────────────────────────────────────────────────
+// ── Chat helpers (identical to Leads.tsx) ─────────────────────────────────────
+
+const URL_REGEX = /(https?:\/\/[^\s<>"'`]+[^\s<>"'`.,;:!?)\]])/g
+function renderLinkified(text: string, linkClass: string): React.ReactNode[] {
+  if (!text) return []
+  const parts: React.ReactNode[] = []
+  let lastIndex = 0
+  let match: RegExpExecArray | null
+  URL_REGEX.lastIndex = 0
+  while ((match = URL_REGEX.exec(text)) !== null) {
+    if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index))
+    const href = match[0]
+    parts.push(<a key={`url-${match.index}`} href={href} target="_blank" rel="noreferrer" className={linkClass}>{href}</a>)
+    lastIndex = match.index + href.length
+  }
+  if (lastIndex < text.length) parts.push(text.slice(lastIndex))
+  return parts
+}
 
 function formatRecSecs(s: number) {
-  const m = Math.floor(s / 60)
-  const sec = s % 60
-  return `${m}:${sec.toString().padStart(2, '0')}`
+  return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`
 }
+
+const TICK_LABEL: Record<string, string> = { logged: 'Pendiente', sent: 'Enviado', delivered: 'Entregado', read: 'Leído', failed: 'Error' }
 
 const WA_TICK_LABEL: Record<string, string> = { logged: 'Pendiente', sent: 'Enviado', delivered: 'Entregado', read: 'Leído', failed: 'Error' }
 function WaTicks({ status }: { status: string }) {
@@ -212,145 +237,204 @@ function ChatMsgMenu({ x, y, msg, onClose, onDelete, onEdit, onRetry }: {
   )
 }
 
+// ── WA Audio Player (identical to Leads.tsx) ──────────────────────────────────
+
+function WaAudioPlayer({ src }: { src: string }) {
+  const audioRef = useRef<HTMLAudioElement>(null)
+  const [playing, setPlaying] = useState(false)
+  const [progress, setProgress] = useState(0)
+  const [duration, setDuration] = useState(0)
+  const [currentTime, setCurrentTime] = useState(0)
+  const toggle = () => { const a = audioRef.current; if (!a) return; playing ? a.pause() : a.play(); setPlaying(!playing) }
+  const fmtTime = (s: number) => { if (!isFinite(s) || isNaN(s)) return '0:00'; return `${Math.floor(s/60)}:${Math.floor(s%60).toString().padStart(2,'0')}` }
+  const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => { const a = audioRef.current; if (!a || !duration) return; const rect = e.currentTarget.getBoundingClientRect(); a.currentTime = ((e.clientX - rect.left) / rect.width) * duration }
+  return (
+    <div className="flex items-center gap-2.5 py-1" style={{ minWidth:200, maxWidth:240 }}>
+      <audio ref={audioRef} src={src}
+        onTimeUpdate={e => { const a = e.currentTarget; setCurrentTime(a.currentTime); setProgress(a.duration ? (a.currentTime/a.duration)*100 : 0) }}
+        onLoadedMetadata={e => setDuration(e.currentTarget.duration)}
+        onEnded={() => { setPlaying(false); setProgress(0); setCurrentTime(0) }} />
+      <button onClick={toggle} className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ background:'#25d366', color:'#fff' }}>
+        {playing ? <Square size={12} fill="white" /> : <svg width="12" height="12" viewBox="0 0 12 12" fill="white"><polygon points="2,1 11,6 2,11" /></svg>}
+      </button>
+      <div className="flex-1 flex flex-col gap-1">
+        <div className="relative h-1.5 rounded-full cursor-pointer overflow-hidden" style={{ background:'rgba(17,27,33,0.15)' }} onClick={handleSeek}>
+          <div className="absolute left-0 top-0 h-full rounded-full" style={{ width:`${progress}%`, background:'#25d366' }} />
+        </div>
+        <span style={{ fontSize:10, color:'rgba(17,27,33,0.5)' }}>{playing || currentTime > 0 ? fmtTime(currentTime) : fmtTime(duration)}</span>
+      </div>
+      <Mic size={14} style={{ color:'rgba(17,27,33,0.4)', flexShrink:0 }} />
+    </div>
+  )
+}
+
+function WaChatMsgContent({ m }: { m: any }) {
+  const type = m.message_type || 'text'
+  const url = m.media_url || null
+  if (!m.content && !url) return null
+  if (url && (type === 'image' || /\.(jpg|jpeg|png|webp|gif)$/i.test(url))) {
+    return (
+      <a href={url} target="_blank" rel="noreferrer" className="block">
+        <img src={url} alt="imagen" className="rounded-xl max-w-[220px] max-h-[220px] object-cover cursor-zoom-in" />
+        {m.content && m.content !== '[Imagen]' && !/\.(jpg|jpeg|png|gif|webp|mp4|webm|mov|ogg|mp3|m4a|aac|opus|pdf|doc|docx|xls|xlsx)$/i.test(m.content) && (
+          <p className="mt-1 text-[13px] leading-relaxed whitespace-pre-wrap" style={{ color:'#111b21' }}>{m.content}</p>
+        )}
+      </a>
+    )
+  }
+  if (url && (type === 'audio' || /\.(ogg|mp3|m4a|aac|opus|webm)$/i.test(url))) return <WaAudioPlayer src={url} />
+  if (url && (type === 'video' || /\.(mp4|webm|mov)$/i.test(url))) return <video controls src={url} className="rounded-xl max-w-[220px] max-h-[180px]" />
+  if (url && type === 'document') {
+    const fname = url.split('/').pop() || 'archivo'
+    return (
+      <a href={url} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-sm underline underline-offset-2" style={{ color:'#111b21' }}>
+        <FileText size={13} className="flex-shrink-0" />
+        <span className="truncate max-w-[180px]">{m.content || fname}</span>
+      </a>
+    )
+  }
+  return <p className="leading-relaxed whitespace-pre-wrap text-[13px]" style={{ color:'#111b21', wordBreak:'break-word', overflowWrap:'anywhere' }}>{renderLinkified(m.content, 'underline underline-offset-2 text-[#027eb5] hover:text-[#015d87]')}</p>
+}
+
 // ── Chat Tab ──────────────────────────────────────────────────────────────────
 
 function ChatTab({ lead }: { lead: CobradorLead }) {
   const { user } = useAuthStore()
-  const [messages, setMessages]     = useState<any[]>([])
-  const [configs, setConfigs]       = useState<any[]>([])
-  const [configId, setConfigId]     = useState('')
-  const [msgText, setMsgText]       = useState('')
-  const [sending, setSending]       = useState(false)
-  const [loading, setLoading]       = useState(true)
-  const [loadingUrl, setLoadingUrl] = useState(false)
+  const [messages, setMessages]         = useState<any[]>([])
+  const [configs, setConfigs]           = useState<any[]>([])
+  const [selectedConfigId, setSelectedConfigId] = useState('')
+  const [msgText, setMsgText]           = useState('')
+  const [sending, setSending]           = useState(false)
+  const [loadingMsgs, setLoadingMsgs]   = useState(true)
+  const [loadingUrl, setLoadingUrl]     = useState(false)
   const [mediaFile, setMediaFile]       = useState<File | null>(null)
   const [mediaPreview, setMediaPreview] = useState<string | null>(null)
   const [isRecording, setIsRecording]   = useState(false)
+  const [micBusy, setMicBusy]           = useState(false)
   const [recordSecs, setRecordSecs]     = useState(0)
-  const [ctxMenu, setCtxMenu]   = useState<{ x: number; y: number; msg: any } | null>(null)
-  const [editingMsg, setEditingMsg] = useState<any | null>(null)
-  const [editText, setEditText] = useState('')
+  const [ctxMenu, setCtxMenu]           = useState<{ x: number; y: number; msg: any } | null>(null)
+  const [editingMsg, setEditingMsg]     = useState<any | null>(null)
+  const [editText, setEditText]         = useState('')
 
   const endRef           = useRef<HTMLDivElement>(null)
   const fileInputRef     = useRef<HTMLInputElement>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioChunksRef   = useRef<Blob[]>([])
   const recordTimerRef   = useRef<ReturnType<typeof setInterval> | null>(null)
-  const typingTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pollRef          = useRef<ReturnType<typeof setInterval> | null>(null)
   const sseRef           = useRef<EventSource | null>(null)
   const sseReconnectRef  = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const sseWatchdogRef   = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const loadMsgsRef      = useRef<() => void>(() => {})
+
+  const configId = selectedConfigId || configs[0]?.id?.toString() || ''
 
   useEffect(() => {
     getAllWhatsAppConfigs().then((all: any[]) => {
-      const cobradorsOwn = all.filter((c: any) => c.owner_user_id === user?.id)
-      const list = cobradorsOwn.length > 0 ? cobradorsOwn : all.filter((c: any) => c.is_active)
+      const list = all.filter((c: any) => c.is_active !== false)
       setConfigs(list)
-      if (list.length > 0) setConfigId(list[0].id.toString())
+      if (list.length > 0) setSelectedConfigId(list[0].id.toString())
     }).catch(() => {})
   }, [user?.id])
 
-  const loadMessages = () => {
-    if (!lead.contact_id) { setLoading(false); return }
-    getWhatsAppMessages({ contact_id: lead.contact_id })
-      .then((data: any[]) => { setMessages(data.slice().reverse()); setLoading(false) })
-      .catch(() => setLoading(false))
+  const loadMessages = async () => {
+    if (!lead.contact_id) { setLoadingMsgs(false); return }
+    try {
+      const data = await getWhatsAppMessages({ contact_id: lead.contact_id })
+      setMessages(data.slice().reverse())
+    } catch { /* silent */ }
+    finally { setLoadingMsgs(false) }
   }
-  loadMsgsRef.current = loadMessages
 
   useEffect(() => {
-    if (!lead.contact_id) { setLoading(false); return }
-    setLoading(true)
+    if (!lead.contact_id) { setLoadingMsgs(false); return }
+    setLoadingMsgs(true)
     loadMessages()
     markMessagesRead(lead.contact_id).catch(() => {})
 
-    const token = localStorage.getItem('token')
-    if (token) {
-      const connectSSE = () => {
-        if (sseRef.current) { sseRef.current.close(); sseRef.current = null }
-        const es = new EventSource(`${API_BASE_URL}/api/whatsapp/stream?token=${encodeURIComponent(token)}`)
-        sseRef.current = es
-        const resetWatchdog = () => {
-          if (sseWatchdogRef.current) clearTimeout(sseWatchdogRef.current)
-          sseWatchdogRef.current = setTimeout(() => {
-            es.close(); sseRef.current = null
-            loadMsgsRef.current()
-            sseReconnectRef.current = setTimeout(connectSSE, 200)
-          }, 25000)
-        }
-        resetWatchdog()
-        es.onmessage = (e) => {
-          resetWatchdog()
-          let evt: any
-          try { evt = JSON.parse(e.data) } catch { return }
-          if (evt.type === 'connected' || evt.type === 'keepalive') return
-          if (evt.type === 'new_message') {
-            const msg = evt.message
-            if (msg.contact_id === lead.contact_id) {
-              setMessages(prev => {
-                if (prev.some((m: any) => m.id === msg.id)) return prev
-                return [...prev, msg]
-              })
-              markMessagesRead(lead.contact_id!).catch(() => {})
-            }
-          }
-          if (evt.type === 'status_update') {
-            setMessages(prev => prev.map((m: any) => m.id === evt.db_id ? { ...m, status: evt.status } : m))
-          }
-          if (evt.type === 'refresh') loadMsgsRef.current()
-        }
-        es.onerror = () => {
-          if (sseWatchdogRef.current) clearTimeout(sseWatchdogRef.current)
-          es.close(); sseRef.current = null
-          loadMsgsRef.current()
-          sseReconnectRef.current = setTimeout(connectSSE, 1000)
-        }
-      }
-      connectSSE()
-    }
-
-    pollRef.current = setInterval(() => loadMsgsRef.current(), 30000)
-    return () => {
+    const contactId = lead.contact_id
+    const connectSSE = () => {
+      const token = localStorage.getItem('token')
+      if (!token) return
       if (sseRef.current) sseRef.current.close()
       if (sseReconnectRef.current) clearTimeout(sseReconnectRef.current)
-      if (sseWatchdogRef.current) clearTimeout(sseWatchdogRef.current)
+      const url = apiUrl(`/api/whatsapp/stream?token=${encodeURIComponent(token)}`)
+      const es = new EventSource(url)
+      sseRef.current = es
+      let wd: ReturnType<typeof setTimeout> | null = null
+      const resetWd = () => {
+        if (wd) clearTimeout(wd)
+        wd = setTimeout(() => {
+          es.close(); sseRef.current = null
+          getWhatsAppMessages({ contact_id: contactId }).then(data => setMessages(data.slice().reverse())).catch(() => {})
+          sseReconnectRef.current = setTimeout(connectSSE, 200)
+        }, 25000)
+      }
+      resetWd()
+      es.onmessage = (e) => {
+        resetWd()
+        let evt: any
+        try { evt = JSON.parse(e.data) } catch { return }
+        if (evt.type === 'new_message' && evt.message?.contact_id === contactId) {
+          setMessages(prev => {
+            const idx = prev.findIndex((m: any) => m.id === evt.message.id)
+            if (idx !== -1) { const u = [...prev]; u[idx] = { ...prev[idx], ...evt.message }; return u }
+            return [...prev, evt.message]
+          })
+        }
+        if (evt.type === 'status_update') {
+          setMessages(prev => prev.map((m: any) => m.id === evt.db_id ? { ...m, status: evt.status } : m))
+        }
+        if (evt.type === 'refresh') {
+          getWhatsAppMessages({ contact_id: contactId }).then(data => setMessages(data.slice().reverse())).catch(() => {})
+        }
+      }
+      es.onerror = () => {
+        if (wd) clearTimeout(wd)
+        es.close(); sseRef.current = null
+        getWhatsAppMessages({ contact_id: contactId }).then(data => setMessages(data.slice().reverse())).catch(() => {})
+        sseReconnectRef.current = setTimeout(connectSSE, 1000)
+      }
+    }
+    connectSSE()
+
+    pollRef.current = setInterval(() => {
+      getWhatsAppMessages({ contact_id: contactId }).then(data => setMessages(data.slice().reverse())).catch(() => {})
+    }, 8000)
+
+    return () => {
+      if (sseRef.current) { sseRef.current.close(); sseRef.current = null }
+      if (sseReconnectRef.current) clearTimeout(sseReconnectRef.current)
       if (pollRef.current) clearInterval(pollRef.current)
       if (recordTimerRef.current) clearInterval(recordTimerRef.current)
     }
   }, [lead.contact_id])
 
-  useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
 
-  const clearMedia = () => {
+  const clearMedia = useCallback(() => {
     if (mediaPreview) URL.revokeObjectURL(mediaPreview)
     setMediaFile(null); setMediaPreview(null)
     if (fileInputRef.current) fileInputRef.current.value = ''
-  }
+  }, [mediaPreview])
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
     if (file.size > 16 * 1024 * 1024) { toast.error('El archivo no puede superar 16 MB'); return }
-    clearMedia()
-    setMediaFile(file)
-    setMediaPreview(URL.createObjectURL(file))
+    clearMedia(); setMediaFile(file); setMediaPreview(URL.createObjectURL(file))
   }
 
   const toggleRecording = async () => {
     if (isRecording) {
       if (mediaRecorderRef.current) mediaRecorderRef.current.stop()
       if (recordTimerRef.current) clearInterval(recordTimerRef.current)
-      setIsRecording(false)
-      return
+      setIsRecording(false); return
     }
+    if (micBusy) return
+    setMicBusy(true)
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       audioChunksRef.current = []
-      const mimeTypes = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/ogg', 'audio/mp4']
+      const mimeTypes = ['audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus','audio/ogg','audio/mp4']
       const mimeType = mimeTypes.find(t => MediaRecorder.isTypeSupported(t)) || ''
       const ext = mimeType.startsWith('audio/webm') ? 'webm' : mimeType.startsWith('audio/mp4') ? 'mp4' : 'ogg'
       const mr = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
@@ -361,38 +445,19 @@ function ChatTab({ lead }: { lead: CobradorLead }) {
         const actualMime = mr.mimeType || mimeType || 'audio/ogg'
         const blob = new Blob(audioChunksRef.current, { type: actualMime })
         const file = new File([blob], `audio_${Date.now()}.${ext}`, { type: actualMime })
-        clearMedia()
-        setMediaFile(file)
-        setMediaPreview(URL.createObjectURL(blob))
-        setRecordSecs(0)
+        clearMedia(); setMediaFile(file); setMediaPreview(URL.createObjectURL(blob)); setRecordSecs(0)
       }
-      mr.start(250)
-      setIsRecording(true)
-      setRecordSecs(0)
+      mr.start(250); setIsRecording(true); setRecordSecs(0)
       recordTimerRef.current = setInterval(() => setRecordSecs(s => s + 1), 1000)
-    } catch { toast.error('No se pudo acceder al micrófono') }
+    } catch { toast.error('Permite el acceso al micrófono en tu navegador') }
+    finally { setMicBusy(false) }
   }
 
   const handleSend = async () => {
-    if (!lead.contact_id || !configId) return
+    if (!lead.contact_id || !configId) { toast.error('Sin número WhatsApp configurado'); return }
     const hasMedia = !!mediaFile
     const hasText = !!msgText.trim()
-    if (!hasMedia && !hasText) return
-
-    if (typingTimerRef.current) clearTimeout(typingTimerRef.current)
-    sendTypingPresence(parseInt(configId), lead.contact_id, false).catch(() => {})
-
-    const optimisticText = hasMedia ? '' : msgText.trim()
-    const optimisticId = Date.now() * -1
-    if (!hasMedia && optimisticText) {
-      setMessages(prev => [...prev, {
-        id: optimisticId, contact_id: lead.contact_id,
-        direction: 'out', message_type: 'text', content: optimisticText,
-        status: 'logged', created_at: new Date().toISOString(),
-      }])
-      setMsgText('')
-    }
-
+    if (!hasMedia && !hasText) { toast.error('Escribe un mensaje o adjunta un archivo'); return }
     setSending(true)
     try {
       if (hasMedia) {
@@ -405,25 +470,17 @@ function ChatTab({ lead }: { lead: CobradorLead }) {
         if (result?.status === 'logged') toast.error('WhatsApp no conectado — archivo guardado sin enviar')
         clearMedia(); setMsgText('')
       } else {
-        const result = await sendWhatsAppMessage({
-          contact_id: lead.contact_id,
-          whatsapp_config_id: parseInt(configId),
-          message: optimisticText,
-        })
+        const result = await sendWhatsAppMessage({ contact_id: lead.contact_id, whatsapp_config_id: parseInt(configId), message: msgText.trim() })
         if (result?.status === 'logged') toast.error('WhatsApp no conectado — mensaje guardado sin enviar')
-        if (result?.id) {
-          setMessages(prev => prev.map(m => m.id === optimisticId ? { ...result, direction: 'out' } : m))
-        } else {
-          setMessages(prev => prev.filter(m => m.id !== optimisticId))
-        }
+        setMsgText('')
       }
       loadMessages()
-    } catch { toast.error('Error al enviar') }
+    } catch { toast.error('Error enviando mensaje') }
     finally { setSending(false) }
   }
 
   const handleDeleteMsg = async (id: number) => {
-    try { await deleteWhatsAppMessage(id); setMessages(prev => prev.filter(m => m.id !== id)) }
+    try { await deleteWhatsAppMessage(id); setMessages(prev => prev.filter(m => m.id !== id)); setCtxMenu(null) }
     catch { toast.error('Error al eliminar') }
   }
 
@@ -436,316 +493,222 @@ function ChatTab({ lead }: { lead: CobradorLead }) {
     } catch { toast.error('Error al editar') }
   }
 
-  const handleRetryMsg = async (msg: any) => {
-    setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, status: 'sent' } : m))
-    try {
-      const updated = await retryWhatsAppMessage(msg.id)
-      setMessages(prev => prev.map(m => m.id === msg.id ? updated : m))
-      if (updated.status === 'logged') {
-        setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, status: 'logged' } : m))
-        toast.error('WhatsApp no conectado — reintenta más tarde')
-      }
-    } catch {
-      setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, status: 'logged' } : m))
-      toast.error('Error al reenviar')
-    }
-  }
-
   const isImage = mediaFile?.type.startsWith('image/')
   const isAudio = mediaFile?.type.startsWith('audio/')
 
   if (!lead.contact_id) {
     return (
       <div className="flex flex-col items-center justify-center h-full p-6 text-center gap-3">
-        <div className="w-14 h-14 rounded-2xl flex items-center justify-center" style={{ background: 'rgba(37,211,102,0.10)', border: '1px solid rgba(37,211,102,0.25)' }}>
-          <MessageSquare size={24} style={{ color: '#25D366' }} />
-        </div>
-        <div>
-          <p className="text-sm font-bold" style={{ color: 'var(--text)' }}>Sin contacto de WhatsApp</p>
-          <p className="text-xs mt-1" style={{ color: 'var(--text-muted)', lineHeight: 1.5 }}>
-            Este cliente aún no tiene un contacto vinculado.<br />
-            {lead.telefono && <span>Teléfono: <strong>{lead.telefono}</strong></span>}
-          </p>
-        </div>
-      </div>
-    )
-  }
-
-  if (!loading && configs.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full p-6 text-center gap-3">
-        <div className="w-14 h-14 rounded-2xl flex items-center justify-center" style={{ background: 'rgba(67,97,238,0.10)', border: '1px solid rgba(67,97,238,0.20)' }}>
-          <Smartphone size={24} style={{ color: '#4361ee' }} />
-        </div>
-        <div>
-          <p className="text-sm font-bold" style={{ color: 'var(--text)' }}>Conecta tu WhatsApp</p>
-          <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Para chatear debes vincular tu número primero.</p>
-        </div>
-        <Link to="/mis-whatsapp" className="px-4 py-2 rounded-xl text-sm font-semibold"
-          style={{ background: 'rgba(67,97,238,0.10)', color: '#4361ee', border: '1px solid rgba(67,97,238,0.25)' }}>
-          Ir a Mis WhatsApp
-        </Link>
+        <MessageSquare size={28} style={{ color: '#25D366', opacity: 0.6 }} />
+        <p className="text-sm font-bold" style={{ color: 'var(--text)' }}>Sin contacto vinculado</p>
+        {lead.telefono && <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Tel: {lead.telefono}</p>}
       </div>
     )
   }
 
   return (
     <div className="flex flex-col h-full">
-      {/* Chat header */}
-      <div className="flex items-center justify-between px-3 py-2 flex-shrink-0"
-        style={{ borderBottom: '1px solid rgba(26,32,53,0.10)', background: '#f0f2f5' }}>
-        <div className="flex items-center gap-2 min-w-0">
-          <div className="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0"
-            style={{ background: 'linear-gradient(135deg,#25D366 0%,#128C7E 100%)' }}>
-            {lead.nombre.charAt(0).toUpperCase()}
+      {/* Messages — WA background */}
+      <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 flex flex-col wa-chat-bg">
+        {messages.length === 0 ? (
+          <div className="flex-1 flex flex-col items-center justify-center" style={{ color:'rgba(17,27,33,0.40)' }}>
+            {loadingMsgs
+              ? <div className="w-5 h-5 border-2 rounded-full animate-spin mb-2" style={{ borderColor:'rgba(17,27,33,0.12)', borderTopColor:'#25d366' }} />
+              : <MessageSquare size={26} className="mb-2 opacity-40" />
+            }
+            <p className="text-xs">{loadingMsgs ? 'Cargando mensajes...' : 'Sin mensajes aún'}</p>
           </div>
-          <div className="min-w-0">
-            <p className="text-sm font-semibold truncate" style={{ color: '#1a2035' }}>{lead.nombre}</p>
-            {lead.telefono && <p className="text-[10px]" style={{ color: 'rgba(26,32,53,0.55)' }}>{lead.telefono}</p>}
-          </div>
-        </div>
-        <div className="flex items-center gap-1.5 flex-shrink-0">
-          {configs.length > 1 && (
-            <select className="text-[10px] rounded-lg border px-2 py-1 outline-none"
-              style={{ background: '#fff', border: '1px solid rgba(26,32,53,0.12)', color: '#1a2035' }}
-              value={configId} onChange={e => setConfigId(e.target.value)}>
-              {configs.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-          )}
-          {lead.telefono && (
-            <a href={`tel:${lead.telefono}`}
-              className="flex items-center justify-center w-8 h-8 rounded-full transition-colors hover:bg-green-100"
-              style={{ color: '#25D366' }}
-              title={`Llamar a ${lead.nombre}`}>
-              <Phone size={16} />
-            </a>
-          )}
-        </div>
-      </div>
-
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto min-h-0 flex flex-col"
-        style={{
-          backgroundColor: '#e5ddd5',
-          backgroundImage: "radial-gradient(circle, rgba(0,0,0,0.04) 1px, transparent 1px)",
-          backgroundSize: "20px 20px",
-        }}>
-        {loading && (
-          <div className="flex justify-center py-8">
-            <div className="w-5 h-5 border-2 rounded-full animate-spin" style={{ borderColor: 'rgba(0,0,0,0.1)', borderTopColor: '#25D366' }} />
-          </div>
-        )}
-        {!loading && messages.length === 0 && (
-          <div className="flex-1 flex flex-col items-center justify-center gap-2" style={{ color: 'rgba(26,32,53,0.40)' }}>
-            <MessageSquare size={28} style={{ opacity: 0.4 }} />
-            <p className="text-xs">Sin mensajes aún</p>
-          </div>
-        )}
-        {messages.length > 0 && (
+        ) : (
           <>
             <div className="flex-1" />
-            <div className="py-3 px-[3%] space-y-0.5">
-              {messages.map((msg: any) => {
-                const isOut = msg.direction === 'out'
-                const bubbleBg = isOut ? '#dcf8c6' : '#ffffff'
-                return (
-                  <div key={msg.id} className={`flex ${isOut ? 'justify-end' : 'justify-start'} mb-0.5 group`}>
-                    <div className="relative max-w-[78%]"
-                      style={{ marginRight: isOut ? 8 : 0, marginLeft: isOut ? 0 : 8 }}>
-                      <div style={{
-                        position: 'absolute', bottom: 0,
-                        ...(isOut ? { right: -8 } : { left: -8 }),
-                        width: 8, height: 13,
-                        backgroundColor: bubbleBg,
-                        clipPath: isOut ? 'polygon(0 0, 0 100%, 100% 100%)' : 'polygon(100% 0, 0 100%, 100% 100%)',
-                      }} />
-                      <div
-                        onContextMenu={e => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY, msg }) }}
-                        style={{
-                          backgroundColor: bubbleBg,
-                          borderRadius: isOut ? '7.5px 7.5px 0 7.5px' : '7.5px 7.5px 7.5px 0',
-                          padding: '6px 9px 8px 9px',
-                          boxShadow: '0 1px 2px rgba(0,0,0,0.12)',
-                          color: '#1a2035',
-                          position: 'relative', zIndex: 1, cursor: 'default',
-                          wordBreak: 'break-word',
-                          border: '1px solid rgba(0,0,0,0.05)',
-                        }}>
-                        <ChatMsgContent m={msg} />
-                        <div className="flex items-center justify-end gap-1 mt-0.5">
-                          {isOut && msg.status === 'logged' && (
-                            <button onClick={() => handleRetryMsg(msg)} title="No enviado — clic para reintentar"
-                              style={{ fontSize:10, color:'#d97706', cursor:'pointer' }}>
-                              ↺ No enviado
-                            </button>
-                          )}
-                          <span style={{ color:'rgba(26,32,53,0.45)', fontSize:11, whiteSpace:'nowrap' }}>
-                            {msg.created_at ? new Date(msg.created_at).toLocaleTimeString('es-CL', { hour:'2-digit', minute:'2-digit' }) : ''}
-                          </span>
-                          {isOut && <WaTicks status={msg.status} />}
-                        </div>
+            <div className="py-3 px-3">
+              {(() => {
+                const items: React.ReactNode[] = []
+                let lastDateStr = ''
+                messages.filter((m: any) => m.content || m.media_url).forEach((m: any) => {
+                  const d = parseAsUTC(m.created_at)
+                  const dateStr = format(d, 'yyyy-MM-dd')
+                  if (dateStr !== lastDateStr) {
+                    lastDateStr = dateStr
+                    const label = isToday(d) ? 'Hoy' : isYesterday(d) ? 'Ayer' : format(d, "d 'de' MMMM yyyy", { locale: es })
+                    items.push(
+                      <div key={`sep-${dateStr}`} className="flex items-center justify-center my-3">
+                        <span className="text-[11px] font-medium px-3 py-1 rounded-full"
+                          style={{ background:'#ffffff', color:'rgba(17,27,33,0.6)', boxShadow:'0 1px 0.5px rgba(11,20,26,0.13)' }}>
+                          {label}
+                        </span>
                       </div>
-                      <button onClick={e => setCtxMenu({ x: e.clientX, y: e.clientY, msg })}
-                        className="absolute top-1 opacity-0 group-hover:opacity-100 transition-opacity rounded-full p-0.5"
-                        style={{ ...(isOut ? { left: -20 } : { right: -20 }), backgroundColor: bubbleBg, color:'rgba(26,32,53,0.50)' }}>
-                        ▾
-                      </button>
+                    )
+                  }
+                  const out = m.direction === 'out'
+                  const WA_OUT = '#d9fdd3'
+                  const WA_IN = '#ffffff'
+                  items.push(
+                    <div key={m.id} className={`flex ${out ? 'justify-end' : 'justify-start'} mb-[3px] group`}>
+                      <div className={`relative max-w-[78%] ${out ? 'wa-bubble-out-wrap' : 'wa-bubble-in-wrap'}`}
+                        style={{ marginRight: out ? 10 : 0, marginLeft: out ? 0 : 10 }}>
+                        <div
+                          onContextMenu={e => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY, msg: m }) }}
+                          style={{
+                            backgroundColor: out ? WA_OUT : WA_IN,
+                            borderRadius: out ? '7.5px 0px 7.5px 7.5px' : '0px 7.5px 7.5px 7.5px',
+                            padding:'6px 10px 5px 10px',
+                            boxShadow:'0 1px 0.5px rgba(11,20,26,0.13)',
+                            position:'relative', zIndex:1, cursor:'default',
+                          }}>
+                          <WaChatMsgContent m={m} />
+                          <div className="flex items-center justify-end gap-1" style={{ minHeight:15, marginTop:2 }}>
+                            <span style={{ color:'rgba(17,27,33,0.5)', fontSize:11, whiteSpace:'nowrap' }}>
+                              {format(parseAsUTC(m.created_at), 'HH:mm', { locale: es })}
+                            </span>
+                            {out && (
+                              <span title={TICK_LABEL[m.status] ?? 'Enviado'}>
+                                {m.status === 'failed' ? <span style={{ color:'#ef4444', fontWeight:'bold', fontSize:13 }}>!</span>
+                                  : m.status === 'logged' ? <Clock size={13} color="#8696a0" />
+                                  : m.status === 'read' ? <CheckCheck size={16} color="#53bdeb" strokeWidth={2.5} />
+                                  : m.status === 'delivered' ? <CheckCheck size={16} color="#8696a0" strokeWidth={2.5} />
+                                  : <Check size={16} color="#8696a0" strokeWidth={2.5} />}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <button onClick={e => setCtxMenu({ x: e.clientX, y: e.clientY, msg: m })}
+                          className="absolute top-1 opacity-0 group-hover:opacity-100 transition-opacity rounded-full p-0.5"
+                          style={{ ...(out ? { left:-20 } : { right:-20 }), background: out ? WA_OUT : WA_IN, fontSize:12, color:'rgba(17,27,33,0.45)' }}>
+                          ▾
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                )
-              })}
+                  )
+                })
+                return items
+              })()}
               <div ref={endRef} />
             </div>
           </>
         )}
       </div>
 
-      {/* Media preview bar */}
+      {/* Media preview */}
       {(mediaFile || isRecording) && (
-        <div className="px-3 py-2 flex items-center gap-3 flex-shrink-0"
-          style={{ background: '#f0f2f5', borderTop: '1px solid rgba(26,32,53,0.10)' }}>
+        <div className="px-4 py-2 flex items-center gap-3 flex-shrink-0" style={{ borderTop:'1px solid #e9edef', backgroundColor:'#f0f2f5' }}>
           {isRecording ? (
             <>
-              <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse flex-shrink-0" />
-              <span className="text-sm font-semibold text-red-500">{formatRecSecs(recordSecs)}</span>
-              <span className="text-xs" style={{ color:'rgba(26,32,53,0.55)' }}>Grabando audio...</span>
+              <span className="w-2 h-2 rounded-full animate-pulse flex-shrink-0" style={{ backgroundColor:'#ef4444' }} />
+              <span className="text-sm font-semibold" style={{ color:'#ef4444' }}>{formatRecSecs(recordSecs)}</span>
+              <span className="text-xs" style={{ color:'#54656f' }}>Grabando...</span>
             </>
           ) : isImage && mediaPreview ? (
             <>
-              <img src={mediaPreview} alt="preview" className="w-12 h-12 rounded-lg object-cover flex-shrink-0" />
-              <span className="text-xs truncate flex-1" style={{ color:'#1a2035' }}>{mediaFile!.name}</span>
+              <img src={mediaPreview} alt="preview" className="w-10 h-10 rounded-lg object-cover flex-shrink-0" />
+              <span className="text-xs truncate flex-1" style={{ color:'#54656f' }}>{mediaFile!.name}</span>
             </>
           ) : isAudio ? (
             <>
-              <Mic size={18} color="#8696a0" className="flex-shrink-0" />
+              <Mic size={16} style={{ color:'#54656f', flexShrink:0 }} />
               <audio controls src={mediaPreview!} className="h-8 flex-1" />
             </>
           ) : (
             <>
-              <FileText size={18} color="#8696a0" className="flex-shrink-0" />
-              <span className="text-xs truncate flex-1" style={{ color:'#1a2035' }}>{mediaFile!.name}</span>
+              <FileText size={16} style={{ color:'#54656f', flexShrink:0 }} />
+              <span className="text-xs truncate flex-1" style={{ color:'#54656f' }}>{mediaFile!.name}</span>
             </>
           )}
           {!isRecording && (
-            <button onClick={clearMedia} className="p-1 rounded-full hover:bg-gray-200 transition-colors flex-shrink-0">
-              <X size={15} style={{ color:'rgba(26,32,53,0.50)' }} />
+            <button onClick={clearMedia} className="p-1 rounded-full flex-shrink-0" style={{ color:'#54656f' }}>
+              <X size={13} />
             </button>
           )}
         </div>
       )}
 
-      {/* Quick action: portal URL */}
-      {lead.pagacuotas_cliente_id && (
-        <div className="px-3 py-1.5 flex-shrink-0"
-          style={{ background: 'rgba(37,211,102,0.05)', borderTop: '1px solid rgba(37,211,102,0.15)' }}>
-          <button
-            onClick={async () => {
-              setLoadingUrl(true)
-              try {
-                const r = await getCobradorPortalUrl(lead.id)
-                setMsgText(r.message)
-              } catch { toast.error('Error obteniendo enlace') }
-              finally { setLoadingUrl(false) }
-            }}
-            disabled={loadingUrl}
-            className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg w-full transition-all"
-            style={{ background: 'rgba(37,211,102,0.12)', color: '#16a34a', border: '1px solid rgba(37,211,102,0.25)' }}>
-            <ExternalLink size={11} />
-            {loadingUrl ? 'Cargando...' : 'Reenviar acceso PagaCuotas'}
-          </button>
-        </div>
-      )}
-
-      {/* Input bar */}
-      <div className="flex items-end gap-2 px-3 py-2 flex-shrink-0"
-        style={{ background: '#f0f2f5', borderTop: '1px solid rgba(26,32,53,0.10)' }}>
-        <input ref={fileInputRef} type="file"
-          accept="image/*,audio/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx"
+      {/* Input bar — identical to Leads.tsx */}
+      <div className="flex items-end gap-2 px-2 py-2 flex-shrink-0" style={{ backgroundColor:'#f0f2f5', borderTop:'1px solid #e9edef' }}>
+        <input ref={fileInputRef} type="file" accept="image/*,audio/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx"
           className="hidden" onChange={handleFileSelect} />
-        <button onClick={() => fileInputRef.current?.click()} disabled={isRecording}
-          className="p-2 rounded-full hover:bg-gray-200 transition-colors flex-shrink-0 disabled:opacity-30"
-          style={{ color:'rgba(26,32,53,0.55)' }} title="Adjuntar archivo">
-          <Paperclip size={20} />
+        <button onClick={() => fileInputRef.current?.click()} disabled={!configId || isRecording}
+          title="Adjuntar" className="p-2 rounded-full transition-colors flex-shrink-0 disabled:opacity-30"
+          style={{ color:'#54656f' }}>
+          <Paperclip size={22} />
         </button>
         <textarea
-          className="flex-1 resize-none text-sm outline-none"
-          style={{
-            backgroundColor: '#fff', color: '#1a2035',
-            borderRadius: 8, padding: '9px 12px',
-            minHeight: 42, maxHeight: 120,
-            border: '1px solid rgba(26,32,53,0.14)', lineHeight: '1.5',
-          }}
+          className="flex-1 resize-none text-sm outline-none rounded-xl px-4 py-2.5"
+          style={{ minHeight:42, maxHeight:100, lineHeight:'1.5', backgroundColor:'#ffffff', border:'none', color:'#111b21' }}
           rows={1}
+          disabled={!configId}
           value={msgText}
-          placeholder={mediaFile ? 'Añade un pie de foto (opcional)...' : 'Escribe un mensaje...'}
           onChange={e => {
             setMsgText(e.target.value)
             e.target.style.height = 'auto'
-            e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px'
-            if (lead.contact_id && configId) {
-              if (typingTimerRef.current) clearTimeout(typingTimerRef.current)
-              sendTypingPresence(parseInt(configId), lead.contact_id, true).catch(() => {})
-              typingTimerRef.current = setTimeout(() => {
-                sendTypingPresence(parseInt(configId), lead.contact_id!, false).catch(() => {})
-              }, 3000)
-            }
+            e.target.style.height = Math.min(e.target.scrollHeight, 100) + 'px'
           }}
+          placeholder={mediaFile ? 'Pie de foto (opcional)...' : configId ? 'Escribe un mensaje...' : 'Sin configuración WhatsApp'}
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
-          disabled={!configId}
         />
-        <button onClick={toggleRecording} disabled={!!mediaFile && !isRecording}
-          title={isRecording ? 'Detener grabación' : 'Grabar audio'}
-          className="p-2 rounded-full transition-colors flex-shrink-0 disabled:opacity-30"
-          style={{ backgroundColor: isRecording ? '#ef4444' : 'transparent', color: isRecording ? '#fff' : 'rgba(26,32,53,0.55)' }}>
-          {isRecording ? <Square size={20} /> : <Mic size={20} />}
-        </button>
-        <button onClick={handleSend}
-          disabled={sending || isRecording || (!msgText.trim() && !mediaFile) || !configId}
-          className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 transition-all disabled:opacity-40"
-          style={{ background: '#25D366', color: '#fff' }}>
-          {sending
-            ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-            : <Send size={18} />}
-        </button>
+        {msgText.trim() || mediaFile ? (
+          <button onClick={handleSend} disabled={sending || isRecording || !configId}
+            className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 disabled:opacity-30"
+            style={{ backgroundColor:'#00a884', color:'#ffffff' }}>
+            {sending ? <RefreshCw size={18} className="animate-spin" /> : <Send size={18} />}
+          </button>
+        ) : (
+          <button onClick={toggleRecording} disabled={!configId || micBusy}
+            title={isRecording ? 'Detener grabación' : 'Grabar audio'}
+            className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 disabled:opacity-30"
+            style={{ backgroundColor: isRecording ? '#ef4444' : '#00a884', color:'#ffffff' }}>
+            {isRecording ? <Square size={18} /> : <Mic size={18} />}
+          </button>
+        )}
       </div>
 
+      {/* Context menu */}
       {ctxMenu && (
-        <ChatMsgMenu x={ctxMenu.x} y={ctxMenu.y} msg={ctxMenu.msg}
-          onClose={() => setCtxMenu(null)}
-          onDelete={handleDeleteMsg}
-          onEdit={msg => { setEditingMsg(msg); setEditText(msg.content) }}
-          onRetry={handleRetryMsg}
-        />
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setCtxMenu(null)} />
+          <div className="fixed z-50 rounded-xl shadow-2xl overflow-hidden"
+            style={{ top:ctxMenu.y, left:ctxMenu.x, background:'#fff', border:'1px solid rgba(26,32,53,0.12)', minWidth:160 }}>
+            {ctxMenu.msg.direction === 'out' && ctxMenu.msg.message_type === 'text' && (
+              <button onClick={() => { setEditingMsg(ctxMenu.msg); setEditText(ctxMenu.msg.content); setCtxMenu(null) }}
+                className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left hover:bg-gray-50"
+                style={{ color:'#111b21' }}>
+                <Pencil size={14} style={{ color:'#8696a0' }} /> Editar mensaje
+              </button>
+            )}
+            <button onClick={() => handleDeleteMsg(ctxMenu.msg.id)}
+              className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left hover:bg-red-50"
+              style={{ color:'#ef4444' }}>
+              <Trash2 size={14} style={{ color:'#ef4444' }} /> Eliminar mensaje
+            </button>
+          </div>
+        </>
       )}
 
+      {/* Edit modal */}
       {editingMsg && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-end justify-center z-50 pb-6 px-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden"
-            style={{ border:'1px solid rgba(26,32,53,0.10)' }}>
-            <div className="px-5 py-3.5 flex items-center justify-between"
-              style={{ borderBottom:'1px solid rgba(26,32,53,0.10)' }}>
-              <p className="font-semibold text-sm" style={{ color:'var(--text)' }}>Editar mensaje</p>
-              <button onClick={() => setEditingMsg(null)} className="p-1 rounded-full hover:bg-gray-100 transition-colors">
-                <X size={16} style={{ color:'rgba(26,32,53,0.50)' }} />
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden" style={{ border:'1px solid rgba(26,32,53,0.10)' }}>
+            <div className="px-5 py-3 flex items-center justify-between" style={{ borderBottom:'1px solid rgba(26,32,53,0.10)' }}>
+              <p className="font-semibold text-sm" style={{ color:'#111b21' }}>Editar mensaje</p>
+              <button onClick={() => setEditingMsg(null)} className="p-1 rounded-full hover:bg-gray-100">
+                <X size={15} style={{ color:'rgba(26,32,53,0.50)' }} />
               </button>
             </div>
             <div className="p-4">
               <textarea autoFocus className="w-full resize-none text-sm rounded-xl px-3 py-2.5 outline-none"
-                style={{ background:'rgba(26,32,53,0.04)', border:'1px solid rgba(26,32,53,0.12)', color:'var(--text)' }}
+                style={{ background:'rgba(26,32,53,0.04)', border:'1px solid rgba(26,32,53,0.12)', color:'#111b21' }}
                 rows={3} value={editText}
                 onChange={e => setEditText(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleEditMsg() } }}
               />
             </div>
-            <div className="px-4 pb-4 flex gap-3">
+            <div className="px-4 pb-4 flex gap-2">
               <button onClick={() => setEditingMsg(null)}
-                className="flex-1 py-2 rounded-xl text-sm transition-colors"
-                style={{ border:'1px solid rgba(26,32,53,0.12)', color:'rgba(26,32,53,0.60)' }}>
+                className="flex-1 py-2 rounded-xl text-sm border" style={{ color:'rgba(26,32,53,0.60)' }}>
                 Cancelar
               </button>
               <button onClick={handleEditMsg}
-                className="flex-1 py-2 rounded-xl text-sm font-semibold"
-                style={{ background:'#25D366', color:'#fff' }}>
+                className="flex-1 py-2 rounded-xl text-sm font-semibold text-white"
+                style={{ background:'#00a884' }}>
                 Guardar
               </button>
             </div>
@@ -763,15 +726,21 @@ function DetailPanel({ lead, onUpdate, onClose }: {
   onUpdate: (l: CobradorLead) => void
   onClose?: () => void
 }) {
-  const [activeTab, setActiveTab] = useState<'info' | 'chat' | 'notas'>('info')
+  const [activeTab, setActiveTab] = useState<'info' | 'chat' | 'notas' | 'correo'>('info')
   const [notes, setNotes] = useState(lead.notes ?? '')
-  const [montoPagado, setMontoPagado] = useState(String(lead.monto_pagado))
+  const [montoPagado, setMontoPagado] = useState(() => {
+    const pc = lead.monto_pagado === 0 && (lead.cuota_inicial ?? 0) > 0
+      ? lead.cuota_inicial! : (lead.proxima_cuota_monto ?? lead.monto_cuota ?? 0)
+    return String(lead.monto_pagado + pc)
+  })
   const [savingNotes, setSavingNotes] = useState(false)
   const [savingMonto, setSavingMonto] = useState(false)
 
   useEffect(() => {
+    const pc = lead.monto_pagado === 0 && (lead.cuota_inicial ?? 0) > 0
+      ? lead.cuota_inicial! : (lead.proxima_cuota_monto ?? lead.monto_cuota ?? 0)
     setNotes(lead.notes ?? '')
-    setMontoPagado(String(lead.monto_pagado))
+    setMontoPagado(String(lead.monto_pagado + pc))
   }, [lead.id, lead.notes, lead.monto_pagado])
 
   const handleSaveNotes = async () => {
@@ -795,47 +764,170 @@ function DetailPanel({ lead, onUpdate, onClose }: {
     finally { setSavingMonto(false) }
   }
 
+  const [advancingStage, setAdvancingStage] = useState(false)
+  const STAGE_ORDER = ['pendiente_moroso', 'lead_moroso', 'pago_comprometido', 'pagado']
+  const nextStage = STAGE_ORDER[STAGE_ORDER.indexOf(lead.stage) + 1] ?? null
+
+  const handleAdvanceStage = async () => {
+    if (!nextStage || advancingStage) return
+    setAdvancingStage(true)
+    try {
+      const updated = await updateCobradorStage(lead.id, nextStage)
+      onUpdate({ ...lead, ...updated })
+      toast.success(`Movido a ${STAGES[nextStage]?.label ?? nextStage}`)
+    } catch { toast.error('Error al avanzar etapa') }
+    finally { setAdvancingStage(false) }
+  }
+
+  const [gmailStatus, setGmailStatus] = useState<{ connected: boolean; gmail_email: string | null; configured: boolean } | null>(null)
+  const [loadingGmail, setLoadingGmail] = useState(false)
+
+  useEffect(() => {
+    getGmailStatus().then(setGmailStatus).catch(() => {})
+  }, [])
+
+  const handleConnectGmail = async () => {
+    try {
+      const { url } = await getGmailAuthUrl()
+      const popup = window.open(url, 'gmail-oauth', 'width=500,height=620,scrollbars=yes')
+      const handler = (e: MessageEvent) => {
+        if (e.data?.googleGmail === 'connected') {
+          window.removeEventListener('message', handler)
+          popup?.close()
+          getGmailStatus().then(setGmailStatus)
+          toast.success(`Gmail conectado: ${e.data.email}`)
+        } else if (e.data?.googleGmail === 'error') {
+          window.removeEventListener('message', handler)
+          toast.error('Error conectando Gmail')
+        }
+      }
+      window.addEventListener('message', handler)
+    } catch { toast.error('No se pudo obtener URL de autorización') }
+  }
+
+  const handleDisconnectGmail = async () => {
+    setLoadingGmail(true)
+    try { await disconnectGmail(); setGmailStatus(s => s ? { ...s, connected: false, gmail_email: null } : null); toast.success('Gmail desconectado') }
+    catch { toast.error('Error') }
+    finally { setLoadingGmail(false) }
+  }
+
+  const defaultSubject = `Recordatorio de pago - ${lead.empresa || lead.nombre}`
+  const defaultBody = `Estimado/a ${lead.nombre},\n\nLe recordamos que tiene una cuota pendiente de pago.\n\nMonto a cancelar: $${lead.proxima_cuota_monto?.toLocaleString('es-CL') ?? lead.monto_cuota?.toLocaleString('es-CL') ?? '0'}\nFecha vencimiento: ${lead.proxima_cuota_fecha ?? 'a la brevedad'}\n\nPara realizar su pago o consultar su situación, por favor contáctenos.\n\nSaludos,\nEquipo de Cobranza`
+  const [emailSubject, setEmailSubject] = useState(defaultSubject)
+  const [emailBody, setEmailBody] = useState(defaultBody)
+  const [emailDest, setEmailDest] = useState(lead.email ?? '')
+  const [sendingEmail, setSendingEmail] = useState(false)
+
+  const handleSendEmail = async () => {
+    if (!emailSubject.trim() || !emailBody.trim() || !emailDest.trim() || sendingEmail) return
+    setSendingEmail(true)
+    try {
+      await sendCobradorEmail(lead.id, emailSubject, emailBody, emailDest)
+      toast.success(`Correo enviado a ${emailDest}`)
+    } catch (e: any) {
+      const detail = (e as any)?.response?.data?.detail || 'Error al enviar correo'
+      // If no email on lead, try sending directly via override
+      toast.error(detail)
+    } finally { setSendingEmail(false) }
+  }
+
+  const [markingContactado, setMarkingContactado] = useState(false)
+
+  const handleContactado = async () => {
+    if (lead.is_contactado || markingContactado) return
+    setMarkingContactado(true)
+    try {
+      const result = await markCobradorContactado(lead.id)
+      onUpdate({ ...lead, is_contactado: true, contactado_at: result.contactado_at, stage: result.stage })
+      toast.success(result.lf_updated ? '✅ Marcado como contactado en Nexio y Legal Finance' : '✅ Marcado como contactado')
+    } catch { toast.error('Error al marcar como contactado') }
+    finally { setMarkingContactado(false) }
+  }
+
+  const handleDescontactar = async () => {
+    if (!lead.is_contactado || markingContactado) return
+    setMarkingContactado(true)
+    try {
+      const result = await unmarkCobradorContactado(lead.id)
+      onUpdate({ ...lead, is_contactado: false, contactado_at: null, stage: result.stage })
+      toast.success(result.lf_updated ? '↩️ Revertido a Moroso en Nexio y Legal Finance' : '↩️ Revertido a Moroso')
+    } catch { toast.error('Error al revertir contactado') }
+    finally { setMarkingContactado(false) }
+  }
+
   const pendiente = lead.monto_deuda - lead.monto_pagado
   const pct = lead.monto_deuda > 0 ? Math.min((lead.monto_pagado / lead.monto_deuda) * 100, 100) : 0
 
   const TABS = [
-    { key: 'info',  label: 'Info' },
-    { key: 'chat',  label: 'Chat' },
-    { key: 'notas', label: 'Notas' },
+    { key: 'info',   label: 'Info' },
+    { key: 'chat',   label: 'Chat' },
+    { key: 'notas',  label: 'Notas' },
+    { key: 'correo', label: 'Correo' },
   ] as const
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="px-5 pt-5 pb-4 flex-shrink-0" style={{ borderBottom: '1px solid var(--border)' }}>
-        <div className="flex items-start justify-between gap-3 mb-3">
-          <div className="min-w-0 flex-1">
-            <h2 className="text-base font-black leading-tight" style={{ color: 'var(--text)', fontFamily: '"Space Grotesk", sans-serif' }}>
-              {lead.nombre}
-            </h2>
-            {lead.empresa && (
-              <p className="text-xs mt-0.5 flex items-center gap-1" style={{ color: 'var(--text-muted)' }}>
-                <Building2 size={10} /> {lead.empresa}
-              </p>
+      {/* Header — dark like Leads */}
+      <div className="px-5 py-3.5 border-b border-white/[0.07] flex items-center gap-3 flex-shrink-0">
+        {onClose && (
+          <button onClick={onClose}
+            className="p-2 rounded-xl text-white/38 hover:text-white/78 hover:bg-surface-2 transition-colors flex-shrink-0">
+            <X size={18} />
+          </button>
+        )}
+        <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 font-bold text-base text-white"
+          style={{ background: `${STAGES[lead.stage]?.dot ?? '#4361ee'}33`, border: `1.5px solid ${STAGES[lead.stage]?.dot ?? '#4361ee'}55` }}>
+          {lead.nombre.charAt(0).toUpperCase()}
+        </div>
+        <div className="flex-1 min-w-0">
+          <h2 className="text-sm font-bold text-white truncate leading-tight">{lead.nombre}</h2>
+          <div className="flex items-center gap-2 mt-1 flex-wrap">
+            {lead.telefono && (
+              <a href={`tel:${lead.telefono}`}
+                className="flex items-center gap-1 text-[11px] text-white/40 hover:text-lime transition-colors"
+                title="Llamar">
+                <Phone size={10} />{lead.telefono}
+              </a>
             )}
+            <StageBadge stage={lead.stage} />
           </div>
-          {onClose && (
-            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors flex-shrink-0" style={{ color: 'var(--text-muted)' }}>
-              <X size={16} />
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {nextStage && (
+            <button
+              onClick={handleAdvanceStage}
+              disabled={advancingStage}
+              title={`Mover a ${STAGES[nextStage]?.label}`}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all hover:scale-105"
+              style={{ background: `${STAGES[nextStage]?.dot ?? '#F59E0B'}18`, color: STAGES[nextStage]?.dot ?? '#F59E0B', border: `1px solid ${STAGES[nextStage]?.dot ?? '#F59E0B'}33` }}>
+              {advancingStage
+                ? <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                : <><ChevronRight size={13} />{STAGES[nextStage]?.label}</>}
             </button>
           )}
+          {lead.telefono && (
+            <a href={`https://wa.me/${lead.telefono.replace(/[^0-9]/g, '')}`}
+              target="_blank" rel="noreferrer"
+              title="Llamar por WhatsApp"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold flex-shrink-0 transition-all hover:scale-105"
+              style={{ background: '#25D36622', color: '#25D366', border: '1px solid #25D36644' }}>
+              <Phone size={13} />
+              Llamar
+            </a>
+          )}
         </div>
-        <StageBadge stage={lead.stage} />
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 px-4 py-2 flex-shrink-0" style={{ borderBottom: '1px solid var(--border)', background: 'rgba(26,32,53,0.02)' }}>
+      {/* Tabs — lime active like Leads */}
+      <div className="flex border-b border-white/[0.07] px-3 flex-shrink-0">
         {TABS.map(t => (
           <button key={t.key} onClick={() => setActiveTab(t.key)}
-            className="px-4 py-2 rounded-lg text-xs font-semibold transition-all"
-            style={activeTab === t.key
-              ? { background: '#4361ee', color: '#fff' }
-              : { color: 'var(--text-muted)', background: 'transparent' }}>
+            className={`px-4 py-3 text-xs font-bold border-b-2 transition-all ${
+              activeTab === t.key
+                ? 'border-lime text-white'
+                : 'border-transparent text-white/35 hover:text-white/60 hover:border-white/15'
+            }`}>
             {t.label}
           </button>
         ))}
@@ -843,78 +935,130 @@ function DetailPanel({ lead, onUpdate, onClose }: {
 
       {/* Content */}
       {activeTab === 'chat' ? (
-        <ChatTab lead={lead} />
+        <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+          <ChatTab lead={lead} />
+        </div>
       ) : (
-        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+        <div className="flex-1 overflow-y-auto p-5 space-y-4 bg-surface-0">
           {activeTab === 'info' && (
             <>
-              {/* HONORARIOS — datos de Legal Finance, read-only */}
-              <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border)' }}>
-                <div className="px-4 py-2.5 flex items-center gap-2" style={{ background: 'var(--bg-secondary, #f8fafc)', borderBottom: '1px solid var(--border)' }}>
-                  <DollarSign size={13} style={{ color: '#4361ee' }} />
-                  <span className="text-xs font-black uppercase tracking-wider" style={{ color: 'var(--text)' }}>Honorarios</span>
+              {/* HONORARIOS */}
+              <div className="rounded-xl overflow-hidden border border-white/[0.08]">
+                <div className="px-4 py-2.5 flex items-center gap-2 border-b border-white/[0.08] bg-surface-2">
+                  <DollarSign size={13} className="text-primary" />
+                  <span className="text-xs font-black uppercase tracking-wider text-white/70">Honorarios</span>
                 </div>
-                <dl>
+                <div className="bg-surface-1 px-4 pb-1">
                   <InfoRow label="Total facturado" value={lead.monto_deuda > 0 ? fmt(lead.monto_deuda) : undefined} />
                   <InfoRow label="Nº Cuotas" value={lead.num_cuotas != null ? String(lead.num_cuotas) : '1'} />
                   <InfoRow label="Cuota inicial" value={lead.cuota_inicial != null && lead.cuota_inicial > 0 ? fmt(lead.cuota_inicial) : undefined} />
                   <InfoRow label="Monto cuota" value={lead.monto_cuota != null && lead.monto_cuota > 0 ? fmt(lead.monto_cuota) : undefined} />
-                </dl>
+                </div>
               </div>
 
-              {/* Saldo de cobranza — 3 cards */}
+              {/* Saldo — 3 stat cards */}
               <div className="grid grid-cols-3 gap-2">
-                <div className="rounded-xl p-3 text-center" style={{ background: 'rgba(67,97,238,0.07)', border: '1px solid rgba(67,97,238,0.18)' }}>
-                  <p className="text-[9px] font-bold uppercase tracking-wider mb-1" style={{ color: 'rgba(67,97,238,0.7)' }}>Total facturado</p>
-                  <p className="text-xs font-black" style={{ color: '#4361ee' }}>{fmt(lead.monto_deuda)}</p>
+                <div className="rounded-xl p-3 text-center bg-surface-2 border border-white/[0.07]">
+                  <p className="text-[9px] font-bold uppercase tracking-wider mb-1 text-primary/70">Total facturado</p>
+                  <p className="text-xs font-black text-primary">{fmt(lead.monto_deuda)}</p>
                 </div>
-                <div className="rounded-xl p-3 text-center" style={{ background: 'rgba(16,185,129,0.07)', border: '1px solid rgba(16,185,129,0.18)' }}>
-                  <p className="text-[9px] font-bold uppercase tracking-wider mb-1" style={{ color: 'rgba(16,185,129,0.8)' }}>Total pagado</p>
-                  <p className="text-xs font-black" style={{ color: '#10B981' }}>{fmt(lead.monto_pagado)}</p>
+                <div className="rounded-xl p-3 text-center bg-surface-2 border border-white/[0.07]">
+                  <p className="text-[9px] font-bold uppercase tracking-wider mb-1 text-lime/70">Total pagado</p>
+                  <p className="text-xs font-black text-lime">{fmt(lead.monto_pagado)}</p>
                 </div>
-                <div className="rounded-xl p-3 text-center" style={{ background: pendiente > 0 ? 'rgba(239,68,68,0.07)' : 'rgba(16,185,129,0.07)', border: `1px solid ${pendiente > 0 ? 'rgba(239,68,68,0.18)' : 'rgba(16,185,129,0.18)'}` }}>
-                  <p className="text-[9px] font-bold uppercase tracking-wider mb-1" style={{ color: pendiente > 0 ? 'rgba(239,68,68,0.8)' : 'rgba(16,185,129,0.8)' }}>Saldo pendiente</p>
-                  <p className="text-xs font-black" style={{ color: pendiente > 0 ? '#EF4444' : '#10B981' }}>{fmt(Math.max(pendiente, 0))}</p>
+                <div className="rounded-xl p-3 text-center bg-surface-2 border border-white/[0.07]">
+                  <p className="text-[9px] font-bold uppercase tracking-wider mb-1" style={{ color: pendiente > 0 ? 'rgba(239,68,68,0.8)' : 'rgba(163,230,53,0.8)' }}>Pendiente</p>
+                  <p className="text-xs font-black" style={{ color: pendiente > 0 ? '#ef4444' : '#a3e635' }}>{fmt(Math.max(pendiente, 0))}</p>
                 </div>
               </div>
 
               {/* Próxima cuota */}
               {lead.proxima_cuota_fecha && (
-                <div className="rounded-xl px-4 py-3 flex items-center justify-between"
-                  style={{ background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.22)' }}>
+                <div className="rounded-xl px-4 py-3 flex items-center justify-between bg-surface-2 border border-white/[0.07]">
                   <div>
-                    <p className="text-[9px] font-bold uppercase tracking-wider" style={{ color: '#D97706' }}>Próxima cuota</p>
-                    <p className="text-sm font-black mt-0.5" style={{ color: 'var(--text)' }}>{lead.proxima_cuota_fecha}</p>
+                    <p className="text-[9px] font-bold uppercase tracking-wider text-amber-400/70">Próxima cuota</p>
+                    <p className="text-sm font-black mt-0.5 text-white">{lead.proxima_cuota_fecha}</p>
                   </div>
                   {lead.proxima_cuota_monto != null && lead.proxima_cuota_monto > 0 && (
-                    <p className="text-base font-black" style={{ color: '#F59E0B' }}>{fmt(lead.proxima_cuota_monto)}</p>
+                    <p className="text-base font-black text-amber-400">{fmt(lead.proxima_cuota_monto)}</p>
                   )}
                 </div>
               )}
 
-              {/* Cuotas vencidas badge */}
+              {/* Cuotas vencidas */}
               {(lead.lf_cuotas_vencidas ?? 0) > 0 && (
                 <div className="flex items-center gap-2 px-3 py-2 rounded-xl"
-                  style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.20)' }}>
-                  <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: '#EF4444' }} />
-                  <span className="text-xs font-semibold" style={{ color: '#EF4444' }}>
+                  style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.25)' }}>
+                  <span className="w-2 h-2 rounded-full flex-shrink-0 bg-red-500" />
+                  <span className="text-xs font-semibold text-red-400">
                     {lead.lf_cuotas_vencidas} cuota{(lead.lf_cuotas_vencidas ?? 0) > 1 ? 's' : ''} vencida{(lead.lf_cuotas_vencidas ?? 0) > 1 ? 's' : ''} · Legal Finance
                   </span>
                 </div>
               )}
 
               <div>
-                <label className="text-xs font-bold uppercase tracking-wider mb-1.5 block" style={{ color: 'var(--text-muted)' }}>Etapa</label>
+                <label className="text-xs font-bold uppercase tracking-wider mb-1.5 block text-white/40">Etapa</label>
                 <StageSelector lead={lead} onUpdate={onUpdate} />
               </div>
 
+              {/* CONTACTADO */}
+              <div className="rounded-xl overflow-hidden border border-white/[0.08]">
+                <div className="px-3 py-2 bg-surface-2 border-b border-white/[0.07] flex items-center gap-2">
+                  <CheckCircle size={12} className="text-white/30" />
+                  <span className="text-[10px] font-black uppercase tracking-wider text-white/40">Gestión de contacto</span>
+                </div>
+                <div className="bg-surface-1 p-3">
+                  {lead.is_contactado ? (
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+                          style={{ background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.25)' }}>
+                          <CheckCircle size={15} style={{ color: '#10B981' }} />
+                        </div>
+                        <div>
+                          <p className="text-xs font-bold" style={{ color: '#10B981' }}>Contactado</p>
+                          {lead.contactado_at && (
+                            <p className="text-[10px] text-white/35 mt-0.5">
+                              {new Date(lead.contactado_at).toLocaleDateString('es-CL', { day: '2-digit', month: 'short', year: 'numeric' })}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <button
+                        onClick={handleDescontactar}
+                        disabled={markingContactado}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all hover:bg-red-500/10"
+                        style={{ color: 'rgba(248,113,113,0.8)', border: '1px solid rgba(239,68,68,0.20)' }}>
+                        {markingContactado
+                          ? <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                          : <><RotateCcw size={11} />Revertir</>}
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={handleContactado}
+                      disabled={markingContactado}
+                      className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold transition-all hover:scale-[1.01] active:scale-[0.99]"
+                      style={{
+                        background: 'linear-gradient(135deg, rgba(67,97,238,0.20) 0%, rgba(99,102,241,0.12) 100%)',
+                        color: '#818cf8',
+                        border: '1.5px solid rgba(99,102,241,0.30)',
+                      }}>
+                      {markingContactado
+                        ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                        : <><Phone size={14} />Marcar como Contactado</>}
+                    </button>
+                  )}
+                </div>
+              </div>
 
-              <div className="rounded-xl p-4" style={{ background: '#fff', border: '1px solid var(--border)' }}>
+              {/* Datos del deudor */}
+              <div className="rounded-xl p-4 bg-surface-2 border border-white/[0.07]">
                 <div className="flex items-center gap-2 mb-3">
-                  <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'rgba(67,97,238,0.10)' }}>
-                    <User size={13} style={{ color: '#4361ee' }} />
+                  <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-primary/10">
+                    <User size={13} className="text-primary" />
                   </div>
-                  <h4 className="text-sm font-bold" style={{ color: 'var(--text)' }}>Datos del Deudor</h4>
+                  <h4 className="text-sm font-bold text-white/80">Datos del Deudor</h4>
                 </div>
                 <dl>
                   <InfoRow label="Nombre"   value={lead.nombre} />
@@ -926,35 +1070,84 @@ function DetailPanel({ lead, onUpdate, onClose }: {
               </div>
 
               {lead.descripcion && (
-                <div className="rounded-xl p-4" style={{ background: '#fff', border: '1px solid var(--border)' }}>
-                  <div className="flex items-center gap-2 mb-3">
-                    <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'rgba(245,158,11,0.10)' }}>
-                      <FileText size={13} style={{ color: '#F59E0B' }} />
-                    </div>
-                    <h4 className="text-sm font-bold" style={{ color: 'var(--text)' }}>Descripción</h4>
+                <div className="rounded-xl p-4 bg-surface-2 border border-white/[0.07]">
+                  <div className="flex items-center gap-2 mb-2">
+                    <FileText size={13} className="text-amber-400" />
+                    <h4 className="text-sm font-bold text-white/80">Descripción</h4>
                   </div>
-                  <p className="text-sm" style={{ color: 'var(--text-muted)', lineHeight: 1.6 }}>{lead.descripcion}</p>
+                  <p className="text-sm text-white/55 leading-relaxed">{lead.descripcion}</p>
                 </div>
               )}
             </>
           )}
 
+          {activeTab === 'correo' && (
+            <div className="space-y-3">
+              {!gmailStatus?.connected ? (
+                <div className="rounded-xl overflow-hidden border border-white/[0.08]">
+                  <div className="px-4 py-2.5 flex items-center gap-2 border-b border-white/[0.08] bg-surface-2">
+                    <Mail size={12} className="text-primary" />
+                    <span className="text-xs font-black uppercase tracking-wider text-white/70">Conectar Gmail</span>
+                  </div>
+                  <div className="bg-surface-1 p-4 text-center space-y-3">
+                    <p className="text-xs text-white/40">Conecta tu Gmail para enviar correos directamente desde el panel.</p>
+                    {!gmailStatus?.configured && (
+                      <p className="text-[10px] text-amber-400/70">Google OAuth no configurado. Contacta al administrador.</p>
+                    )}
+                    <button onClick={handleConnectGmail} disabled={!gmailStatus?.configured}
+                      className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-xs font-bold transition-all"
+                      style={{ background: 'rgba(234,67,53,0.15)', color: '#ea4335', border: '1.5px solid rgba(234,67,53,0.30)', opacity: !gmailStatus?.configured ? 0.4 : 1 }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+                      Conectar Gmail
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-xl overflow-hidden border border-white/[0.08]">
+                  <div className="px-4 py-2.5 flex items-center gap-2 border-b border-white/[0.08] bg-surface-2">
+                    <Mail size={12} className="text-emerald-400" />
+                    <span className="text-xs font-black uppercase tracking-wider text-white/70">Enviar Correo</span>
+                    <span className="ml-auto text-[10px] text-emerald-400 font-semibold truncate max-w-[140px]">{gmailStatus.gmail_email}</span>
+                    <button onClick={handleDisconnectGmail} disabled={loadingGmail}
+                      className="text-white/25 hover:text-red-400 transition-colors text-xs ml-1" title="Desconectar">✕</button>
+                  </div>
+                  <div className="bg-surface-1 p-3 space-y-2">
+                    <input className="w-full text-xs rounded-lg px-3 py-2 outline-none bg-surface-2 border border-white/10 text-white/85 placeholder:text-white/25 focus:border-white/25"
+                      placeholder="Correo destinatario" type="email" value={emailDest} onChange={e => setEmailDest(e.target.value)} />
+                    <input className="w-full text-xs rounded-lg px-3 py-2 outline-none bg-surface-2 border border-white/10 text-white/85 placeholder:text-white/25 focus:border-white/25"
+                      placeholder="Asunto" value={emailSubject} onChange={e => setEmailSubject(e.target.value)} />
+                    <textarea className="w-full resize-none text-xs rounded-lg px-3 py-2 outline-none bg-surface-2 border border-white/10 text-white/85 placeholder:text-white/25 focus:border-white/25"
+                      rows={8} value={emailBody} onChange={e => setEmailBody(e.target.value)} placeholder="Cuerpo del correo..." />
+                    <button onClick={handleSendEmail}
+                      disabled={sendingEmail || !emailSubject.trim() || !emailBody.trim() || !emailDest.trim()}
+                      className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-xs font-bold transition-all"
+                      style={{ background: 'rgba(67,97,238,0.18)', color: '#818cf8', border: '1.5px solid rgba(67,97,238,0.35)', opacity: !emailSubject.trim() || !emailBody.trim() || !emailDest.trim() ? 0.4 : 1 }}>
+                      {sendingEmail
+                        ? <div className="w-3.5 h-3.5 border-2 rounded-full animate-spin" style={{ borderColor: 'transparent', borderTopColor: '#818cf8' }} />
+                        : <><Mail size={12} />Enviar Correo</>}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {activeTab === 'notas' && (
             <div className="space-y-3">
               <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'rgba(139,92,246,0.10)' }}>
-                  <StickyNote size={13} style={{ color: '#8B5CF6' }} />
-                </div>
-                <h4 className="text-sm font-bold" style={{ color: 'var(--text)' }}>Notas internas</h4>
+                <StickyNote size={13} style={{ color: '#8B5CF6' }} />
+                <h4 className="text-sm font-bold text-white/80">Notas internas</h4>
               </div>
-              <textarea className="input w-full" rows={10} value={notes}
+              <textarea
+                className="w-full resize-none text-sm rounded-xl px-3 py-2.5 outline-none bg-surface-2 border border-white/10 text-white/85 placeholder:text-white/30 focus:border-white/25"
+                rows={10} value={notes}
                 onChange={e => setNotes(e.target.value)}
                 placeholder="Observaciones, acuerdos, historial de contacto..."
-                style={{ resize: 'vertical', minHeight: 180 }} />
+                style={{ minHeight: 180 }} />
               <button onClick={handleSaveNotes} disabled={savingNotes || notes === (lead.notes ?? '')}
                 className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2"
-                style={{ background: 'rgba(67,97,238,0.10)', color: '#4361ee', border: '1px solid rgba(67,97,238,0.25)', opacity: notes === (lead.notes ?? '') ? 0.5 : 1 }}>
-                {savingNotes && <div className="w-3.5 h-3.5 border-2 rounded-full animate-spin" style={{ borderColor: 'transparent', borderTopColor: '#4361ee' }} />}
+                style={{ background: notes === (lead.notes ?? '') ? 'rgba(67,97,238,0.08)' : 'rgba(67,97,238,0.20)', color: '#818cf8', border: '1px solid rgba(67,97,238,0.30)', opacity: notes === (lead.notes ?? '') ? 0.5 : 1 }}>
+                {savingNotes && <div className="w-3.5 h-3.5 border-2 rounded-full animate-spin" style={{ borderColor: 'transparent', borderTopColor: '#818cf8' }} />}
                 Guardar Notas
               </button>
             </div>
@@ -968,13 +1161,12 @@ function DetailPanel({ lead, onUpdate, onClose }: {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function CobradoresCartera() {
-  const [leads, setLeads]       = useState<CobradorLead[]>([])
-  const [loading, setLoading]   = useState(true)
-  const [syncing, setSyncing]   = useState(false)
-  const [search, setSearch]     = useState('')
+  const [leads, setLeads]             = useState<CobradorLead[]>([])
+  const [loading, setLoading]         = useState(true)
+  const [search, setSearch]           = useState('')
   const [stageFilter, setStageFilter] = useState('')
-  const [selected, setSelected] = useState<CobradorLead | null>(null)
-  const [showDetail, setShowDetail] = useState(false)
+  const [selected, setSelected]       = useState<CobradorLead | null>(null)
+  const [showDetail, setShowDetail]   = useState(false)
 
   const load = () => {
     setLoading(true)
@@ -990,20 +1182,84 @@ export default function CobradoresCartera() {
       .finally(() => setLoading(false))
   }
 
-  const handleSync = async () => {
-    setSyncing(true)
-    try {
-      const r = await syncCobradorLeads()
-      toast.success(`Sync completado — ${r.created} nuevos, ${r.updated} actualizados`)
-      load()
-    } catch {
-      toast.error('Error sincronizando con Legal Finance')
-    } finally {
-      setSyncing(false)
-    }
-  }
+
 
   useEffect(() => { load() }, [])
+
+  // ── Auto-sync SSE listener: reload when backend syncs new morosos ──────────
+  useEffect(() => {
+    const token = localStorage.getItem('token')
+    if (!token) return
+    const es = new EventSource(apiUrl(`/api/whatsapp/stream?token=${encodeURIComponent(token)}`))
+    es.onmessage = (e) => {
+      let evt: any
+      try { evt = JSON.parse(e.data) } catch { return }
+      if (evt.type === 'cobrador_sync' && (evt.created > 0 || evt.updated > 0)) {
+        load()
+        if (evt.created > 0) {
+          toast.success(`📋 ${evt.created} nuevo${evt.created > 1 ? 's' : ''} moroso${evt.created > 1 ? 's' : ''} en tu cartera`, { duration: 6000 })
+        }
+      }
+    }
+    es.onerror = () => {}
+    return () => { es.close() }
+  }, [])
+
+  // ── Incoming call SSE listener ─────────────────────────────────────────────
+  const [incomingCall, setIncomingCall] = useState<{
+    call_id: string; session_id: string; from_phone: string
+    contact_name: string; contact_id: number | null; is_video: boolean
+  } | null>(null)
+  const callRingtoneRef = useRef<HTMLAudioElement | null>(null)
+  const callSseRef = useRef<EventSource | null>(null)
+
+  useEffect(() => {
+    const token = localStorage.getItem('token')
+    if (!token) return
+    const es = new EventSource(apiUrl(`/api/whatsapp/stream?token=${encodeURIComponent(token)}`))
+    callSseRef.current = es
+    es.onmessage = (e) => {
+      let evt: any
+      try { evt = JSON.parse(e.data) } catch { return }
+      if (evt.type === 'incoming_call') {
+        setIncomingCall({
+          call_id: evt.call_id,
+          session_id: evt.session_id,
+          from_phone: evt.from_phone,
+          contact_name: evt.contact_name,
+          contact_id: evt.contact_id,
+          is_video: evt.is_video,
+        })
+        // Play ringtone using Web Audio API (no file needed)
+        try {
+          const ctx = new AudioContext()
+          const playBeep = () => {
+            const osc = ctx.createOscillator()
+            const gain = ctx.createGain()
+            osc.connect(gain); gain.connect(ctx.destination)
+            osc.frequency.value = 440
+            gain.gain.setValueAtTime(0.3, ctx.currentTime)
+            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.8)
+            osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.8)
+          }
+          playBeep()
+          const interval = setInterval(playBeep, 2000)
+          ;(callRingtoneRef as any).current = { pause: () => clearInterval(interval), currentTime: 0 }
+        } catch { /* silent */ }
+      }
+      if (evt.type === 'call_ended') {
+        if (callRingtoneRef.current) { callRingtoneRef.current.pause(); callRingtoneRef.current.currentTime = 0 }
+        setIncomingCall(null)
+      }
+    }
+    es.onerror = () => {}
+    return () => { es.close() }
+  }, [])
+
+  const dismissCall = () => {
+    if (callRingtoneRef.current) { callRingtoneRef.current.pause(); callRingtoneRef.current.currentTime = 0 }
+    setIncomingCall(null)
+  }
 
   const handleUpdate = (updated: CobradorLead) => {
     setLeads(prev => prev.map(l => l.id === updated.id ? updated : l))
@@ -1025,30 +1281,76 @@ export default function CobradoresCartera() {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="mb-4 flex-shrink-0">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h1 className="text-xl font-black" style={{ color: 'var(--text)', fontFamily: '"Space Grotesk", sans-serif' }}>
-              Cartera de Clientes
-            </h1>
-            <p className="text-sm mt-0.5" style={{ color: 'var(--text-muted)' }}>
-              {leads.length} cliente{leads.length !== 1 ? 's' : ''} en tu cartera
+      {/* ── Incoming call overlay ── */}
+      {incomingCall && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-6 px-10 py-8 rounded-3xl shadow-2xl"
+            style={{ background: 'linear-gradient(135deg, #1a2035 0%, #0f172a 100%)', border: '1px solid rgba(37,211,102,0.25)', minWidth: 320 }}>
+            {/* Pulsing avatar */}
+            <div className="relative flex items-center justify-center">
+              <div className="absolute w-28 h-28 rounded-full animate-ping opacity-20" style={{ background: '#25D366' }} />
+              <div className="absolute w-24 h-24 rounded-full animate-ping opacity-10 animation-delay-150" style={{ background: '#25D366', animationDelay: '0.3s' }} />
+              <div className="w-20 h-20 rounded-full flex items-center justify-center text-white font-black text-3xl z-10"
+                style={{ background: 'linear-gradient(135deg, #25D366 0%, #128C7E 100%)', boxShadow: '0 0 30px rgba(37,211,102,0.5)' }}>
+                {incomingCall.contact_name.charAt(0).toUpperCase()}
+              </div>
+            </div>
+
+            {/* Caller info */}
+            <div className="text-center">
+              <p className="text-[11px] font-semibold uppercase tracking-widest mb-1" style={{ color: '#25D366' }}>
+                {incomingCall.is_video ? '📹 Videollamada entrante' : '📞 Llamada entrante WhatsApp'}
+              </p>
+              <h2 className="text-2xl font-black text-white">{incomingCall.contact_name}</h2>
+              <p className="text-sm mt-1" style={{ color: 'rgba(255,255,255,0.45)' }}>{incomingCall.from_phone}</p>
+            </div>
+
+            {/* Action buttons */}
+            <div className="flex items-center gap-6">
+              {/* Reject */}
+              <button
+                onClick={dismissCall}
+                className="flex flex-col items-center gap-2">
+                <div className="w-16 h-16 rounded-full flex items-center justify-center transition-transform hover:scale-110"
+                  style={{ background: '#ef4444', boxShadow: '0 4px 20px rgba(239,68,68,0.5)' }}>
+                  <Phone size={26} className="text-white rotate-[135deg]" />
+                </div>
+                <span className="text-xs text-white/50">Ignorar</span>
+              </button>
+
+              {/* Answer on phone */}
+              <a href={`https://wa.me/${incomingCall.from_phone.replace(/[^0-9]/g, '')}`}
+                target="_blank" rel="noreferrer"
+                onClick={dismissCall}
+                className="flex flex-col items-center gap-2">
+                <div className="w-16 h-16 rounded-full flex items-center justify-center transition-transform hover:scale-110"
+                  style={{ background: '#25D366', boxShadow: '0 4px 20px rgba(37,211,102,0.5)' }}>
+                  <Phone size={26} className="text-white" />
+                </div>
+                <span className="text-xs text-white/50">Contestar</span>
+              </a>
+            </div>
+
+            <p className="text-[10px]" style={{ color: 'rgba(255,255,255,0.25)' }}>
+              Contesta desde el celular con WhatsApp abierto
             </p>
           </div>
-          <button
-            onClick={handleSync}
-            disabled={syncing}
-            className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex-shrink-0"
-            style={{ background: 'rgba(16,185,129,0.10)', color: '#10B981', border: '1.5px solid rgba(16,185,129,0.25)' }}
-          >
-            <RefreshCw size={13} className={syncing ? 'animate-spin' : ''} />
-            {syncing ? 'Sincronizando...' : 'Sync Legal Finance'}
-          </button>
         </div>
+      )}
+
+      {/* Header */}
+      <div className="mb-4 flex-shrink-0">
+        <h1 className="text-xl font-black" style={{ color: 'var(--text)', fontFamily: '"Space Grotesk", sans-serif' }}>
+          Cartera de Clientes
+        </h1>
+        <p className="text-sm mt-0.5" style={{ color: 'var(--text-muted)' }}>
+          {leads.length} cliente{leads.length !== 1 ? 's' : ''} en tu cartera · sincronización automática
+        </p>
       </div>
 
-      <div className="flex gap-2 mb-4 flex-shrink-0 flex-wrap">
-        <div className="relative flex-1 min-w-[180px]">
+      {/* Filters */}
+      <div className="flex gap-2 mb-5 flex-shrink-0 flex-wrap">
+        <div className="relative flex-1 min-w-[200px]">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
           <input className="input pl-9 w-full" placeholder="Buscar cliente, empresa, RUT..."
             value={search} onChange={e => setSearch(e.target.value)} />
@@ -1058,102 +1360,166 @@ export default function CobradoresCartera() {
             </button>
           )}
         </div>
-        <select className="input" value={stageFilter} onChange={e => setStageFilter(e.target.value)} style={{ minWidth: 140 }}>
+        <select className="input" value={stageFilter} onChange={e => setStageFilter(e.target.value)} style={{ minWidth: 150 }}>
           <option value="">Todas las etapas</option>
-          {Object.entries(STAGES).map(([k, s]) => (
-            <option key={k} value={k}>{s.label}</option>
-          ))}
+          {Object.entries(STAGES).map(([k, s]) => <option key={k} value={k}>{s.label}</option>)}
         </select>
       </div>
 
-      <div className="flex gap-4 flex-1 min-h-0">
-        {/* Left: list */}
-        <div className={`flex flex-col min-h-0 ${showDetail ? 'hidden md:flex md:w-[38%]' : 'w-full md:w-[38%]'} flex-shrink-0`}>
-          <div className="flex-1 overflow-y-auto space-y-2 pr-1">
-            {loading && (
-              <div className="flex items-center justify-center h-32">
-                <div className="w-5 h-5 border-2 rounded-full animate-spin" style={{ borderColor: 'var(--border)', borderTopColor: 'var(--primary)' }} />
-              </div>
-            )}
-            {!loading && filtered.length === 0 && (
-              <div className="text-center py-16" style={{ color: 'var(--text-muted)' }}>
-                <p className="text-sm">Sin resultados</p>
-              </div>
-            )}
-            {filtered.map(lead => {
-              const s = STAGES[lead.stage] ?? { dot: '#6B7280', label: lead.stage, color: 'rgba(107,114,128,0.15)' }
-              const pct = lead.monto_deuda > 0 ? Math.min((lead.monto_pagado / lead.monto_deuda) * 100, 100) : 0
-              const isSelected = selected?.id === lead.id
-              return (
-                <button key={lead.id} onClick={() => { setSelected(lead); setShowDetail(true) }}
-                  className="w-full text-left rounded-xl p-3.5 transition-all"
-                  style={{
-                    background: isSelected ? 'rgba(67,97,238,0.08)' : '#fff',
-                    border: isSelected ? '2px solid rgba(67,97,238,0.40)' : '1px solid rgba(26,32,53,0.10)',
-                    boxShadow: '0 1px 4px rgba(26,32,53,0.05)',
-                  }}>
-                  <div className="flex items-start gap-2.5">
-                    <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 font-bold text-sm text-white"
-                      style={{ background: `linear-gradient(135deg,${s.dot} 0%,${s.dot}99 100%)` }}>
+      {/* Cards grid */}
+      <div className="flex-1 overflow-y-auto">
+        {loading && (
+          <div className="flex items-center justify-center h-40">
+            <div className="w-6 h-6 border-2 rounded-full animate-spin" style={{ borderColor: 'var(--border)', borderTopColor: 'var(--primary)' }} />
+          </div>
+        )}
+        {!loading && filtered.length === 0 && (
+          <div className="flex flex-col items-center justify-center h-40 gap-2" style={{ color: 'var(--text-muted)' }}>
+            <User size={32} style={{ opacity: 0.25 }} />
+            <p className="text-sm">Sin resultados</p>
+          </div>
+        )}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 pb-4">
+          {filtered.map(lead => {
+            const s = STAGES[lead.stage] ?? { dot: '#6B7280', label: lead.stage, color: 'rgba(107,114,128,0.15)' }
+            const pct = lead.monto_deuda > 0 ? Math.min((lead.monto_pagado / lead.monto_deuda) * 100, 100) : 0
+            const pendiente = Math.max(lead.monto_deuda - lead.monto_pagado, 0)
+            const isSelected = selected?.id === lead.id
+            return (
+              <button key={lead.id} onClick={() => {
+                setSelected(lead); setShowDetail(true)
+                // Mark as seen — removes NUEVO badge
+                if (lead.is_new) {
+                  markCobradorLeadSeen(lead.id).then(() => {
+                    setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, is_new: false } : l))
+                  }).catch(() => {})
+                }
+              }}
+                className="relative group text-left rounded-2xl overflow-hidden flex flex-col transition-all hover:-translate-y-0.5"
+                style={{
+                  background: '#ffffff',
+                  border: isSelected ? `2px solid ${s.dot}` : '1px solid rgba(26,32,53,0.10)',
+                  boxShadow: isSelected
+                    ? `0 4px 20px ${s.dot}33`
+                    : '0 1px 6px rgba(26,32,53,0.07)',
+                }}>
+                {/* Top accent bar */}
+                <div className="h-1.5 w-full flex-shrink-0"
+                  style={{ background: `linear-gradient(90deg, ${s.dot}, ${s.dot}88)` }} />
+
+                <div className="p-4 flex flex-col gap-3 flex-1">
+                  {/* Avatar + name */}
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 font-black text-base text-white"
+                      style={{ background: `linear-gradient(135deg, ${s.dot} 0%, ${s.dot}aa 100%)`, boxShadow: '0 3px 10px rgba(0,0,0,0.15)' }}>
                       {lead.nombre.charAt(0).toUpperCase()}
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="font-bold text-sm truncate leading-tight" style={{ color: 'var(--text)' }}>{lead.nombre}</p>
-                      {lead.empresa && <p className="text-[10px] truncate mt-0.5" style={{ color: 'var(--text-muted)' }}>{lead.empresa}</p>}
+                    <div className="min-w-0 flex-1 pt-0.5">
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-[13px] font-bold truncate leading-tight" style={{ color: '#1a2035' }}>{lead.nombre}</p>
+                        {lead.is_new && (
+                          <span className="flex-shrink-0 text-[9px] font-black px-1.5 py-0.5 rounded-full animate-pulse"
+                            style={{ background: '#4361ee', color: '#fff' }}>
+                            NUEVO
+                          </span>
+                        )}
+                        {lead.is_contactado && (
+                          <span className="flex-shrink-0 text-[9px] font-black px-1.5 py-0.5 rounded-full"
+                            style={{ background: 'rgba(16,185,129,0.15)', color: '#10B981' }}>
+                            CONTACTADO
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] truncate mt-0.5 font-medium" style={{ color: 'rgba(26,32,53,0.50)' }}>
+                        {lead.empresa || lead.telefono || lead.rut || '—'}
+                      </p>
                     </div>
-                    <span className="flex items-center gap-1 text-[10px] font-semibold flex-shrink-0 px-2 py-0.5 rounded-full"
+                  </div>
+
+                  {/* Stage + cuotas vencidas */}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full"
                       style={{ background: s.color, color: s.dot }}>
                       <span className="w-1.5 h-1.5 rounded-full" style={{ background: s.dot }} />
                       {s.label}
                     </span>
+                    {(lead.lf_cuotas_vencidas ?? 0) > 0 && (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                        style={{ background: 'rgba(239,68,68,0.10)', color: '#DC2626' }}>
+                        {lead.lf_cuotas_vencidas} cuota{(lead.lf_cuotas_vencidas??0)>1?'s':''} vencida{(lead.lf_cuotas_vencidas??0)>1?'s':''}
+                      </span>
+                    )}
                   </div>
-                  <div className="mt-2.5">
-                    <div className="flex justify-between text-[10px] mb-1" style={{ color: 'var(--text-muted)' }}>
-                      <span>{fmt(lead.monto_deuda)}</span>
-                      <span>{pct.toFixed(0)}% cobrado</span>
+
+                  {/* Monto deuda + progreso */}
+                  <div className="rounded-xl px-3 py-2.5" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                    <div className="flex justify-between text-[10px] mb-1.5" style={{ color: 'rgba(26,32,53,0.55)' }}>
+                      <span className="font-semibold">Deuda total</span>
+                      <span className="font-bold" style={{ color: '#1a2035' }}>{fmt(lead.monto_deuda)}</span>
                     </div>
-                    <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(26,32,53,0.08)' }}>
-                      <div className="h-full rounded-full" style={{ width: `${pct}%`, background: s.dot }} />
+                    <div className="h-1.5 rounded-full overflow-hidden mb-1.5" style={{ background: 'rgba(26,32,53,0.08)' }}>
+                      <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: s.dot }} />
+                    </div>
+                    <div className="flex justify-between text-[10px]">
+                      <span style={{ color: '#10B981', fontWeight: 600 }}>Cobrado: {fmt(lead.monto_pagado)}</span>
+                      <span style={{ color: pendiente > 0 ? '#EF4444' : '#10B981', fontWeight: 600 }}>
+                        Pendiente: {fmt(pendiente)}
+                      </span>
                     </div>
                   </div>
-                  {lead.telefono && (
-                    <div className="flex items-center gap-1 mt-1.5 text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                      <Phone size={9} /><span>{lead.telefono}</span>
+
+                  {/* Próxima cuota */}
+                  {lead.proxima_cuota_fecha && (
+                    <div className="flex items-center justify-between text-[10px] px-2.5 py-1.5 rounded-lg"
+                      style={{ background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.20)' }}>
+                      <span style={{ color: '#D97706', fontWeight: 600 }}>Próx. cuota: {lead.proxima_cuota_fecha}</span>
+                      {lead.proxima_cuota_monto && <span style={{ color: '#F59E0B', fontWeight: 700 }}>{fmt(lead.proxima_cuota_monto)}</span>}
                     </div>
                   )}
-                </button>
-              )
-            })}
-          </div>
+
+                  {/* CTA */}
+                  <div className="mt-auto pt-1">
+                    <div className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold transition-all"
+                      style={isSelected ? {
+                        background: s.dot, color: '#fff', border: `1px solid ${s.dot}`,
+                        boxShadow: `0 2px 8px ${s.dot}44`,
+                      } : {
+                        background: `${s.dot}15`, color: s.dot,
+                        border: `1px solid ${s.dot}33`,
+                      }}>
+                      {isSelected ? '✓ Abierto' : 'Ver cliente →'}
+                    </div>
+                  </div>
+                </div>
+              </button>
+            )
+          })}
         </div>
-
-        {/* Right: detail */}
-        {(showDetail || selected) && (
-          <div className={`flex-1 min-h-0 rounded-2xl overflow-hidden ${!showDetail ? 'hidden md:flex' : 'flex'} flex-col`}
-            style={{ background: '#fff', border: '1px solid rgba(26,32,53,0.10)', boxShadow: '0 2px 8px rgba(26,32,53,0.06)' }}>
-            {selected ? (
-              <DetailPanel key={selected.id} lead={selected} onUpdate={handleUpdate}
-                onClose={() => { setShowDetail(false); setSelected(null) }} />
-            ) : (
-              <div className="flex flex-col items-center justify-center h-full" style={{ color: 'var(--text-muted)' }}>
-                <User size={32} style={{ marginBottom: 12, opacity: 0.3 }} />
-                <p className="text-sm font-medium">Selecciona un cliente para ver el detalle</p>
-              </div>
-            )}
-          </div>
-        )}
-
-        {!showDetail && !selected && (
-          <div className="hidden md:flex flex-1 items-center justify-center rounded-2xl"
-            style={{ background: 'rgba(26,32,53,0.02)', border: '2px dashed rgba(26,32,53,0.10)' }}>
-            <div className="text-center" style={{ color: 'var(--text-muted)' }}>
-              <User size={40} style={{ marginBottom: 12, opacity: 0.25, margin: '0 auto 12px' }} />
-              <p className="text-sm font-medium">Selecciona un cliente</p>
-              <p className="text-xs mt-1">para ver su información</p>
-            </div>
-          </div>
-        )}
       </div>
+
+      {/* ── Fixed right drawer (same as Leads) ── */}
+      {selected && showDetail && (
+        <>
+          {/* Backdrop */}
+          <div className="fixed inset-0 bg-black/20 z-40 backdrop-blur-[1px]"
+            onClick={() => { setShowDetail(false); setSelected(null) }} />
+
+          {/* Drawer */}
+          <div className="fixed right-0 top-0 bottom-0 w-full max-w-2xl bg-surface-1 shadow-2xl z-50 flex flex-col border-l border-white/[0.07]">
+
+            {/* Accent line */}
+            <div className="h-0.5 flex-shrink-0"
+              style={{ background: `linear-gradient(90deg, ${STAGES[selected.stage]?.dot ?? '#4361ee'} 0%, rgba(67,97,238,0.35) 100%)` }} />
+
+            <DetailPanel
+              key={selected.id}
+              lead={selected}
+              onUpdate={handleUpdate}
+              onClose={() => { setShowDetail(false); setSelected(null) }}
+            />
+          </div>
+        </>
+      )}
     </div>
   )
 }

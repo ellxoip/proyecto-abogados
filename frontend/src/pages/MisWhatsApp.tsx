@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import {
   getMyWASessions, createMyWASession, startMyWASession,
   getMyWASessionStatus, getMyWASessionQR, renameMyWASession, deleteMyWASession,
+  getMe,
 } from '../api'
 import toast from 'react-hot-toast'
 import {
@@ -405,7 +406,7 @@ function SessionCard({ session, onQR, onDelete, onRename, onRefresh }: {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function MisWhatsApp() {
-  const { user } = useAuthStore()
+  const { user, refreshUser } = useAuthStore()
   const { confirm, dialog: confirmDialog } = useConfirm()
   const [sessions, setSessions] = useState<WASession[]>([])
   const [loading, setLoading] = useState(true)
@@ -426,7 +427,9 @@ export default function MisWhatsApp() {
     finally { setLoading(false) }
   }, [])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => {
+    refreshUser().then(() => load())
+  }, [])
 
   // Background poll — auto-delete sessions that were unlinked from the phone
   useEffect(() => {

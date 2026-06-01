@@ -97,8 +97,17 @@ export const updateCobradorNotes = (id: number, notes: string) =>
 export const updateCobradorMontoPagado = (id: number, monto_pagado: number) =>
   api.patch(`/api/cobrador/leads/${id}/monto_pagado`, { monto_pagado }).then(r => r.data)
 export const getCobradorDashboard = () => api.get('/api/cobrador/dashboard').then(r => r.data)
+export const getCobradorHistorial = (params?: any) => api.get('/api/cobrador/historial', { params }).then(r => r.data)
 export const syncCobradorLeads = () => api.post('/api/cobrador/sync').then(r => r.data)
 export const getCobradorPortalUrl = (id: number) => api.get(`/api/cobrador/leads/${id}/portal-url`).then(r => r.data)
+export const markCobradorLeadSeen = (id: number) => api.patch(`/api/cobrador/leads/${id}/seen`).then(r => r.data)
+export const markCobradorContactado = (id: number) => api.patch(`/api/cobrador/leads/${id}/contactado`).then(r => r.data)
+export const unmarkCobradorContactado = (id: number) => api.patch(`/api/cobrador/leads/${id}/descontactar`).then(r => r.data)
+export const sendCobradorEmail = (id: number, subject: string, body: string, to?: string) =>
+  api.post(`/api/cobrador/leads/${id}/email`, { subject, body, to }).then(r => r.data)
+export const getGmailStatus = () => api.get('/api/google/gmail/status').then(r => r.data)
+export const getGmailAuthUrl = () => api.get('/api/google/gmail/auth-url').then(r => r.data)
+export const disconnectGmail = () => api.delete('/api/google/gmail/disconnect').then(r => r.data)
 
 // PAYMENTS
 export const getPayments = (params?: any) => api.get('/api/payments', { params }).then(r => r.data)

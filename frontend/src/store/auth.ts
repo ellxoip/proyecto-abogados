@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { login as apiLogin } from '../api'
+import { login as apiLogin, getMe } from '../api'
 import type { PlanLimits } from '../utils/plans'
 
 interface User {
@@ -19,6 +19,7 @@ interface AuthState {
   isAuthenticated: boolean
   login: (email: string, password: string) => Promise<void>
   logout: () => void
+  refreshUser: () => Promise<void>
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -39,5 +40,13 @@ export const useAuthStore = create<AuthState>((set) => ({
     localStorage.removeItem('token')
     localStorage.removeItem('user')
     set({ user: null, token: null, isAuthenticated: false })
+  },
+
+  refreshUser: async () => {
+    try {
+      const me = await getMe()
+      localStorage.setItem('user', JSON.stringify(me))
+      set({ user: me })
+    } catch { /* silent — token may be expired */ }
   },
 }))

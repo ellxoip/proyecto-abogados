@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent / ".env")
 import os
 import time
+import asyncio
 
 # Set Chilean Timezone
 os.environ['TZ'] = 'America/Santiago'
@@ -425,29 +426,111 @@ def _run_migrations():
 
 @app.on_event("startup")
 async def startup():
-    _run_migrations()
+    startup_lock = None
     try:
-        seed()
-    except Exception as e:
-        print(f"⚠️  Seed skipped (DB already initialized): {e}")
-    _ensure_tecnico()
-    try:
-        _migrate_negocio()  # Must run after seed so superadmin user exists
-    except Exception as e:
-        print(f"⚠️  _migrate_negocio skipped: {e}")
-    try:
-        from .database import SessionLocal as _SL
-        _db = _SL()
-        cobrador.seed_cobrador(_db)  # ensures cobrador user exists
-        result = cobrador.sync_morosos(_db)
-        if result["ok"]:
-            print(f"✅ LF sync: {result['created']} nuevos, {result['updated']} actualizados ({result['total']} morosos)")
-        else:
-            print(f"⚠️  LF sync failed: {result.get('error')}")
-        _db.close()
-    except Exception as e:
-        print(f"⚠️  cobrador startup skipped: {e}")
+        from .database import _is_sqlite
+        if not _is_sqlite:
+            startup_lock = engine.connect()
+            startup_lock.execute(text("SELECT pg_advisory_lock(5288001)"))
+
+        _run_migrations()
+        try:
+            seed()
+        except Exception as e:
+            print(f"⚠️  Seed skipped (DB already initialized): {e}")
+        _ensure_tecnico()
+        try:
+            _migrate_negocio()  # Must run after seed so superadmin user exists
+        except Exception as e:
+            print(f"⚠️  _migrate_negocio skipped: {e}")
+        try:
+            from .database import SessionLocal as _SL
+            _db = _SL()
+            cobrador.seed_cobrador(_db)  # ensures cobrador user exists
+            result = cobrador.sync_morosos(_db)
+            if result["ok"]:
+                print(f"✅ LF sync: {result['created']} nuevos, {result['updated']} actualizados ({result['total']} morosos)")
+            else:
+                print(f"⚠️  LF sync failed: {result.get('error')}")
+            # Process PagaCuotas payment backlog on startup
+            try:
+                from .routers.legal_finance_integration import process_pagacuotas_pending_payments
+                n_pc = process_pagacuotas_pending_payments(_db)
+                if n_pc > 0:
+                    print(f"✅ PagaCuotas backlog: {n_pc} pagos procesados al arrancar")
+            except Exception as e:
+                print(f"⚠️  PagaCuotas backlog skipped: {e}")
+            _db.close()
+        except Exception as e:
+            print(f"⚠️  cobrador startup skipped: {e}")
+    finally:
+        if startup_lock is not None:
+            try:
+                startup_lock.execute(text("SELECT pg_advisory_unlock(5288001)"))
+            finally:
+                startup_lock.close()
     await wa_broadcaster.start()
+    # Start background auto-sync for cobrador leads (every 5 minutes)
+    asyncio.create_task(_auto_sync_cobrador())
+
+
+async def _auto_sync_cobrador():
+    """Background task: sync morosos from Legal Finance every 5 minutes.
+    Broadcasts SSE + push notification when new morosos arrive."""
+    await asyncio.sleep(60)  # wait 1 min after startup before first auto-sync
+    while True:
+        try:
+            from .database import SessionLocal as _SL
+            from .routers import cobrador as _cobrador
+            _db = _SL()
+            try:
+                # Sync pendiente_morosos (EN_PROCESO_MORA) from Hive service
+                try:
+                    _cobrador.sync_pendiente_morosos(_db)
+                except Exception as _pe:
+                    print(f"⚠️  pendiente_morosos sync error: {_pe}")
+
+                # Sync morosos from LF
+                result = _cobrador.sync_morosos(_db)
+                n_created = result.get("created", 0)
+                n_updated = result.get("updated", 0)
+
+                # Process PagaCuotas pending/failed payments
+                from .routers.legal_finance_integration import process_pagacuotas_pending_payments
+                n_pc = process_pagacuotas_pending_payments(_db)
+                if n_pc > 0:
+                    print(f"✅ PagaCuotas sync: {n_pc} pagos procesados")
+                    n_updated += n_pc
+
+                if result.get("ok") and (n_created > 0 or n_updated > 0):
+                    print(f"✅ Auto-sync LF: {n_created} nuevos morosos, {n_updated} actualizados")
+                    # Broadcast SSE so cobrador panels reload automatically
+                    await wa_broadcaster.broadcast("cobrador_sync", {
+                        "created": n_created,
+                        "updated": n_updated,
+                    })
+                    # Push notification only when new morosos arrive
+                    if n_created > 0:
+                        try:
+                            from .routers.push import send_push_to_user
+                            cobradores = _db.query(models.User).filter(
+                                models.User.role == "cobrador",
+                                models.User.is_active == True,
+                            ).all()
+                            for cob in cobradores:
+                                send_push_to_user(
+                                    _db, cob.id,
+                                    title="📋 Nuevos morosos en tu cartera",
+                                    body=f"{n_created} cliente{'s' if n_created > 1 else ''} nuevo{'s' if n_created > 1 else ''} asignado{'s' if n_created > 1 else ''} desde Legal Finance",
+                                    url="/cobrador/cartera",
+                                )
+                        except Exception as pe:
+                            print(f"⚠️  Push cobrador failed: {pe}")
+            finally:
+                _db.close()
+        except Exception as e:
+            print(f"⚠️  Auto-sync cobrador error: {e}")
+        await asyncio.sleep(300)  # 5 minutes
 
 
 @app.on_event("shutdown")

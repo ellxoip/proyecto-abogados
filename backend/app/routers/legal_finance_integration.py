@@ -9,7 +9,8 @@ import json
 import asyncio
 import logging
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Header
+from sqlalchemy import create_engine, text as sa_text
 from sqlalchemy.orm import Session
 
 from ..database import get_db
@@ -25,10 +26,63 @@ router = APIRouter(prefix="/api", tags=["legal_finance"])
 
 LF_CALLBACK_SECRET = os.getenv("LF_CALLBACK_SECRET", "")
 
+_CONTABLE_URL = os.getenv(
+    "CONTABLE_DATABASE_URL",
+    "postgresql://contable_user:CHANGE_ME@pg-produccion-do-user-35082994-0.m.db.ondigitalocean.com:25061/contable_pool?sslmode=require",
+)
+
+_PAGACUOTAS_DB_URL = os.getenv(
+    "PAGACUOTAS_DATABASE_URL",
+    "",
+)
+
+
+async def _broadcast_cobrador_sync(created: int = 0, updated: int = 1):
+    try:
+        from ..broadcaster import wa_broadcaster
+        await wa_broadcaster.broadcast("cobrador_sync", {"created": created, "updated": updated})
+    except Exception as e:
+        logger.warning("[cobrador] broadcast failed: %s", e)
+
+
+def _fetch_lf_contrato_totals(lf_contrato_id: int) -> dict | None:
+    """Query LF DB for real payment totals. Returns None on any failure."""
+    if not lf_contrato_id or "CHANGE_ME" in _CONTABLE_URL:
+        return None
+    try:
+        engine = create_engine(_CONTABLE_URL, pool_pre_ping=True)
+        with engine.connect() as conn:
+            row = conn.execute(sa_text("""
+                SELECT
+                    ct.monto_ccto,
+                    COALESCE(SUM(cu.monto_pagado) FILTER (WHERE cu.estado = 'PAGADA'), 0)
+                        AS total_pagado,
+                    MIN(cu.fecha_vencimiento) FILTER (WHERE cu.estado = 'PENDIENTE')
+                        AS proxima_cuota_fecha,
+                    MIN(cu.monto_actual) FILTER (
+                        WHERE cu.estado = 'PENDIENTE'
+                        AND cu.fecha_vencimiento = (
+                            SELECT MIN(q.fecha_vencimiento) FROM "Cuota" q
+                            WHERE q.contrato_id = ct.id AND q.estado = 'PENDIENTE'
+                        )
+                    ) AS proxima_cuota_monto
+                FROM "Contrato" ct
+                LEFT JOIN "Cuota" cu ON cu.contrato_id = ct.id
+                WHERE ct.id = :cid
+                GROUP BY ct.id, ct.monto_ccto
+            """), {"cid": lf_contrato_id}).first()
+        engine.dispose()
+        if row:
+            return dict(row._mapping)
+    except Exception as e:
+        logger.warning("[cobrador] LF fetch totals failed contrato=%s: %s", lf_contrato_id, e)
+    return None
+
 
 @router.post("/webhooks/legal_finance")
 def legal_finance_webhook(
     payload: dict,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     x_lf_callback_secret: str = Header(None, alias="x-lf-callback-secret"),
 ):
@@ -52,7 +106,22 @@ def legal_finance_webhook(
     if not event or not crm_lead_id:
         raise HTTPException(status_code=400, detail="Faltan campos: event, crmLeadId")
 
-    lead = db.query(models.Lead).filter(models.Lead.id == int(crm_lead_id)).first()
+    raw_id = int(crm_lead_id)
+
+    # Negative IDs = cobrador leads (set when moving to pago_comprometido)
+    if raw_id < 0:
+        cobrador_lead = db.query(models.CobradorLead).filter(
+            models.CobradorLead.id == abs(raw_id)
+        ).first()
+        if not cobrador_lead:
+            raise HTTPException(status_code=404, detail="Cobrador lead no encontrado")
+        if event == "payment_confirmed":
+            _handle_cobrador_payment_confirmed(db, cobrador_lead, payload)
+        db.commit()
+        background_tasks.add_task(_broadcast_cobrador_sync, 0, 1)
+        return {"ok": True, "cobradorLeadId": abs(raw_id), "event": event}
+
+    lead = db.query(models.Lead).filter(models.Lead.id == raw_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead no encontrado")
 
@@ -68,6 +137,41 @@ def legal_finance_webhook(
 
     db.commit()
     return {"ok": True, "leadId": crm_lead_id, "event": event}
+
+
+def _handle_cobrador_payment_confirmed(db: Session, cobrador_lead: models.CobradorLead, payload: dict):
+    """Sync real payment totals from LF and move to 'pagado' only when saldo = 0."""
+    lf_data = _fetch_lf_contrato_totals(cobrador_lead.lf_contrato_id)
+
+    if lf_data:
+        total_pagado = float(lf_data.get("total_pagado") or 0)
+        cobrador_lead.monto_pagado = total_pagado
+        cobrador_lead.lf_total_pagado = total_pagado
+        pcf = lf_data.get("proxima_cuota_fecha")
+        cobrador_lead.proxima_cuota_fecha = (
+            pcf.isoformat() if pcf and hasattr(pcf, "isoformat") else str(pcf) if pcf else None
+        )
+        pm = lf_data.get("proxima_cuota_monto")
+        cobrador_lead.proxima_cuota_monto = float(pm) if pm else None
+    else:
+        # Fallback: accumulate from webhook if LF DB unreachable
+        monto_cuota = float(payload.get("montoPagado") or payload.get("amount") or 0)
+        if monto_cuota > 0:
+            cobrador_lead.monto_pagado = min(
+                cobrador_lead.monto_pagado + monto_cuota,
+                cobrador_lead.monto_deuda,
+            )
+
+    # Move to pagado ONLY when fully paid (saldo = 0)
+    if cobrador_lead.monto_pagado >= cobrador_lead.monto_deuda:
+        cobrador_lead.stage = "pagado"
+        logger.info("[cobrador] Lead %s → pagado (totalmente pagado)", cobrador_lead.id)
+    else:
+        pct = 100 * cobrador_lead.monto_pagado / cobrador_lead.monto_deuda if cobrador_lead.monto_deuda else 0
+        logger.info(
+            "[cobrador] Lead %s pago parcial: %s / %s (%.1f%%)",
+            cobrador_lead.id, cobrador_lead.monto_pagado, cobrador_lead.monto_deuda, pct,
+        )
 
 
 def _handle_payment_confirmed(db: Session, lead: models.Lead, contrato_id):
@@ -275,3 +379,160 @@ def _handle_service_started(db: Session, lead: models.Lead, contrato_id, payload
         f"Servicio activo — {contact_name}",
         f"El caso de {contact_name} fue iniciado en Hive Service Control a través de Hive Contable.",
     )
+
+
+# ── PagaCuotas integration ────────────────────────────────────────────────────
+
+def _mark_pagacuotas_payment_synced(external_payment_id: str) -> None:
+    """Mark a payment as CRM-synced in PagaCuotas DB so it stops retrying."""
+    if not external_payment_id or not _PAGACUOTAS_DB_URL or "CHANGE_ME" in _PAGACUOTAS_DB_URL:
+        return
+    try:
+        engine = create_engine(_PAGACUOTAS_DB_URL, pool_pre_ping=True)
+        with engine.connect() as conn:
+            conn.execute(sa_text("""
+                UPDATE "Payment"
+                SET crm_sync_status = 'synced', updated_at = NOW()
+                WHERE external_payment_id = :pid
+            """), {"pid": external_payment_id})
+            conn.execute(sa_text("""
+                UPDATE "IntegrationOutbox"
+                SET status = 'sent', updated_at = NOW()
+                WHERE payload_json->>'external_payment_id' = :pid
+            """), {"pid": external_payment_id})
+            conn.commit()
+        engine.dispose()
+    except Exception as e:
+        logger.warning("[pagacuotas] mark_synced failed for %s: %s", external_payment_id, e)
+
+
+def _apply_payment_to_cobrador_lead(
+    db: Session,
+    cobrador_lead: models.CobradorLead,
+    lf_contrato_id: int,
+    fallback_amount: float = 0,
+) -> None:
+    """Fetch real LF totals and apply to cobrador lead. Fallback to amount if LF unreachable."""
+    lf_data = _fetch_lf_contrato_totals(lf_contrato_id)
+    if lf_data:
+        total_pagado = float(lf_data.get("total_pagado") or 0)
+        cobrador_lead.monto_pagado = total_pagado
+        cobrador_lead.lf_total_pagado = total_pagado
+        pcf = lf_data.get("proxima_cuota_fecha")
+        cobrador_lead.proxima_cuota_fecha = (
+            pcf.isoformat() if pcf and hasattr(pcf, "isoformat") else str(pcf) if pcf else None
+        )
+        pm = lf_data.get("proxima_cuota_monto")
+        cobrador_lead.proxima_cuota_monto = float(pm) if pm else None
+        if cobrador_lead.stage != "pagado" and cobrador_lead.monto_deuda > 0 and total_pagado >= cobrador_lead.monto_deuda:
+            cobrador_lead.stage = "pagado"
+            logger.info("[pagacuotas] Lead %s → pagado (saldo=0)", cobrador_lead.id)
+    elif fallback_amount > 0:
+        cobrador_lead.monto_pagado = min(
+            cobrador_lead.monto_pagado + fallback_amount, cobrador_lead.monto_deuda
+        )
+
+
+def process_pagacuotas_pending_payments(db: Session) -> int:
+    """
+    Poll PagaCuotas DB for confirmed payments with crm_sync_status pending/failed,
+    apply them to cobrador leads, and mark them synced. Returns count processed.
+    """
+    if not _PAGACUOTAS_DB_URL or "CHANGE_ME" in _PAGACUOTAS_DB_URL:
+        return 0
+    try:
+        pc_engine = create_engine(_PAGACUOTAS_DB_URL, pool_pre_ping=True)
+        with pc_engine.connect() as conn:
+            rows = conn.execute(sa_text("""
+                SELECT id, external_payment_id, contrato_contable_id, amount
+                FROM "Payment"
+                WHERE crm_sync_status IN ('pending', 'failed')
+                  AND status = 'confirmado'
+                ORDER BY paid_at ASC
+                LIMIT 50
+            """)).fetchall()
+        pc_engine.dispose()
+    except Exception as e:
+        logger.warning("[pagacuotas] fetch pending payments failed: %s", e)
+        return 0
+
+    processed = 0
+    for row in rows:
+        d = dict(row._mapping)
+        external_id = d.get("external_payment_id")
+        lf_contrato_id_str = d.get("contrato_contable_id")
+        if not lf_contrato_id_str:
+            _mark_pagacuotas_payment_synced(external_id)
+            continue
+        try:
+            lf_contrato_id = int(lf_contrato_id_str)
+        except (ValueError, TypeError):
+            continue
+
+        cobrador_lead = db.query(models.CobradorLead).filter(
+            models.CobradorLead.lf_contrato_id == lf_contrato_id
+        ).first()
+
+        if not cobrador_lead:
+            _mark_pagacuotas_payment_synced(external_id)
+            continue
+
+        _apply_payment_to_cobrador_lead(db, cobrador_lead, lf_contrato_id, float(d.get("amount") or 0))
+        _mark_pagacuotas_payment_synced(external_id)
+        processed += 1
+        logger.info("[pagacuotas] Processed payment %s → lf_contrato %s", external_id, lf_contrato_id)
+
+    if processed > 0:
+        try:
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            logger.warning("[pagacuotas] commit failed: %s", e)
+            return 0
+
+    return processed
+
+
+@router.post("/payments")
+def pagacuotas_payment_webhook(
+    payload: dict,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """
+    Receives payment notifications from PagaCuotas (pagacuotas.hivelegaltech.cl).
+    Called after MercadoPago confirms a payment.
+
+    Payload fields: contrato_id, monto_pagado, external_payment_id, cliente_nombre, ...
+    """
+    contrato_id_raw = payload.get("contrato_id")
+    external_id = payload.get("external_payment_id") or payload.get("payment_id")
+    fallback_monto = float(payload.get("monto_pagado") or payload.get("amount") or 0)
+
+    if not contrato_id_raw:
+        raise HTTPException(status_code=400, detail="contrato_id requerido")
+
+    try:
+        lf_contrato_id = int(contrato_id_raw)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="contrato_id inválido")
+
+    cobrador_lead = db.query(models.CobradorLead).filter(
+        models.CobradorLead.lf_contrato_id == lf_contrato_id
+    ).first()
+
+    if not cobrador_lead:
+        logger.info("[pagacuotas] No cobrador lead for lf_contrato_id=%s — ignoring", lf_contrato_id)
+        if external_id:
+            _mark_pagacuotas_payment_synced(external_id)
+        return {"ok": True, "message": "no cobrador lead for this contrato"}
+
+    _apply_payment_to_cobrador_lead(db, cobrador_lead, lf_contrato_id, fallback_monto)
+    db.commit()
+
+    if external_id:
+        _mark_pagacuotas_payment_synced(external_id)
+
+    background_tasks.add_task(_broadcast_cobrador_sync, 0, 1)
+    logger.info("[pagacuotas] webhook OK: contrato=%s lead=%s", lf_contrato_id, cobrador_lead.id)
+    return {"ok": True, "cobrador_lead_id": cobrador_lead.id}

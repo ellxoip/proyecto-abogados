@@ -23,6 +23,14 @@ def _enrich_user(user: models.User, db: Session) -> dict:
             negocio = group if group.negocio_id is None else db.query(models.Group).filter(models.Group.id == group.negocio_id).first()
             if negocio and negocio.plan:
                 plan = negocio.plan
+    elif user.role == "cobrador":
+        # Cobrador users have no group_id; inherit plan from the abogados negocio
+        negocio = db.query(models.Group).filter(
+            models.Group.tipo == "abogados",
+            models.Group.negocio_id.is_(None),
+        ).first()
+        if negocio and negocio.plan:
+            plan = negocio.plan
     data["negocio_plan"] = plan
     data["negocio_plan_limits"] = get_limits(plan)
     return data

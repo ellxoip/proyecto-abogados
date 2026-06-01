@@ -13,7 +13,8 @@ interface ConfirmDialogProps {
 export function ConfirmDialog({ title, message, confirmLabel = 'Confirmar', danger = true, onConfirm, onCancel }: ConfirmDialogProps) {
   return (
     <div className="fixed inset-0 z-[300] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.55)' }}>
-      <div className="bg-surface-1 rounded-2xl shadow-modal w-full max-w-sm flex flex-col" style={{ border: '1px solid rgba(255,255,255,0.08)' }}>
+      <div className="rounded-2xl shadow-modal w-full max-w-sm flex flex-col"
+        style={{ background: '#ffffff', border: '1px solid rgba(26,32,53,0.12)' }}>
         <div className="flex items-start gap-3 px-5 pt-5 pb-4">
           {danger && (
             <div className="flex-shrink-0 w-9 h-9 rounded-full flex items-center justify-center" style={{ background: 'rgba(239,35,60,0.12)', border: '1px solid rgba(239,35,60,0.25)' }}>
@@ -21,10 +22,13 @@ export function ConfirmDialog({ title, message, confirmLabel = 'Confirmar', dang
             </div>
           )}
           <div className="flex-1 min-w-0">
-            {title && <p className="text-sm font-bold text-white mb-1">{title}</p>}
-            <p className="text-sm" style={{ color: 'rgba(255,255,255,0.65)' }}>{message}</p>
+            {title && <p className="text-sm font-bold mb-1" style={{ color: '#1a2035' }}>{title}</p>}
+            <p className="text-sm" style={{ color: '#1a2035', opacity: 0.72 }}>{message}</p>
           </div>
-          <button onClick={onCancel} className="flex-shrink-0 p-1 rounded-lg hover:bg-surface-2 transition-colors" style={{ color: 'rgba(255,255,255,0.4)' }}>
+          <button onClick={onCancel} className="flex-shrink-0 p-1 rounded-lg transition-colors"
+            style={{ color: 'rgba(26,32,53,0.42)' }}
+            onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#f8fafc'}
+            onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
             <X size={15} />
           </button>
         </div>

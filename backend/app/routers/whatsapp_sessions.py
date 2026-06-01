@@ -10,7 +10,7 @@ import os
 from ..database import get_db
 from .. import models
 from ..auth import get_current_user
-from ..plans import enforce_limit, _get_negocio
+from ..plans import enforce_limit, _get_negocio, get_limits
 
 QR_SERVICE_URL = os.getenv("QR_SERVICE_URL", "http://localhost:3001")
 QR_TIMEOUT = 10
@@ -92,16 +92,34 @@ async def create_my_session(
     if current_user.role not in ("agendadora", "cobrador", "superadmin", "subadmin", "tecnico"):
         raise HTTPException(status_code=403, detail="Sin acceso")
 
-    # Enforce plan-level negocio WA limit for ALL roles
-    negocio = _get_negocio(db, current_user.group_id)
-    if negocio:
-        all_group_ids_q = db.query(models.Group.id).filter(
-            (models.Group.id == negocio.id) | (models.Group.negocio_id == negocio.id)
-        ).subquery()
-        wa_count = db.query(models.WhatsAppConfig).filter(
-            models.WhatsAppConfig.group_id.in_(all_group_ids_q),
+    # Enforce self-service WA limit: count only configs owned by this user.
+    # Tecnico-managed group configs (no owner_user_id) are excluded from this count
+    # because they are a separate infrastructure concern.
+    plan_str = "basico"
+    if current_user.group_id:
+        negocio = _get_negocio(db, current_user.group_id)
+        if negocio and negocio.plan:
+            plan_str = negocio.plan
+    elif current_user.role == "cobrador":
+        abogados_negocio = db.query(models.Group).filter(
+            models.Group.tipo == "abogados",
+            models.Group.negocio_id.is_(None),
+        ).first()
+        if abogados_negocio and abogados_negocio.plan:
+            plan_str = abogados_negocio.plan
+
+    limits = get_limits(plan_str)
+    max_wa = limits.get("max_wa_numbers", 1)
+    if max_wa != -1:
+        own_count = db.query(models.WhatsAppConfig).filter(
+            models.WhatsAppConfig.owner_user_id == current_user.id,
         ).count()
-        enforce_limit(db, current_user.group_id, "max_wa_numbers", wa_count)
+        if own_count >= max_wa:
+            label = limits.get("label", plan_str)
+            raise HTTPException(
+                status_code=403,
+                detail=f"Plan {label}: límite de {max_wa} número{'s' if max_wa != 1 else ''} WhatsApp alcanzado. Actualiza el plan para continuar.",
+            )
 
     cfg = models.WhatsAppConfig(
         name=f"WhatsApp de {current_user.name.split()[0]}",
