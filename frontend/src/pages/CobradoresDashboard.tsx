@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { getCobradorDashboard } from '../api'
+import { useRealtime } from '../contexts/RealtimeContext'
 import { TrendingUp, Users, DollarSign, AlertCircle, CheckCircle, Handshake } from 'lucide-react'
 
 const STAGES: Record<string, { label: string; color: string; icon: React.ElementType }> = {
@@ -16,12 +17,17 @@ export default function CobradoresDashboard() {
   const [stats, setStats] = useState<any>(null)
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
+  const fetchStats = useCallback((silent = false) => {
+    if (!silent) setLoading(true)
     getCobradorDashboard()
       .then(setStats)
       .catch(() => {})
-      .finally(() => setLoading(false))
+      .finally(() => { if (!silent) setLoading(false) })
   }, [])
+
+  useEffect(() => { fetchStats() }, [fetchStats])
+
+  useRealtime(['cobrador_sync', 'lead_update'], () => fetchStats(true))
 
   if (loading) return (
     <div className="flex items-center justify-center h-64">

@@ -21,6 +21,7 @@ interface Conversation {
 
 import { parseDate as parseAsUTC } from '../utils/dates'
 import { rutOnChange } from '../utils/rut'
+import { useRealtime } from '../contexts/RealtimeContext'
 
 function formatConvTime(iso: string | null) {
   if (!iso) return ''
@@ -350,9 +351,6 @@ export default function WhatsApp() {
   const audioChunksRef    = useRef<Blob[]>([])
   const recordTimerRef    = useRef<ReturnType<typeof setInterval> | null>(null)
   const prevUnreadRef     = useRef<Record<number, number>>({})
-  const sseRef            = useRef<EventSource | null>(null)
-  const sseReconnectRef   = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const sseWatchdogRef    = useRef<ReturnType<typeof setTimeout> | null>(null)
   const selectedConvRef   = useRef<Conversation | null>(null)
   // Ref to always-current loadConversations so SSE callback doesn't go stale
   const loadConvsRef      = useRef<() => Promise<void>>(() => Promise.resolve())
@@ -377,101 +375,47 @@ export default function WhatsApp() {
   }, [conversations, searchParams])
 
 
-  // SSE connection — real-time push from backend
-  const connectSSE = useCallback(() => {
-    const token = localStorage.getItem('token')
-    if (!token) return
-
-    if (sseRef.current) {
-      sseRef.current.close()
-      sseRef.current = null
-    }
-    if (sseReconnectRef.current) {
-      clearTimeout(sseReconnectRef.current)
-      sseReconnectRef.current = null
-    }
-
-    const url = apiUrl(`/api/whatsapp/stream?token=${encodeURIComponent(token)}`)
-    const es = new EventSource(url)
-    sseRef.current = es
-
-    // Watchdog: if no event/keepalive for 25s, reconnect and reload data
-    const resetWatchdog = () => {
-      if (sseWatchdogRef.current) clearTimeout(sseWatchdogRef.current)
-      sseWatchdogRef.current = setTimeout(() => {
-        es.close()
-        sseRef.current = null
-        loadConvsRef.current()
-        const conv = selectedConvRef.current
-        if (conv) loadMsgsRef.current(conv.contact.id)
-        sseReconnectRef.current = setTimeout(connectSSE, 200)
-      }, 25000)
-    }
-    resetWatchdog()
-
-    es.onmessage = (e) => {
-      resetWatchdog()
-      let evt: any
-      try { evt = JSON.parse(e.data) } catch { return }
-
-      if (evt.type === 'connected' || evt.type === 'keepalive') return
-
-      if (evt.type === 'new_message') {
-        const msg = evt.message
-        const conv = selectedConvRef.current
-        if (conv && msg.contact_id === conv.contact.id) {
-          setMessages(prev => {
-            const idx = prev.findIndex((m: any) => m.id === msg.id)
-            if (idx !== -1) {
-              const updated = [...prev]
-              updated[idx] = { ...prev[idx], ...msg }
-              return updated
-            }
-            return [...prev, msg]
-          })
-        } else {
-          playMessageSound()
-        }
-        loadConvsRef.current()
-        return
+  // Real-time: handle incoming events from global SSE context
+  useRealtime(['new_message', 'status_update', 'refresh'], (evt) => {
+    if (evt.type === 'new_message') {
+      const msg = evt.message
+      const conv = selectedConvRef.current
+      if (conv && msg.contact_id === conv.contact.id) {
+        setMessages(prev => {
+          const idx = prev.findIndex((m: any) => m.id === msg.id)
+          if (idx !== -1) {
+            const updated = [...prev]
+            updated[idx] = { ...prev[idx], ...msg }
+            return updated
+          }
+          return [...prev, msg]
+        })
+      } else {
+        playMessageSound()
       }
-
-      if (evt.type === 'status_update') {
-        setMessages(prev =>
-          prev.map((m: any) =>
-            m.id === evt.db_id ? { ...m, status: evt.status } : m
-          )
-        )
-        return
-      }
-
-      if (evt.type === 'refresh') {
-        loadConvsRef.current()
-        const conv = selectedConvRef.current
-        if (conv) loadMsgsRef.current(conv.contact.id)
-        return
-      }
+      loadConvsRef.current()
+      return
     }
-
-    es.onerror = () => {
-      if (sseWatchdogRef.current) clearTimeout(sseWatchdogRef.current)
-      es.close()
-      sseRef.current = null
+    if (evt.type === 'status_update') {
+      setMessages(prev =>
+        prev.map((m: any) => m.id === evt.db_id ? { ...m, status: evt.status } : m)
+      )
+      return
+    }
+    if (evt.type === 'refresh') {
       loadConvsRef.current()
       const conv = selectedConvRef.current
       if (conv) loadMsgsRef.current(conv.contact.id)
-      sseReconnectRef.current = setTimeout(connectSSE, 1000)
     }
-  }, [])
+  })
 
-  // Initial load + start SSE
+  // Initial load
   useEffect(() => {
     Promise.all([getAllWhatsAppConfigs(), loadConversations()]).then(([cfg]) => {
       setConfigs(cfg)
       if (cfg.length) setSelectedConfig(cfg[0].id.toString())
       setLoadingInit(false)
     }).catch(() => setLoadingInit(false))
-    connectSSE()
 
     // Fallback safety poll every 30s (catches missed events, keeps data fresh)
     fallbackPollRef.current = setInterval(() => {
@@ -480,12 +424,9 @@ export default function WhatsApp() {
     }, 30000)
 
     return () => {
-      if (sseRef.current) sseRef.current.close()
-      if (sseReconnectRef.current) clearTimeout(sseReconnectRef.current)
-      if (sseWatchdogRef.current) clearTimeout(sseWatchdogRef.current)
       if (fallbackPollRef.current) clearInterval(fallbackPollRef.current)
     }
-  }, [connectSSE])
+  }, [])
 
   // Scroll to bottom when messages change
   useEffect(() => {

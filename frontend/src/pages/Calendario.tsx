@@ -15,6 +15,7 @@ import { X, Plus, ChevronLeft, ChevronRight, RefreshCw, Link2, Link2Off, Search,
 import { useConfirm } from '../components/ConfirmDialog'
 import { format } from 'date-fns'
 import { useAuthStore } from '../store/auth'
+import { useRealtime } from '../contexts/RealtimeContext'
 
 
 /* ── Mini calendar ────────────────────────────────────────────────────────── */
@@ -244,6 +245,8 @@ export default function Calendario() {
     }, 30_000)
     return () => clearInterval(id)
   }, [load, loadGoogleEvents, googleStatus?.connected])
+
+  useRealtime(['calendar_update', 'lead_update'], () => load())
 
   const viewingUser  = viewUserId ? users.find(u => u.id === viewUserId) : null
 

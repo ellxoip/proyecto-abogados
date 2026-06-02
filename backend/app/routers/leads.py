@@ -14,6 +14,7 @@ from .. import models, schemas
 from ..auth import get_current_user, get_visible_group_ids
 from ..plans import enforce_limit, _get_negocio
 from ..utils.notifications import create_notification
+from ..broadcaster import wa_broadcaster
 from ..utils import at_informa as ati
 from ..utils import legal_finance as lf
 from ..utils import pagacuotas as pc
@@ -375,6 +376,7 @@ def create_lead(
         except Exception:
             pass
 
+    wa_broadcaster.broadcast_sync("lead_update", {"action": "create", "lead_id": full_lead.id})
     return full_lead
 
 
@@ -543,6 +545,7 @@ def update_lead(
         setattr(lead, field, value)
     db.commit()
     db.refresh(lead)
+    wa_broadcaster.broadcast_sync("lead_update", {"action": "update", "lead_id": lead_id})
     return db.query(models.Lead).options(
         joinedload(models.Lead.contact),
         joinedload(models.Lead.agendadora),
@@ -949,6 +952,7 @@ def advance_lead(
     db.commit()
     db.refresh(lead)
     _fire_integrations(lead, new_stage, db)
+    wa_broadcaster.broadcast_sync("lead_update", {"action": "stage_change", "lead_id": lead_id, "stage": new_stage})
     return db.query(models.Lead).options(
         joinedload(models.Lead.contact),
         joinedload(models.Lead.agendadora),
@@ -1136,6 +1140,7 @@ def move_lead_stage(
     db.commit()
     db.refresh(lead)
     _fire_integrations(lead, data.stage, db)
+    wa_broadcaster.broadcast_sync("lead_update", {"action": "stage_change", "lead_id": lead_id, "stage": data.stage})
     return db.query(models.Lead).options(
         joinedload(models.Lead.contact),
         joinedload(models.Lead.agendadora),
@@ -1195,6 +1200,7 @@ def delete_lead(
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Error interno de base de datos al eliminar: {str(e)}")
 
+    wa_broadcaster.broadcast_sync("lead_update", {"action": "delete", "lead_id": lead_id})
     return {"ok": True}
 
 

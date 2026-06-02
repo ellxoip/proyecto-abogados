@@ -17,6 +17,7 @@ import { es } from 'date-fns/locale'
 import { parseLocalDate } from '../utils/dates'
 import { Plus, X, Link2, Link2Off, RefreshCw, Clock, User, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useConfirm } from '../components/ConfirmDialog'
+import { useRealtime } from '../contexts/RealtimeContext'
 
 const GC_CSS = `
 .fc {
@@ -511,6 +512,8 @@ export default function Agenda() {
     }, 30_000)
     return () => clearInterval(id)
   }, [googleStatus?.connected, load])
+
+  useRealtime(['calendar_update', 'lead_update', 'pipeline_refresh'], () => load())
 
   const handleConnect = async () => {
     try {

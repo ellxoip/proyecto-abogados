@@ -8,6 +8,7 @@ from ..database import get_db
 from .. import models, schemas
 from ..auth import get_current_user, get_visible_group_ids
 from ..utils.notifications import create_notification
+from ..broadcaster import wa_broadcaster
 
 router = APIRouter(prefix="/api/calendar", tags=["calendar"])
 _TZ_CHILE = ZoneInfo("America/Santiago")
@@ -343,6 +344,7 @@ def create_event(
     ):
         _sync_reunion_event_to_at(db, event, data.assigned_to, current_user)
 
+    wa_broadcaster.broadcast_sync("calendar_update", {"action": "create", "event_id": event.id, "lead_id": event.lead_id})
     return event
 
 
@@ -446,6 +448,7 @@ def update_event(
         setattr(event, field, value)
     db.commit()
     db.refresh(event)
+    wa_broadcaster.broadcast_sync("calendar_update", {"action": "update", "event_id": event.id, "lead_id": event.lead_id})
     return event
 
 
@@ -559,6 +562,8 @@ def update_vendor_status(
                     )
 
     db.commit()
+    wa_broadcaster.broadcast_sync("calendar_update", {"action": "vendor_status", "event_id": event_id})
+    wa_broadcaster.broadcast_sync("lead_update", {"action": "stage_change", "lead_id": event.lead_id}) if event.lead_id else None
     return {"ok": True, "vendor_status": status}
 
 
@@ -571,6 +576,8 @@ def delete_event(
     event = db.query(models.CalendarEvent).filter(models.CalendarEvent.id == event_id).first()
     if not event:
         raise HTTPException(status_code=404, detail="Evento no encontrado")
+    lead_id = event.lead_id
     db.delete(event)
     db.commit()
+    wa_broadcaster.broadcast_sync("calendar_update", {"action": "delete", "event_id": event_id, "lead_id": lead_id})
     return {"ok": True}

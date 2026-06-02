@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { getPipelineSummary, getGroups, moveLeadStage, getStageLabels, getPipelineStages, getAgendadoraFollowup, getLead } from '../api'
 import { apiUrl } from '../api/client'
+import { useRealtime } from '../contexts/RealtimeContext'
 import type { Lead, Group, PaymentVerification } from '../types'
 import { STAGE_LABELS } from '../types'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
@@ -464,7 +465,7 @@ function Column({ stage, leads, stageCount, canMove, showGroup, labels, canConfi
             </p>
             {totalHon > 0 && (
               <p className="text-[10px] mt-0.5 font-bold" style={{ color: colAccent.border }}>
-                ${fmt(totalHon)}
+                {fmt(totalHon)}
               </p>
             )}
           </div>
@@ -707,37 +708,7 @@ export default function Pipeline() {
 
   useEffect(() => { load() }, [load])
 
-  // SSE — auto-refresh pipeline when AT Informa sends a result
-  const sseRef          = useRef<EventSource | null>(null)
-  const sseReconnectRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const loadRef         = useRef(load)
-  useEffect(() => { loadRef.current = load }, [load])
-
-  useEffect(() => {
-    const connect = () => {
-      const token = localStorage.getItem('token')
-      if (!token) return
-      if (sseRef.current) sseRef.current.close()
-      const es = new EventSource(apiUrl(`/api/whatsapp/stream?token=${encodeURIComponent(token)}`))
-      sseRef.current = es
-      es.onmessage = (e) => {
-        let evt: any
-        try { evt = JSON.parse(e.data) } catch { return }
-        if (evt.type === 'pipeline_refresh') loadRef.current()
-      }
-      es.onerror = () => {
-        es.close()
-        sseRef.current = null
-        sseReconnectRef.current = setTimeout(connect, 3000)
-      }
-    }
-    connect()
-    return () => {
-      sseRef.current?.close()
-      sseRef.current = null
-      if (sseReconnectRef.current) clearTimeout(sseReconnectRef.current)
-    }
-  }, [])
+  useRealtime(['pipeline_refresh', 'lead_update'], () => load())
 
   const handleMoved = (updated: Lead) => {
     setSummary(prev => {

@@ -9,7 +9,7 @@ import {
   getCobradorPortalUrl, markCobradorLeadSeen, markCobradorContactado, unmarkCobradorContactado, sendCobradorEmail,
   getGmailStatus, getGmailAuthUrl, disconnectGmail,
 } from '../api'
-import { apiUrl } from '../api/client'
+import { useRealtime } from '../contexts/RealtimeContext'
 import { useAuthStore } from '../store/auth'
 import { format, isToday, isYesterday } from 'date-fns'
 import { es } from 'date-fns/locale'
@@ -322,8 +322,6 @@ function ChatTab({ lead }: { lead: CobradorLead }) {
   const audioChunksRef   = useRef<Blob[]>([])
   const recordTimerRef   = useRef<ReturnType<typeof setInterval> | null>(null)
   const pollRef          = useRef<ReturnType<typeof setInterval> | null>(null)
-  const sseRef           = useRef<EventSource | null>(null)
-  const sseReconnectRef  = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const configId = selectedConfigId || configs[0]?.id?.toString() || ''
 
@@ -351,62 +349,34 @@ function ChatTab({ lead }: { lead: CobradorLead }) {
     markMessagesRead(lead.contact_id).catch(() => {})
 
     const contactId = lead.contact_id
-    const connectSSE = () => {
-      const token = localStorage.getItem('token')
-      if (!token) return
-      if (sseRef.current) sseRef.current.close()
-      if (sseReconnectRef.current) clearTimeout(sseReconnectRef.current)
-      const url = apiUrl(`/api/whatsapp/stream?token=${encodeURIComponent(token)}`)
-      const es = new EventSource(url)
-      sseRef.current = es
-      let wd: ReturnType<typeof setTimeout> | null = null
-      const resetWd = () => {
-        if (wd) clearTimeout(wd)
-        wd = setTimeout(() => {
-          es.close(); sseRef.current = null
-          getWhatsAppMessages({ contact_id: contactId }).then(data => setMessages(data.slice().reverse())).catch(() => {})
-          sseReconnectRef.current = setTimeout(connectSSE, 200)
-        }, 25000)
-      }
-      resetWd()
-      es.onmessage = (e) => {
-        resetWd()
-        let evt: any
-        try { evt = JSON.parse(e.data) } catch { return }
-        if (evt.type === 'new_message' && evt.message?.contact_id === contactId) {
-          setMessages(prev => {
-            const idx = prev.findIndex((m: any) => m.id === evt.message.id)
-            if (idx !== -1) { const u = [...prev]; u[idx] = { ...prev[idx], ...evt.message }; return u }
-            return [...prev, evt.message]
-          })
-        }
-        if (evt.type === 'status_update') {
-          setMessages(prev => prev.map((m: any) => m.id === evt.db_id ? { ...m, status: evt.status } : m))
-        }
-        if (evt.type === 'refresh') {
-          getWhatsAppMessages({ contact_id: contactId }).then(data => setMessages(data.slice().reverse())).catch(() => {})
-        }
-      }
-      es.onerror = () => {
-        if (wd) clearTimeout(wd)
-        es.close(); sseRef.current = null
-        getWhatsAppMessages({ contact_id: contactId }).then(data => setMessages(data.slice().reverse())).catch(() => {})
-        sseReconnectRef.current = setTimeout(connectSSE, 1000)
-      }
-    }
-    connectSSE()
 
     pollRef.current = setInterval(() => {
       getWhatsAppMessages({ contact_id: contactId }).then(data => setMessages(data.slice().reverse())).catch(() => {})
     }, 8000)
 
     return () => {
-      if (sseRef.current) { sseRef.current.close(); sseRef.current = null }
-      if (sseReconnectRef.current) clearTimeout(sseReconnectRef.current)
       if (pollRef.current) clearInterval(pollRef.current)
       if (recordTimerRef.current) clearInterval(recordTimerRef.current)
     }
   }, [lead.contact_id])
+
+  useRealtime(['new_message', 'status_update', 'refresh'], (evt) => {
+    const contactId = lead.contact_id
+    if (!contactId) return
+    if (evt.type === 'new_message' && evt.message?.contact_id === contactId) {
+      setMessages(prev => {
+        const idx = prev.findIndex((m: any) => m.id === evt.message.id)
+        if (idx !== -1) { const u = [...prev]; u[idx] = { ...prev[idx], ...evt.message }; return u }
+        return [...prev, evt.message]
+      })
+    }
+    if (evt.type === 'status_update') {
+      setMessages(prev => prev.map((m: any) => m.id === evt.db_id ? { ...m, status: evt.status } : m))
+    }
+    if (evt.type === 'refresh') {
+      getWhatsAppMessages({ contact_id: contactId }).then(data => setMessages(data.slice().reverse())).catch(() => {})
+    }
+  })
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
 
@@ -1186,24 +1156,15 @@ export default function CobradoresCartera() {
 
   useEffect(() => { load() }, [])
 
-  // ── Auto-sync SSE listener: reload when backend syncs new morosos ──────────
-  useEffect(() => {
-    const token = localStorage.getItem('token')
-    if (!token) return
-    const es = new EventSource(apiUrl(`/api/whatsapp/stream?token=${encodeURIComponent(token)}`))
-    es.onmessage = (e) => {
-      let evt: any
-      try { evt = JSON.parse(e.data) } catch { return }
-      if (evt.type === 'cobrador_sync' && (evt.created > 0 || evt.updated > 0)) {
-        load()
-        if (evt.created > 0) {
-          toast.success(`📋 ${evt.created} nuevo${evt.created > 1 ? 's' : ''} moroso${evt.created > 1 ? 's' : ''} en tu cartera`, { duration: 6000 })
-        }
+  // ── Auto-sync: reload when backend syncs new morosos ──────────────────────
+  useRealtime('cobrador_sync', (evt) => {
+    if (evt.created > 0 || evt.updated > 0) {
+      load()
+      if (evt.created > 0) {
+        toast.success(`📋 ${evt.created} nuevo${evt.created > 1 ? 's' : ''} moroso${evt.created > 1 ? 's' : ''} en tu cartera`, { duration: 6000 })
       }
     }
-    es.onerror = () => {}
-    return () => { es.close() }
-  }, [])
+  })
 
   // ── Incoming call SSE listener ─────────────────────────────────────────────
   const [incomingCall, setIncomingCall] = useState<{
@@ -1211,50 +1172,38 @@ export default function CobradoresCartera() {
     contact_name: string; contact_id: number | null; is_video: boolean
   } | null>(null)
   const callRingtoneRef = useRef<HTMLAudioElement | null>(null)
-  const callSseRef = useRef<EventSource | null>(null)
 
-  useEffect(() => {
-    const token = localStorage.getItem('token')
-    if (!token) return
-    const es = new EventSource(apiUrl(`/api/whatsapp/stream?token=${encodeURIComponent(token)}`))
-    callSseRef.current = es
-    es.onmessage = (e) => {
-      let evt: any
-      try { evt = JSON.parse(e.data) } catch { return }
-      if (evt.type === 'incoming_call') {
-        setIncomingCall({
-          call_id: evt.call_id,
-          session_id: evt.session_id,
-          from_phone: evt.from_phone,
-          contact_name: evt.contact_name,
-          contact_id: evt.contact_id,
-          is_video: evt.is_video,
-        })
-        // Play ringtone using Web Audio API (no file needed)
-        try {
-          const ctx = new AudioContext()
-          const playBeep = () => {
-            const osc = ctx.createOscillator()
-            const gain = ctx.createGain()
-            osc.connect(gain); gain.connect(ctx.destination)
-            osc.frequency.value = 440
-            gain.gain.setValueAtTime(0.3, ctx.currentTime)
-            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.8)
-            osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.8)
-          }
-          playBeep()
-          const interval = setInterval(playBeep, 2000)
-          ;(callRingtoneRef as any).current = { pause: () => clearInterval(interval), currentTime: 0 }
-        } catch { /* silent */ }
-      }
-      if (evt.type === 'call_ended') {
-        if (callRingtoneRef.current) { callRingtoneRef.current.pause(); callRingtoneRef.current.currentTime = 0 }
-        setIncomingCall(null)
-      }
+  useRealtime(['incoming_call', 'call_ended'], (evt) => {
+    if (evt.type === 'incoming_call') {
+      setIncomingCall({
+        call_id: evt.call_id,
+        session_id: evt.session_id,
+        from_phone: evt.from_phone,
+        contact_name: evt.contact_name,
+        contact_id: evt.contact_id,
+        is_video: evt.is_video,
+      })
+      try {
+        const ctx = new AudioContext()
+        const playBeep = () => {
+          const osc = ctx.createOscillator()
+          const gain = ctx.createGain()
+          osc.connect(gain); gain.connect(ctx.destination)
+          osc.frequency.value = 440
+          gain.gain.setValueAtTime(0.3, ctx.currentTime)
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.8)
+          osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.8)
+        }
+        playBeep()
+        const interval = setInterval(playBeep, 2000)
+        ;(callRingtoneRef as any).current = { pause: () => clearInterval(interval), currentTime: 0 }
+      } catch { /* silent */ }
     }
-    es.onerror = () => {}
-    return () => { es.close() }
-  }, [])
+    if (evt.type === 'call_ended') {
+      if (callRingtoneRef.current) { callRingtoneRef.current.pause(); callRingtoneRef.current.currentTime = 0 }
+      setIncomingCall(null)
+    }
+  })
 
   const dismissCall = () => {
     if (callRingtoneRef.current) { callRingtoneRef.current.pause(); callRingtoneRef.current.currentTime = 0 }

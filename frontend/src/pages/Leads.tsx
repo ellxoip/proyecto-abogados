@@ -8,6 +8,7 @@ import {
   getContactAgentState, setContactAgentState, dismissAgentLead,
 } from '../api'
 import { apiUrl } from '../api/client'
+import { useRealtime } from '../contexts/RealtimeContext'
 import { playMessageSound, playNewLeadSound } from '../hooks/useNotificationSound'
 import type { Lead } from '../types'
 import { STAGE_LABELS, STAGE_COLORS } from '../types'
@@ -727,8 +728,6 @@ function ChatTab({ lead, configs, onLeadUpdate, onClearUnread }: { lead: Lead; c
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
   const recordTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const sseRef = useRef<EventSource | null>(null)
-  const sseReconnectRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Phone configs for this area (many-to-many junction table, most reliable source)
   const areaConfigs: any[] = (lead.area?.phone_configs ?? []).filter((c: any) => c.is_active !== false)
@@ -769,59 +768,6 @@ function ChatTab({ lead, configs, onLeadUpdate, onClearUnread }: { lead: Lead; c
 
     const contactId = lead.contact_id
 
-    const connectSSE = () => {
-      const token = localStorage.getItem('token')
-      if (!token) return
-      if (sseRef.current) sseRef.current.close()
-      if (sseReconnectRef.current) clearTimeout(sseReconnectRef.current)
-      const url = apiUrl(`/api/whatsapp/stream?token=${encodeURIComponent(token)}`)
-      const es = new EventSource(url)
-      sseRef.current = es
-      // Watchdog: reconnect + reload if no keepalive for 25s
-      let wd: ReturnType<typeof setTimeout> | null = null
-      const resetWd = () => {
-        if (wd) clearTimeout(wd)
-        wd = setTimeout(() => {
-          es.close(); sseRef.current = null
-          getWhatsAppMessages({ contact_id: contactId })
-            .then(data => setMessages(data.slice().reverse())).catch(() => {})
-          sseReconnectRef.current = setTimeout(connectSSE, 200)
-        }, 25000)
-      }
-      resetWd()
-      es.onmessage = (e) => {
-        resetWd()
-        let evt: any
-        try { evt = JSON.parse(e.data) } catch { return }
-        if (evt.type === 'new_message' && evt.message?.contact_id === contactId) {
-          setMessages(prev => {
-            if (prev.some((m: any) => m.id === evt.message.id)) return prev
-            return [...prev, evt.message]
-          })
-        }
-        if (evt.type === 'status_update') {
-          setMessages(prev =>
-            prev.map((m: any) => m.id === evt.db_id ? { ...m, status: evt.status } : m)
-          )
-        }
-        if (evt.type === 'refresh') {
-          getWhatsAppMessages({ contact_id: contactId })
-            .then(data => setMessages(data.slice().reverse()))
-            .catch(() => { })
-        }
-      }
-      es.onerror = () => {
-        if (wd) clearTimeout(wd)
-        es.close()
-        sseRef.current = null
-        getWhatsAppMessages({ contact_id: contactId })
-          .then(data => setMessages(data.slice().reverse()))
-          .catch(() => { })
-        sseReconnectRef.current = setTimeout(connectSSE, 1000)
-      }
-    }
-    connectSSE()
-
     pollRef.current = setInterval(() => {
       getWhatsAppMessages({ contact_id: contactId })
         .then(data => setMessages(data.slice().reverse()))
@@ -829,12 +775,31 @@ function ChatTab({ lead, configs, onLeadUpdate, onClearUnread }: { lead: Lead; c
     }, 8000)
 
     return () => {
-      if (sseRef.current) { sseRef.current.close(); sseRef.current = null }
-      if (sseReconnectRef.current) clearTimeout(sseReconnectRef.current)
       if (pollRef.current) clearInterval(pollRef.current)
       if (recordTimerRef.current) clearInterval(recordTimerRef.current)
     }
   }, [lead.id])
+
+  // Real-time message updates via global SSE context
+  useRealtime(['new_message', 'status_update', 'refresh'], (evt) => {
+    const contactId = lead.contact_id
+    if (evt.type === 'new_message' && evt.message?.contact_id === contactId) {
+      setMessages(prev => {
+        if (prev.some((m: any) => m.id === evt.message.id)) return prev
+        return [...prev, evt.message]
+      })
+    }
+    if (evt.type === 'status_update') {
+      setMessages(prev =>
+        prev.map((m: any) => m.id === evt.db_id ? { ...m, status: evt.status } : m)
+      )
+    }
+    if (evt.type === 'refresh') {
+      getWhatsAppMessages({ contact_id: contactId })
+        .then(data => setMessages(data.slice().reverse()))
+        .catch(() => { })
+    }
+  })
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
 
@@ -2068,8 +2033,6 @@ export default function Leads() {
   const [configs, setConfigs] = useState<any[]>([])
   const [detailLeadId, setDetailLeadId] = useState<number | null>(null)
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const leadsSSERef = useRef<EventSource | null>(null)
-  const leadsSSEReRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const leadsPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const loadRef = useRef<(p?: number) => Promise<void>>(async () => { })
   const selContactRef = useRef<number | null>(null)
@@ -2119,75 +2082,36 @@ export default function Leads() {
   useEffect(() => { loadRef.current = load }, [load])
   useEffect(() => { selContactRef.current = selected?.contact_id ?? null }, [selected])
 
-  // SSE: real-time lead list updates when WhatsApp messages arrive or history is synced
-  useEffect(() => {
-    const connect = () => {
-      const token = localStorage.getItem('token')
-      if (!token) return
-      if (leadsSSERef.current) leadsSSERef.current.close()
-      const es = new EventSource(apiUrl(`/api/whatsapp/stream?token=${encodeURIComponent(token)}`))
-      leadsSSERef.current = es
-      es.onmessage = (e) => {
-        let evt: any
-        try { evt = JSON.parse(e.data) } catch { return }
-
-        // Full refresh triggered by history sync or manual broadcast
-        if (evt.type === 'refresh') {
-          loadRef.current(1)
-          return
-        }
-
-        if (evt.type === 'new_message') {
-          const cid = evt.contact_id as number
-          let isNew = false
-          let isActive = false
-
-          setLeads(prev => {
-            const exists = prev.some(l => l.contact_id === cid)
-            if (!exists) {
-              isNew = true
-              return prev
-            }
-            if (selContactRef.current === cid) {
-              isActive = true
-              return prev
-            }
-            return prev.map(l =>
-              l.contact_id === cid
-                ? { ...l, unread_count: (l.unread_count ?? 0) + 1 }
-                : l
-            )
-          })
-
-          setTimeout(() => {
-            if (isNew) {
-              playNewLeadSound()
-              // Wait a bit to ensure backend committed the new lead
-              setTimeout(() => loadRef.current(1), 1200)
-            } else if (!isActive) {
-              playMessageSound()
-            }
-          }, 10)
-        }
-      }
-      es.onerror = () => {
-        es.close()
-        leadsSSERef.current = null
-        leadsSSEReRef.current = setTimeout(connect, 3000)
-      }
-    }
-    connect()
-
-    // Fallback safety poll every 30s — catches missed SSE events and keeps data fresh
-    leadsPollRef.current = setInterval(() => {
+  // SSE: real-time lead list updates
+  useRealtime(['new_message', 'refresh', 'lead_update', 'cobrador_sync'], (evt) => {
+    if (evt.type === 'refresh' || evt.type === 'lead_update' || evt.type === 'cobrador_sync') {
       loadRef.current(1)
-    }, 30000)
-
-    return () => {
-      if (leadsSSERef.current) { leadsSSERef.current.close(); leadsSSERef.current = null }
-      if (leadsSSEReRef.current) clearTimeout(leadsSSEReRef.current)
-      if (leadsPollRef.current) clearInterval(leadsPollRef.current)
+      return
     }
+    if (evt.type === 'new_message') {
+      const cid = evt.message?.contact_id as number
+      if (!cid) return
+      let isNew = false
+      let isActive = false
+      setLeads(prev => {
+        const exists = prev.some(l => l.contact_id === cid)
+        if (!exists) { isNew = true; return prev }
+        if (selContactRef.current === cid) { isActive = true; return prev }
+        return prev.map(l =>
+          l.contact_id === cid ? { ...l, unread_count: (l.unread_count ?? 0) + 1 } : l
+        )
+      })
+      setTimeout(() => {
+        if (isNew) { playNewLeadSound(); setTimeout(() => loadRef.current(1), 1200) }
+        else if (!isActive) { playMessageSound() }
+      }, 10)
+    }
+  })
+
+  useEffect(() => {
+    // Fallback safety poll every 30s
+    leadsPollRef.current = setInterval(() => loadRef.current(1), 30000)
+    return () => { if (leadsPollRef.current) clearInterval(leadsPollRef.current) }
   }, [])
 
   // Auto-open lead panel when navigated from WhatsApp "Ver Lead" (via location.state)

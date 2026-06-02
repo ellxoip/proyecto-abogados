@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   Users, GitBranch, Calendar, TrendingUp, DollarSign,
   RefreshCw, Award, BarChart2, CreditCard, AlertCircle,
@@ -15,6 +15,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { EventModal } from '../components/EventModal'
 import { STAGE_LABELS } from '../types'
 import { parseDate as parseAsUTC, parseLocalDate } from '../utils/dates'
+import { useRealtime } from '../contexts/RealtimeContext'
 
 function fmt(n: number) {
   return new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', minimumFractionDigits: 0 }).format(n)
@@ -284,6 +285,8 @@ export default function Dashboard() {
     const id = setInterval(() => fetchDashboard(true), 30000)
     return () => clearInterval(id)
   }, [fetchDashboard])
+
+  useRealtime(['lead_update', 'pipeline_refresh', 'calendar_update'], () => fetchDashboard(true))
 
   const handleClearActivity = async () => {
     setClearingActivity(true)

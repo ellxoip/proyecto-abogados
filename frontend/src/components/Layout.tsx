@@ -14,6 +14,7 @@ import GlobalSearch from './GlobalSearch'
 import NotificationPanel from './NotificationPanel'
 import { NexioLogo } from './NexioLogo'
 import toast from 'react-hot-toast'
+import { useRealtime } from '../contexts/RealtimeContext'
 
 const NAV_SECTIONS = [
   {
@@ -120,6 +121,26 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       window.removeEventListener('notifications-updated', fetchCounts)
     }
   }, [user?.role])
+
+  // Real-time navbar count updates
+  useRealtime(['lead_update', 'notification_update', 'cobrador_sync'], () => {
+    getNotificationCount().then((d: any) => {
+      const next = d.unread as number
+      if (prevUnread.current !== null && next > prevUnread.current) playNotificationSound()
+      prevUnread.current = next
+      setUnread(next)
+    }).catch(() => {})
+    const isAgendadora = user?.role === 'agendadora' || user?.role === 'superadmin' || user?.role === 'subadmin'
+    if (isAgendadora) {
+      getAgentQueue().then((d: any) => setAgentCount(d.count ?? 0)).catch(() => {})
+      getLeadsCount({ stage: 'lead', exclude_ai: true }).then((d: any) => {
+        const next = d.total as number
+        if (prevLeadCount.current !== null && next > prevLeadCount.current) playNewLeadSound()
+        prevLeadCount.current = next
+        setLeadsCount(next)
+      }).catch(() => {})
+    }
+  })
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {

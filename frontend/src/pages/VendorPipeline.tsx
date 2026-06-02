@@ -7,6 +7,7 @@ import { es } from 'date-fns/locale'
 import { parseLocalDate as parseAsUTC } from '../utils/dates'
 import toast from 'react-hot-toast'
 import { getVendorPipeline, updateVendorStatus } from '../api'
+import { useRealtime } from '../contexts/RealtimeContext'
 import { EventModal } from '../components/EventModal'
 import { WorkOrderModal } from '../components/WorkOrderModal'
 
@@ -406,6 +407,8 @@ export default function VendorPipeline() {
     const id = setInterval(() => load(true), 30000)
     return () => clearInterval(id)
   }, [load])
+
+  useRealtime(['lead_update', 'pipeline_refresh', 'calendar_update'], () => load(true))
 
   const handleMark = async (id: number, status: string, notes?: string) => {
     await updateVendorStatus(id, status, notes)

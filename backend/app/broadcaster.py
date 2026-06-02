@@ -17,10 +17,12 @@ class WaBroadcaster:
         self._queues: list[asyncio.Queue] = []
         self._redis: aioredis.Redis | None = None
         self._listener_task: asyncio.Task | None = None
+        self._loop: asyncio.AbstractEventLoop | None = None
 
     # ── lifecycle ──────────────────────────────────────────────────────────
 
     async def start(self) -> None:
+        self._loop = asyncio.get_running_loop()
         self._redis = aioredis.from_url(REDIS_URL, decode_responses=True)
         self._listener_task = asyncio.create_task(self._listen())
 
@@ -83,6 +85,15 @@ class WaBroadcaster:
             await self._redis.publish(REDIS_CHANNEL, payload)
         except Exception as exc:
             logger.error("WaBroadcaster publish error: %s", exc)
+
+    def broadcast_sync(self, event_type: str, data: dict[str, Any]) -> None:
+        """Fire-and-forget broadcast from a synchronous (thread-pool) context."""
+        if not self._loop or not self._redis:
+            return
+        try:
+            asyncio.run_coroutine_threadsafe(self.broadcast(event_type, data), self._loop)
+        except Exception as exc:
+            logger.debug("broadcast_sync error: %s", exc)
 
 
 wa_broadcaster = WaBroadcaster()

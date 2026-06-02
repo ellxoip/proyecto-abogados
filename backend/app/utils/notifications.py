@@ -22,6 +22,13 @@ def create_notification(
     db.add(notif)
     db.flush()
 
+    # Real-time: tell the target user's frontend to refresh notification count
+    try:
+        from ..broadcaster import wa_broadcaster
+        wa_broadcaster.broadcast_sync("notification_update", {"user_id": user_id})
+    except Exception:
+        pass
+
     # Fire web push (best-effort, non-blocking)
     try:
         from ..routers.push import send_push_to_user

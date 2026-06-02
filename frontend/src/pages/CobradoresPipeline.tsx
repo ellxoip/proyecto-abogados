@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { X, Phone, Mail, ArrowRight, TrendingUp, Users } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { getCobradorLeads, updateCobradorStage, updateCobradorNotes, updateCobradorMontoPagado } from '../api'
-import { apiUrl } from '../api/client'
+import { useRealtime } from '../contexts/RealtimeContext'
 
 interface CobradorLead {
   id: number
@@ -344,21 +344,7 @@ export default function CobradoresPipeline() {
     loadLeads()
   }, [])
 
-  // SSE: reload when backend syncs morosos or confirms a payment
-  useEffect(() => {
-    const token = localStorage.getItem('token')
-    if (!token) return
-    const es = new EventSource(apiUrl(`/api/whatsapp/stream?token=${encodeURIComponent(token)}`))
-    es.onmessage = (e) => {
-      let evt: any
-      try { evt = JSON.parse(e.data) } catch { return }
-      if (evt.type === 'cobrador_sync' && (evt.created > 0 || evt.updated > 0)) {
-        loadLeads()
-      }
-    }
-    es.onerror = () => {}
-    return () => { es.close() }
-  }, [])
+  useRealtime(['cobrador_sync', 'lead_update'], () => loadLeads())
 
   const handleUpdate = (updated: CobradorLead) => {
     setLeads(prev => prev.map(l => l.id === updated.id ? updated : l))
