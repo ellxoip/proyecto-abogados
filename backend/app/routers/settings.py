@@ -12,12 +12,15 @@ DEFAULT_STAGE_LABELS = {
     "reunion":               "Reunión",
     "altamente_interesado":  "Altamente Interesado",
     "cierre":                "Cierre",
+    "pago_pendiente":        "Pago Pendiente",
     "pago_comprometido":     "Pago Comprometido",
+    "pagado_reunion":        "Pagado en Reunión",
     "pagado_confirmado":     "Pago Confirmado",
     "recuperacion_lead":     "Recuperación Lead",
     "recuperacion_reunion":  "Recuperación Reunión",
     "recuperacion_cierre":   "Recuperación Cierre",
     "recuperacion_pago":     "Recuperación Pago",
+    "papelera":              "Papelera",
 }
 
 

@@ -257,9 +257,9 @@ def pipeline_summary(
             joinedload(models.Lead.payment_verification),
         )
         q = _visible_leads(q, current_user, db)
-        # pagado_reunion leads appear inside pago_comprometido column for agendadora
-        if stage == "pago_comprometido":
-            q = q.filter(models.Lead.current_stage.in_(["pago_comprometido", "pagado_reunion"]))
+        # pagado_reunion leads appear in reunion column — agendadora confirms from there
+        if stage == "reunion":
+            q = q.filter(models.Lead.current_stage.in_(["reunion", "pagado_reunion"]))
         else:
             q = q.filter(models.Lead.current_stage == stage)
         if group_id:
