@@ -2368,15 +2368,15 @@ Reglas:
                                   <select
                                     value={editingCobradorArea.area}
                                     onChange={e => setEditingCobradorArea(prev => ({ ...prev, area: e.target.value }))}
-                                    className="appearance-none text-xs pl-2.5 pr-7 py-1.5 rounded-lg text-white/85 w-48"
-                                    style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.20)' }}
+                                    className="text-xs pl-3 pr-8 py-1.5 rounded-lg w-52 font-medium cursor-pointer outline-none"
+                                    style={{ background: '#0f172a', color: '#e2e8f0', border: '1px solid rgba(99,102,241,0.45)' }}
                                     autoFocus>
-                                    <option value="">-- Sin área --</option>
+                                    <option value="" style={{ background: '#0f172a', color: '#94a3b8' }}>— Sin área —</option>
                                     {allAreas.map((a: any) => (
-                                      <option key={a.id} value={a.name} style={{ background: '#1a2035' }}>{a.name}</option>
+                                      <option key={a.id} value={a.name} style={{ background: '#0f172a', color: '#e2e8f0' }}>{a.name}</option>
                                     ))}
                                   </select>
-                                  <ChevronDown size={11} className="absolute right-2 top-1/2 -translate-y-1/2 text-white/40 pointer-events-none" />
+                                  <ChevronDown size={11} className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: '#818cf8' }} />
                                 </div>
                                 <button onClick={async () => {
                                   try { await setCobradorArea(c.id, editingCobradorArea.area || null); toast.success('Área guardada'); setEditingCobradorArea({ id: 0, area: '' }); loadCobradorCarteras() } catch { toast.error('Error') }
