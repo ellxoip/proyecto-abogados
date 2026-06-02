@@ -101,9 +101,10 @@ function LeadCard({ lead, canMove, showGroup, labels, canConfirmPago, onMoved, u
   const canShowArrow = canMove && nextStage && (nextStage !== 'pagado_confirmado' || canConfirmPago) && !blockedAdvance
   const canShowBack  = canMove && prevStage
 
-  const isPaid    = lead.current_stage === 'pagado_confirmado'
+  const isPaid           = lead.current_stage === 'pagado_confirmado'
+  const isPagadoReunion  = lead.current_stage === 'pagado_reunion'
   const isRec     = lead.current_stage.startsWith('recuperacion')
-  const isClosing = lead.current_stage === 'cierre' || lead.current_stage === 'pago_comprometido'
+  const isClosing = lead.current_stage === 'cierre' || lead.current_stage === 'pago_comprometido' || isPagadoReunion
   const isReunion = lead.current_stage === 'reunion'
   const isAlt     = lead.current_stage === 'altamente_interesado'
 
@@ -178,10 +179,17 @@ function LeadCard({ lead, canMove, showGroup, labels, canConfirmPago, onMoved, u
 
         {/* ── Top: stage badge + days + priority ── */}
         <div className="flex items-center justify-between px-3 pt-2.5 pb-1.5">
-          <span className="text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full"
-            style={{ background: palette.tagBg, color: palette.tagColor }}>
-            {labels[lead.current_stage] ?? lead.current_stage}
-          </span>
+          {isPagadoReunion ? (
+            <span className="text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full flex items-center gap-1"
+              style={{ background: 'rgba(52,211,153,0.15)', color: '#059669', border: '1px solid rgba(52,211,153,0.35)' }}>
+              ✓ Pagado en Reunión
+            </span>
+          ) : (
+            <span className="text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full"
+              style={{ background: palette.tagBg, color: palette.tagColor }}>
+              {labels[lead.current_stage] ?? lead.current_stage}
+            </span>
+          )}
           <div className="flex items-center gap-1.5">
             {lead.priority === 'high' && (
               <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
@@ -352,6 +360,25 @@ function LeadCard({ lead, canMove, showGroup, labels, canConfirmPago, onMoved, u
               </div>
             )}
           </div>
+
+          {/* ── Confirmar pago reunión — agendadora ve este botón ── */}
+          {isPagadoReunion && (
+            <div className="pt-2 mt-1" style={{ borderTop: '1px solid #e2e8f0' }}>
+              <button
+                onClick={async () => {
+                  try {
+                    const updated = await moveLeadStage(lead.id, { stage: 'pagado_confirmado', notes: 'Pago en reunión confirmado por agendadora' })
+                    onMoved(updated)
+                    window.dispatchEvent(new CustomEvent('lead-stage-changed'))
+                    toast.success('Pago confirmado')
+                  } catch (e: any) { toast.error(e?.response?.data?.detail || 'Error') }
+                }}
+                className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-[11px] font-bold transition-all"
+                style={{ background: 'rgba(52,211,153,0.12)', color: '#059669', border: '1px solid rgba(52,211,153,0.30)' }}>
+                ✓ Confirmar pago — pasar a Pago Confirmado
+              </button>
+            </div>
+          )}
 
           {/* ── Hover actions ── */}
           <div className="hidden group-hover:flex items-center gap-1 pt-2 mt-1"

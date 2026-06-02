@@ -3,7 +3,7 @@ import { ArrowRight, X, Lock, Loader2, CalendarClock } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { Lead } from '../types'
 
-export const MAIN_STAGES     = ['lead', 'reunion', 'altamente_interesado', 'cierre', 'pago_pendiente', 'pago_comprometido', 'pagado_reunion', 'pagado_confirmado']
+export const MAIN_STAGES     = ['lead', 'reunion', 'altamente_interesado', 'cierre', 'pago_pendiente', 'pago_comprometido', 'pagado_confirmado']
 export const RECOVERY_STAGES = ['recuperacion_lead', 'recuperacion_reunion', 'recuperacion_cierre', 'recuperacion_pago']
 
 export const NEXT_STAGE: Record<string, string> = {

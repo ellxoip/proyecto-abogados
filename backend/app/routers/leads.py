@@ -177,7 +177,7 @@ def count_leads(
 
 PIPELINE_STAGES = [
     "lead", "reunion", "altamente_interesado", "cierre",
-    "pago_pendiente", "pago_comprometido", "pagado_reunion", "pagado_confirmado",
+    "pago_pendiente", "pago_comprometido", "pagado_confirmado",
     "recuperacion_lead", "recuperacion_reunion", "recuperacion_cierre", "recuperacion_pago",
     "papelera",
 ]
@@ -257,7 +257,11 @@ def pipeline_summary(
             joinedload(models.Lead.payment_verification),
         )
         q = _visible_leads(q, current_user, db)
-        q = q.filter(models.Lead.current_stage == stage)
+        # pagado_reunion leads appear inside pago_comprometido column for agendadora
+        if stage == "pago_comprometido":
+            q = q.filter(models.Lead.current_stage.in_(["pago_comprometido", "pagado_reunion"]))
+        else:
+            q = q.filter(models.Lead.current_stage == stage)
         if group_id:
             q = q.filter(models.Lead.group_id == group_id)
         # sin_exito leads are hidden from the kanban — they only appear in Seguimiento
