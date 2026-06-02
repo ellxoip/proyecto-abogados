@@ -414,17 +414,38 @@ export default function Dashboard() {
     return (
       <div className="space-y-5">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
           <div>
             <h1 className="text-xl font-bold text-white">Dashboard</h1>
             <p className="text-xs text-white/62 mt-0.5 capitalize">
               {todayLabel} · Actualizado {format(lastRefresh, 'HH:mm')}
             </p>
           </div>
-          <button onClick={() => fetchDashboard()} disabled={loading}
-            className="flex items-center gap-2 px-4 py-2 bg-surface-1 border border-white/10 rounded-xl font-semibold text-sm hover:bg-surface-0">
-            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Actualizar
-          </button>
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <button onClick={() => setPeriodOpen(o => !o)}
+                className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold border border-white/10 bg-surface-1 text-white/70 hover:bg-surface-0">
+                <CalendarDays size={13} />
+                {PERIODS.find(p => p.value === period)?.label ?? 'Período'}
+                <ChevronDown size={12} className={periodOpen ? 'rotate-180' : ''} />
+              </button>
+              {periodOpen && (
+                <div className="absolute right-0 mt-2 w-40 rounded-xl z-50 overflow-hidden shadow-xl"
+                  style={{ background: 'var(--surface-1)', border: '1px solid rgba(255,255,255,0.1)' }}>
+                  {PERIODS.map(({ value, label }) => (
+                    <button key={value} onClick={() => { setPeriod(value as any); setPeriodOpen(false); fetchDashboard(false, value as any) }}
+                      className={`w-full text-left px-3 py-2.5 text-sm transition-colors ${period === value ? 'font-bold text-lime bg-lime/10' : 'text-white/70 hover:bg-white/5'}`}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <button onClick={() => fetchDashboard()} disabled={loading}
+              className="flex items-center gap-2 px-4 py-2 bg-surface-1 border border-white/10 rounded-xl font-semibold text-sm hover:bg-surface-0">
+              <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Actualizar
+            </button>
+          </div>
         </div>
 
         {/* Alertas urgentes */}

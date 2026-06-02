@@ -188,17 +188,19 @@ def get_vendor_pipeline(
 
     events = q.all()
 
-    # Also include leads in cierre / pago_comprometido for this vendedor
+    # Also include leads in cierre / pago_comprometido / pago_pendiente / pagado_reunion
     leads_q = db.query(models.Lead).options(
         joinedload(models.Lead.contact),
         joinedload(models.Lead.work_orders),
     ).filter(
         models.Lead.vendedor_id == current_user.id,
-        models.Lead.current_stage.in_(["cierre", "pago_comprometido"]),
+        models.Lead.current_stage.in_(["cierre", "pago_pendiente", "pago_comprometido", "pagado_reunion"]),
     ).order_by(models.Lead.updated_at.desc()).all()
 
     cierre_leads = []
+    pago_pendiente_leads = []
     pago_leads = []
+    pagado_reunion_leads = []
     for lead in leads_q:
         entry = {
             "lead_id": lead.id,
@@ -212,11 +214,19 @@ def get_vendor_pipeline(
         }
         if lead.current_stage == "cierre":
             cierre_leads.append(entry)
-        else:
+        elif lead.current_stage == "pago_pendiente":
+            pago_pendiente_leads.append(entry)
+        elif lead.current_stage == "pago_comprometido":
             pago_leads.append(entry)
+        else:
+            pagado_reunion_leads.append(entry)
 
-    result = {"espera_cliente": [], "sin_exito": [], "altamente_interesado": [], "no_show": [], "historial": [],
-              "cierre": cierre_leads, "pago_comprometido": pago_leads}
+    result = {
+        "espera_cliente": [], "sin_exito": [], "altamente_interesado": [],
+        "no_show": [], "historial": [], "con_exito_pagada": [],
+        "cierre": cierre_leads, "pago_pendiente": pago_pendiente_leads,
+        "pago_comprometido": pago_leads, "pagado_reunion": pagado_reunion_leads,
+    }
 
     def _contact_key(value: str | None):
         if not value:
@@ -232,7 +242,7 @@ def get_vendor_pipeline(
         if start.tzinfo is None:
             start = start.replace(tzinfo=timezone.utc)
         is_old = start < cutoff
-        is_resolved = status in ("sin_exito", "altamente_interesado", "no_show")
+        is_resolved = status in ("sin_exito", "altamente_interesado", "no_show", "con_exito_pagada")
 
         entry = {
             "id": ev.id,
@@ -462,7 +472,7 @@ def update_vendor_status(
     """Vendedor updates their event outcome status."""
     if current_user.role not in ("vendedor", "agendadora", "superadmin", "subadmin"):
         raise HTTPException(status_code=403, detail="Sin permiso para actualizar este estado")
-    valid = {"espera_cliente", "sin_exito", "altamente_interesado", "no_show"}
+    valid = {"espera_cliente", "sin_exito", "altamente_interesado", "no_show", "con_exito_pagada"}
     status = data.get("vendor_status")
     outcome_notes = (data.get("notes") or "").strip()
     if status not in valid:
@@ -478,10 +488,6 @@ def update_vendor_status(
     event.vendor_status = status
 
     # Stage transitions triggered by vendor outcome
-    # Stages from which marking "exitoso" advances to altamente_interesado
-    # Only "altamente_interesado" (exitoso) advances the lead stage.
-    # "sin_exito" and "no_show" just flag the event for the agendadora to reschedule —
-    # the lead stays where it is. Moving to recuperación is a manual decision.
     EXITOSO_STAGES = {"lead", "recuperacion_lead", "reunion", "recuperacion_reunion"}
 
     if event.lead_id:
@@ -498,20 +504,36 @@ def update_vendor_status(
             history_notes = None
 
             if status == "altamente_interesado" and old_stage in EXITOSO_STAGES:
+                # "Con éxito sin pago" → advance to altamente_interesado
                 new_stage = "altamente_interesado"
-                lead.last_vendor_outcome = None  # cleared — lead advanced
+                lead.last_vendor_outcome = None
                 history_result = "success"
-                history_notes = f"Reunión exitosa — {current_user.name}"
+                history_notes = f"Con éxito sin pago — {current_user.name}"
                 if outcome_notes:
                     history_notes += f": {outcome_notes}"
 
-            elif status in ("sin_exito", "no_show"):
-                # Record the outcome in history but DO NOT move the lead.
-                # sin_exito → hidden from pipeline kanban (only in Seguimiento).
-                # no_show  → stays visible in kanban with a warning badge.
-                lead.last_vendor_outcome = status
-                label = "Reunión sin éxito" if status == "sin_exito" else "Cliente no se conectó"
-                history_notes = f"{label} — {current_user.name}"
+            elif status == "con_exito_pagada" and old_stage in EXITOSO_STAGES:
+                # "Con éxito pagada" → advance to pagado_reunion
+                new_stage = "pagado_reunion"
+                lead.last_vendor_outcome = None
+                history_result = "success"
+                history_notes = f"Pagó en reunión — {current_user.name}"
+                if outcome_notes:
+                    history_notes += f": {outcome_notes}"
+
+            elif status == "sin_exito":
+                # "Se conectó y no cerró" → recuperacion_reunion
+                new_stage = "recuperacion_reunion"
+                lead.last_vendor_outcome = "sin_exito"
+                history_result = "failed"
+                history_notes = f"Se conectó y no cerró — {current_user.name}"
+                if outcome_notes:
+                    history_notes += f": {outcome_notes}"
+
+            elif status == "no_show":
+                # "No se conectó" → stays in place, flags for re-scheduling (seguimiento)
+                lead.last_vendor_outcome = "no_show"
+                history_notes = f"Cliente no se conectó — {current_user.name}"
                 if outcome_notes:
                     history_notes += f": {outcome_notes}"
                 db.add(models.LeadHistory(
@@ -539,8 +561,16 @@ def update_vendor_status(
                 if status == "altamente_interesado":
                     create_notification(
                         db, lead.agendadora_id,
-                        "Reunion exitosa",
-                        f"{current_user.name} marcó la reunión con {contact_name} como Altamente Interesado.",
+                        "Reunión exitosa — sin pago",
+                        f"{current_user.name}: {contact_name} avanzó a Altamente Interesado.",
+                        lead_id=lead.id,
+                        notification_type="etapa",
+                    )
+                elif status == "con_exito_pagada":
+                    create_notification(
+                        db, lead.agendadora_id,
+                        "Cliente pagó en la reunión",
+                        f"{current_user.name}: {contact_name} pagó en reunión — confirma cuando estén listos los grupos.",
                         lead_id=lead.id,
                         notification_type="etapa",
                     )
@@ -548,7 +578,7 @@ def update_vendor_status(
                     create_notification(
                         db, lead.agendadora_id,
                         "Reunión sin éxito — reagendar",
-                        f"{current_user.name} marcó la reunión con {contact_name} como Sin Éxito. Coordina nueva fecha.",
+                        f"{current_user.name}: {contact_name} no cerró. Lead pasó a Recuperación.",
                         lead_id=lead.id,
                         notification_type="etapa",
                     )

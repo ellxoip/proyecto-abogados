@@ -141,9 +141,10 @@ const COLS = [
 ]
 
 const OUTCOME_CONFIG: Record<string, { label: string; desc: string; color: string; btnClass: string; badgeClass: string; icon: React.ReactNode }> = {
-  no_show:               { label: 'No se conectó',        desc: 'El cliente no se presentó a la reunión.',         color: 'warn',   btnClass: 'hover:bg-warn/10 hover:text-warn border-warn/30 text-warn',     badgeClass: 'bg-warn/10 text-warn border-warn/20',   icon: <WifiOff size={10}/> },
-  sin_exito:             { label: 'Se conectó y no cerró',desc: 'El cliente asistió pero no se llegó a un cierre.', color: 'danger', btnClass: 'hover:bg-danger/10 hover:text-danger border-danger/30 text-danger', badgeClass: 'bg-danger/10 text-danger border-danger/20', icon: <XCircle size={10}/> },
-  altamente_interesado:  { label: 'Se conectó y cerró',   desc: 'El cliente asistió y se logró el cierre.',         color: 'lime',   btnClass: 'hover:bg-lime/10 hover:text-lime border-lime/30 text-lime',       badgeClass: 'bg-lime/10 text-lime border-lime/20',   icon: <ThumbsUp size={10}/> },
+  no_show:              { label: 'No se conectó',        desc: 'El cliente no se presentó a la reunión.',                color: 'warn',   btnClass: 'hover:bg-warn/10 hover:text-warn border-warn/30 text-warn',            badgeClass: 'bg-warn/10 text-warn border-warn/20',             icon: <WifiOff size={10}/> },
+  sin_exito:            { label: 'Se conectó y no cerró',desc: 'El cliente asistió pero no se llegó a un cierre.',       color: 'danger', btnClass: 'hover:bg-danger/10 hover:text-danger border-danger/30 text-danger',    badgeClass: 'bg-danger/10 text-danger border-danger/20',       icon: <XCircle size={10}/> },
+  altamente_interesado: { label: 'Con éxito sin pago',   desc: 'El cliente cerró pero pagará después.',                 color: 'lime',   btnClass: 'hover:bg-lime/10 hover:text-lime border-lime/30 text-lime',             badgeClass: 'bg-lime/10 text-lime border-lime/20',             icon: <ThumbsUp size={10}/> },
+  con_exito_pagada:     { label: 'Con éxito pagada',     desc: 'El cliente cerró y pagó en la reunión.',                color: 'emerald',btnClass: 'hover:bg-emerald-400/10 hover:text-emerald-400 border-emerald-400/30 text-emerald-400', badgeClass: 'bg-emerald-400/10 text-emerald-400 border-emerald-400/20', icon: <CheckCircle size={10}/> },
 }
 
 function OutcomeModal({ outcome, onConfirm, onCancel }: {
@@ -295,7 +296,7 @@ function EventCard({ ev, onMark, onEdit }: { ev: any; onMark: (id: number, s: st
       {/* Action buttons — only if not yet marked */}
       {!ev.vendor_status && (
         <div className="pt-1 border-t border-white/5 flex flex-col gap-1">
-          {(['no_show', 'sin_exito', 'altamente_interesado'] as const).map(key => (
+          {(['no_show', 'sin_exito', 'altamente_interesado', 'con_exito_pagada'] as const).map(key => (
             <button key={key} onClick={() => setPendingOutcome(key)}
               className={`w-full text-[11px] py-2 px-3 rounded-lg font-semibold flex items-center gap-2 transition-colors bg-surface-0 border border-white/[0.07] ${OUTCOME_CONFIG[key].btnClass}`}>
               {OUTCOME_CONFIG[key].icon}
@@ -429,6 +430,7 @@ export default function VendorPipeline() {
   const allMeetingEvents: any[] = [
     ...(pipeline?.espera_cliente ?? []),
     ...(pipeline?.altamente_interesado ?? []),
+    ...(pipeline?.con_exito_pagada ?? []),
     ...(pipeline?.sin_exito ?? []),
     ...(pipeline?.no_show ?? []),
   ].sort((a: any, b: any) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime())
@@ -449,9 +451,14 @@ export default function VendorPipeline() {
     visibleMeetingItems(pipeline?.altamente_interesado ?? []).length +
     visibleMeetingItems([...(pipeline?.sin_exito ?? []), ...(pipeline?.no_show ?? [])]).length
 
+  const pagadoReunionLeads: any[] = pipeline?.pagado_reunion ?? []
+  const pagoPendienteLeads: any[] = pipeline?.pago_pendiente ?? []
+
   const LEAD_COLS = [
-    { key: 'cierre',            label: 'Cierre',            items: cierreLeads, accent: '#38bdf8', accentDim: 'rgba(14,165,233,0.12)', border: 'rgba(14,165,233,0.30)' },
-    { key: 'pago_comprometido', label: 'Pago Comprometido', items: pagoLeads,   accent: '#a3e635', accentDim: 'rgba(163,230,53,0.12)',  border: 'rgba(163,230,53,0.30)'  },
+    { key: 'pagado_reunion',    label: 'Pagado en Reunión', items: pagadoReunionLeads, accent: '#34d399', accentDim: 'rgba(52,211,153,0.12)', border: 'rgba(52,211,153,0.30)' },
+    { key: 'cierre',            label: 'Cierre',            items: cierreLeads,        accent: '#38bdf8', accentDim: 'rgba(14,165,233,0.12)', border: 'rgba(14,165,233,0.30)' },
+    { key: 'pago_pendiente',    label: 'Pago Pendiente',    items: pagoPendienteLeads, accent: '#f59e0b', accentDim: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.30)' },
+    { key: 'pago_comprometido', label: 'Pago Comprometido', items: pagoLeads,          accent: '#a3e635', accentDim: 'rgba(163,230,53,0.12)',  border: 'rgba(163,230,53,0.30)' },
   ]
 
   return (
@@ -596,7 +603,7 @@ export default function VendorPipeline() {
       )}
 
       {otLead !== null && (
-        <WorkOrderModal leadId={otLead.id} honorarios={otLead.honorarios} onClose={() => { setOtLead(null); load(true) }} onSaved={() => load(true)} />
+        <WorkOrderModal leadId={otLead.id} honorarios={otLead.honorarios} autoClose onClose={() => { setOtLead(null); load(true) }} onSaved={() => load(true)} />
       )}
     </div>
   )

@@ -27,8 +27,10 @@ STAGE_FLOW = {
     "lead":                          {"success": "reunion",             "failed": "recuperacion_lead"},
     "reunion":                       {"success": "altamente_interesado","failed": "recuperacion_reunion"},
     "altamente_interesado":          {"success": "cierre",              "failed": "recuperacion_reunion"},
-    "cierre":                        {"success": "pago_comprometido",   "failed": "recuperacion_cierre"},
+    "cierre":                        {"success": "pago_pendiente",      "failed": "recuperacion_cierre"},
+    "pago_pendiente":                {"success": "pagado_confirmado",   "failed": "recuperacion_pago"},
     "pago_comprometido":             {"success": "pagado_confirmado",   "failed": "recuperacion_pago"},
+    "pagado_reunion":                {"success": "pagado_confirmado",   "failed": "recuperacion_cierre"},
     "pagado_confirmado":             {"success": "pagado_confirmado",   "failed": "recuperacion_cierre"},
     "recuperacion_lead":             {"success": "reunion",             "failed": "recuperacion_lead"},
     "recuperacion_reunion":          {"success": "altamente_interesado","failed": "recuperacion_reunion"},
@@ -175,8 +177,9 @@ def count_leads(
 
 PIPELINE_STAGES = [
     "lead", "reunion", "altamente_interesado", "cierre",
-    "pago_comprometido", "pagado_confirmado",
+    "pago_pendiente", "pago_comprometido", "pagado_reunion", "pagado_confirmado",
     "recuperacion_lead", "recuperacion_reunion", "recuperacion_cierre", "recuperacion_pago",
+    "papelera",
 ]
 PIPELINE_COL_LIMIT = 10
 
@@ -235,6 +238,14 @@ def pipeline_summary(
     result = {}
     # Collect all lead ids we'll fetch so we can bulk-query unread counts
     all_leads = []
+
+    # Count papelera separately (not mixed into main pipeline)
+    papelera_q = db.query(models.Lead)
+    papelera_q = _visible_leads(papelera_q, current_user, db)
+    papelera_q = papelera_q.filter(models.Lead.current_stage == "papelera")
+    if group_id:
+        papelera_q = papelera_q.filter(models.Lead.group_id == group_id)
+    result["_papelera_count"] = papelera_q.count()
 
     for stage in PIPELINE_STAGES:
         q = db.query(models.Lead).options(
@@ -973,8 +984,9 @@ def move_lead_stage(
     """Manually move a lead to any stage."""
     valid_stages = [
         "lead", "reunion", "altamente_interesado", "cierre",
-        "pago_comprometido", "pagado_confirmado",
+        "pago_pendiente", "pago_comprometido", "pagado_reunion", "pagado_confirmado",
         "recuperacion_lead", "recuperacion_reunion", "recuperacion_cierre", "recuperacion_pago",
+        "papelera",
     ]
     if data.stage not in valid_stages:
         raise HTTPException(status_code=400, detail="Etapa inválida")
@@ -1049,6 +1061,12 @@ def move_lead_stage(
 
     old_stage = lead.current_stage
     lead.current_stage = data.stage
+
+    # papelera: set deleted_at on entry, clear on restore
+    if data.stage == "papelera":
+        lead.deleted_at = datetime.now(timezone.utc)
+    elif old_stage == "papelera":
+        lead.deleted_at = None
 
     db.add(models.LeadHistory(
         lead_id=lead.id,
@@ -1241,7 +1259,8 @@ def dashboard_stats(
             return query.filter(models.Lead.vendedor_id == current_user.id)
         elif current_user.role == "verificador":
             return query.filter(models.Lead.current_stage.in_([
-                "cierre", "pago_comprometido", "pagado_confirmado", "recuperacion_cierre", "recuperacion_pago",
+                "cierre", "pago_pendiente", "pago_comprometido", "pagado_reunion", "pagado_confirmado",
+                "recuperacion_cierre", "recuperacion_pago",
             ]))
         if _gids is not None:
             query = query.filter(models.Lead.group_id.in_(_gids))
@@ -1258,7 +1277,7 @@ def dashboard_stats(
 
     all_stages = [
         "lead", "reunion", "altamente_interesado", "cierre",
-        "pago_comprometido", "pagado_confirmado",
+        "pago_pendiente", "pago_comprometido", "pagado_reunion", "pagado_confirmado",
         "recuperacion_lead", "recuperacion_reunion", "recuperacion_cierre", "recuperacion_pago",
     ]
     counts = {s: q.filter(models.Lead.current_stage == s).count() for s in all_stages}

@@ -153,12 +153,15 @@ export const STAGE_LABELS: Record<string, string> = {
   reunion:               'Reunión',
   altamente_interesado:  'Altamente Interesado',
   cierre:                'Cierre',
+  pago_pendiente:        'Pago Pendiente',
   pago_comprometido:     'Pago Comprometido',
+  pagado_reunion:        'Pagado en Reunión',
   pagado_confirmado:     'Pago Confirmado',
   recuperacion_lead:     'Recuperación Lead',
   recuperacion_reunion:  'Recuperación Reunión',
   recuperacion_cierre:   'Recuperación Cierre',
   recuperacion_pago:     'Recuperación Pago',
+  papelera:              'Papelera',
 }
 
 export const STAGE_COLORS: Record<string, string> = {
@@ -166,12 +169,15 @@ export const STAGE_COLORS: Record<string, string> = {
   reunion:               'bg-white/5 text-white/78 border-white/10',
   altamente_interesado:  'bg-white/8 text-white/85 border-white/15',
   cierre:                'bg-white/8 text-white/80 border-white/15',
+  pago_pendiente:        'bg-warn/10 text-warn border-warn/25',
   pago_comprometido:     'bg-neon/10 text-neon border-neon/25',
+  pagado_reunion:        'bg-emerald-400/10 text-emerald-400 border-emerald-400/25',
   pagado_confirmado:     'bg-lime/10 text-lime border-lime/30',
   recuperacion_lead:     'bg-danger/10 text-danger border-danger/25',
   recuperacion_reunion:  'bg-danger/10 text-danger border-danger/25',
   recuperacion_cierre:   'bg-danger/10 text-danger border-danger/25',
   recuperacion_pago:     'bg-danger/10 text-danger border-danger/25',
+  papelera:              'bg-gray-500/10 text-gray-400 border-gray-500/25',
 }
 
 export const STAGE_DOT: Record<string, string> = {
@@ -179,12 +185,15 @@ export const STAGE_DOT: Record<string, string> = {
   reunion:               'bg-white/35',
   altamente_interesado:  'bg-white/50',
   cierre:                'bg-white/65',
+  pago_pendiente:        'bg-warn',
   pago_comprometido:     'bg-neon',
+  pagado_reunion:        'bg-emerald-400',
   pagado_confirmado:     'bg-lime',
   recuperacion_lead:     'bg-danger',
   recuperacion_reunion:  'bg-danger',
   recuperacion_cierre:   'bg-danger',
   recuperacion_pago:     'bg-danger',
+  papelera:              'bg-gray-500',
 }
 
 export const PRIORITY_COLORS: Record<string, string> = {

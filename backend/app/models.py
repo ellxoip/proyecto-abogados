@@ -199,6 +199,8 @@ class Lead(Base):
     # 'no_show' leads remain visible in the kanban with a warning badge.
     last_vendor_outcome = Column(String(30), nullable=True)
     ai_agent_id = Column(Integer, ForeignKey("ai_agents.id"), nullable=True)
+    # Papelera: set when lead moves to 'papelera' stage; auto-deleted after 30 days
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 

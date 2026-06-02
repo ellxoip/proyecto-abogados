@@ -16,7 +16,7 @@ const SnapPieContext = createContext<(() => void) | null>(null)
 
 interface OTType { key: string; label: string; subtitle: string; icon: string; has_diagnosis: boolean; ai_fields: string[] }
 interface WorkOrder { id: number; lead_id: number; ot_type: string; fields_json: Record<string, any>; status: string; is_copy: boolean; created_by: number; created_at: string; updated_at?: string; ot_label: string }
-interface Props { leadId: number; onClose: () => void; onSaved?: () => void; autoOpen?: boolean; honorarios?: number }
+interface Props { leadId: number; onClose: () => void; onSaved?: () => void; autoOpen?: boolean; honorarios?: number; autoClose?: boolean }
 
 // ── Document primitives ────────────────────────────────────────────────────────
 
@@ -708,7 +708,7 @@ function FullDocument({ otType, otTitle, otSubtitle, fields, onChange, docRef }:
 
 // ── Main Modal ──────────────────────────────────────────────────────────────────
 
-export function WorkOrderModal({ leadId, onClose, onSaved, autoOpen, honorarios }: Props) {
+export function WorkOrderModal({ leadId, onClose, onSaved, autoOpen, honorarios, autoClose }: Props) {
   const [step, setStep] = useState<'list' | 'select' | 'form'>('list')
   const [otTypes, setOtTypes] = useState<OTType[]>([])
   const [otList, setOtList] = useState<WorkOrder[]>([])
@@ -804,6 +804,7 @@ export function WorkOrderModal({ leadId, onClose, onSaved, autoOpen, honorarios 
       setCurrentWO(updated); setFields(computePaymentFields(updated.fields_json))
       setIsNewUnsaved(false); setNewOtIds([])
       toast.success('OT guardada'); loadList(); onSaved?.()
+      if (autoClose) { setTimeout(() => onClose(), 400) }
     } catch (e: any) { toast.error(e?.response?.data?.detail || 'Error al guardar') }
     finally { setSaving(false) }
   }

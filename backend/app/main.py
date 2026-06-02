@@ -472,6 +472,8 @@ async def startup():
     await wa_broadcaster.start()
     # Start background auto-sync for cobrador leads (every 5 minutes)
     asyncio.create_task(_auto_sync_cobrador())
+    # Start background papelera cleanup (every 6 hours)
+    asyncio.create_task(_auto_cleanup_papelera())
 
 
 async def _auto_sync_cobrador():
@@ -534,6 +536,42 @@ async def _auto_sync_cobrador():
 
 
 @app.on_event("shutdown")
+async def _auto_cleanup_papelera():
+    """Background task: permanently delete leads in papelera after 30 days."""
+    await asyncio.sleep(300)  # wait 5 min after startup
+    while True:
+        try:
+            from datetime import datetime, timezone, timedelta
+            from sqlalchemy.orm import Session
+            from .database import SessionLocal
+            from . import models
+            cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+            db: Session = SessionLocal()
+            try:
+                old_leads = db.query(models.Lead).filter(
+                    models.Lead.current_stage == "papelera",
+                    models.Lead.deleted_at <= cutoff,
+                ).all()
+                for lead in old_leads:
+                    try:
+                        db.query(models.WhatsAppMessage).filter(models.WhatsAppMessage.lead_id == lead.id).update({"lead_id": None}, synchronize_session=False)
+                        db.query(models.AIAgentLog).filter(models.AIAgentLog.lead_id == lead.id).update({"lead_id": None}, synchronize_session=False) if hasattr(models, 'AIAgentLog') else None
+                        db.query(models.Notification).filter(models.Notification.lead_id == lead.id).delete(synchronize_session=False)
+                        db.query(models.CalendarEvent).filter(models.CalendarEvent.lead_id == lead.id).delete(synchronize_session=False)
+                        db.query(models.PaymentVerification).filter(models.PaymentVerification.lead_id == lead.id).delete(synchronize_session=False)
+                        db.query(models.WorkOrder).filter(models.WorkOrder.lead_id == lead.id).delete(synchronize_session=False)
+                        db.query(models.LeadHistory).filter(models.LeadHistory.lead_id == lead.id).delete(synchronize_session=False)
+                        db.query(models.Lead).filter(models.Lead.id == lead.id).delete(synchronize_session=False)
+                        db.commit()
+                    except Exception:
+                        db.rollback()
+            finally:
+                db.close()
+        except Exception:
+            pass
+        await asyncio.sleep(6 * 3600)  # run every 6 hours
+
+
 async def shutdown():
     await wa_broadcaster.stop()
 

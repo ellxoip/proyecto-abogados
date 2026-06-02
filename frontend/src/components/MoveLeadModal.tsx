@@ -3,15 +3,17 @@ import { ArrowRight, X, Lock, Loader2, CalendarClock } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { Lead } from '../types'
 
-export const MAIN_STAGES     = ['lead', 'reunion', 'altamente_interesado', 'cierre', 'pago_comprometido', 'pagado_confirmado']
+export const MAIN_STAGES     = ['lead', 'reunion', 'altamente_interesado', 'cierre', 'pago_pendiente', 'pago_comprometido', 'pagado_reunion', 'pagado_confirmado']
 export const RECOVERY_STAGES = ['recuperacion_lead', 'recuperacion_reunion', 'recuperacion_cierre', 'recuperacion_pago']
 
 export const NEXT_STAGE: Record<string, string> = {
   lead:                 'reunion',
   reunion:              'altamente_interesado',
   altamente_interesado: 'cierre',
-  cierre:               'pago_comprometido',
+  cierre:               'pago_pendiente',
+  pago_pendiente:       'pagado_confirmado',
   pago_comprometido:    'pagado_confirmado',
+  pagado_reunion:       'pagado_confirmado',
   recuperacion_lead:    'reunion',
   recuperacion_reunion: 'altamente_interesado',
   recuperacion_cierre:  'pago_comprometido',
@@ -22,8 +24,9 @@ export const PREV_STAGE: Record<string, string> = {
   reunion:              'lead',
   altamente_interesado: 'reunion',
   cierre:               'altamente_interesado',
+  pago_pendiente:       'cierre',
   pago_comprometido:    'cierre',
-  // Recovery → corresponding main stage (allows "retro" back to main funnel)
+  pagado_reunion:       'reunion',
   recuperacion_lead:    'lead',
   recuperacion_reunion: 'reunion',
   recuperacion_cierre:  'cierre',
@@ -54,16 +57,18 @@ export function MoveLeadModal({ lead, targetStage, labels, onConfirm, onClose, c
     ...(NEXT_STAGE[cur] ? [NEXT_STAGE[cur]] : []),
     ...(PREV_STAGE[cur] ? [PREV_STAGE[cur]] : []),
     ...RECOVERY_STAGES,
+    'papelera', // always available to move to papelera
   ])
 
-  const availableStages = [...MAIN_STAGES, ...RECOVERY_STAGES].filter(s => {
+  const availableStages = [...MAIN_STAGES, ...RECOVERY_STAGES, 'papelera'].filter(s => {
     if (!validSet.has(s)) return false
     if (s === cur) return false
     if (s === 'pagado_confirmado' && !canConfirmPago) return false
+    if (s === 'papelera' && cur === 'papelera') return false
     // Agendadora: 'reunion' AND recuperación blocked until a meeting is scheduled
     if (blockedReunionNoSchedule && (s === 'reunion' || s.startsWith('recuperacion'))) return false
     if (blockedAdvanceFromReunion) {
-      const allowedFromReunion = ['lead', 'recuperacion_lead', 'recuperacion_reunion', 'recuperacion_cierre', 'recuperacion_pago']
+      const allowedFromReunion = ['lead', 'recuperacion_lead', 'recuperacion_reunion', 'recuperacion_cierre', 'recuperacion_pago', 'papelera']
       return allowedFromReunion.includes(s)
     }
     return true
@@ -89,7 +94,10 @@ export function MoveLeadModal({ lead, targetStage, labels, onConfirm, onClose, c
 
   const stageDot = (s: string) =>
     s === 'pagado_confirmado' ? 'bg-lime-500' :
+    s === 'pagado_reunion' ? 'bg-emerald-400' :
     s.startsWith('recuperacion') ? 'bg-red-500' :
+    s === 'papelera' ? 'bg-gray-500' :
+    s === 'pago_pendiente' ? 'bg-amber-400' :
     s === 'pago_comprometido' ? 'bg-cyan-500' :
     s === 'cierre' ? 'bg-cyan-400' :
     s === 'altamente_interesado' ? 'bg-violet-500' :

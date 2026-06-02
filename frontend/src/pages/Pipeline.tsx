@@ -8,7 +8,7 @@ import { Link, useNavigate, useLocation } from 'react-router-dom'
 import {
   RefreshCw, Eye, FileText, AlertTriangle, Lock,
   Loader2, ChevronDown, ChevronRight, X, ArrowRight, Info, Clock,
-  WifiOff, XCircle, CalendarPlus, Search, ClipboardList, MessageSquare, User,
+  WifiOff, XCircle, CalendarPlus, Search, ClipboardList, MessageSquare, User, Trash2, RotateCcw,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useAuthStore } from '../store/auth'
@@ -24,8 +24,10 @@ const NEXT_STAGE: Record<string, string> = {
   lead:                 'reunion',
   reunion:              'altamente_interesado',
   altamente_interesado: 'cierre',
-  cierre:               'pago_comprometido',
+  cierre:               'pago_pendiente',
+  pago_pendiente:       'pagado_confirmado',
   pago_comprometido:    'pagado_confirmado',
+  pagado_reunion:       'pagado_confirmado',
   recuperacion_lead:    'reunion',
   recuperacion_reunion: 'altamente_interesado',
   recuperacion_cierre:  'pago_comprometido',
@@ -36,20 +38,25 @@ const PREV_STAGE: Record<string, string> = {
   reunion:              'lead',
   altamente_interesado: 'reunion',
   cierre:               'altamente_interesado',
+  pago_pendiente:       'cierre',
   pago_comprometido:    'cierre',
+  pagado_reunion:       'reunion',
 }
 
 const COL_STYLE: Record<string, { dot: string; accent: string; count: string }> = {
-  lead:                 { dot: 'bg-white/25',   accent: 'border-l-white/25',   count: 'bg-surface-2 text-white'  },
-  reunion:              { dot: 'bg-white/35',   accent: 'border-l-white/35',   count: 'bg-surface-2 text-white'  },
-  altamente_interesado: { dot: 'bg-white/50',   accent: 'border-l-white/50',   count: 'bg-surface-2 text-white'  },
-  cierre:               { dot: 'bg-neon',   accent: 'border-l-neon',   count: 'bg-surface-2 text-white'  },
-  pago_comprometido:    { dot: 'bg-neon',           accent: 'border-l-neon',   count: 'bg-surface-2 text-white'  },
-  pagado_confirmado:    { dot: 'bg-lime',    accent: 'border-l-lime',    count: 'bg-surface-2 text-white'  },
-  recuperacion_lead:    { dot: 'bg-danger', accent: 'border-l-danger', count: 'bg-surface-2 text-white'  },
-  recuperacion_reunion: { dot: 'bg-danger', accent: 'border-l-danger', count: 'bg-surface-2 text-white'  },
-  recuperacion_cierre:  { dot: 'bg-danger', accent: 'border-l-danger', count: 'bg-surface-2 text-white'  },
-  recuperacion_pago:    { dot: 'bg-danger', accent: 'border-l-danger', count: 'bg-surface-2 text-white'  },
+  lead:                 { dot: 'bg-white/25',    accent: 'border-l-white/25',    count: 'bg-surface-2 text-white' },
+  reunion:              { dot: 'bg-white/35',    accent: 'border-l-white/35',    count: 'bg-surface-2 text-white' },
+  altamente_interesado: { dot: 'bg-white/50',    accent: 'border-l-white/50',    count: 'bg-surface-2 text-white' },
+  cierre:               { dot: 'bg-neon',        accent: 'border-l-neon',        count: 'bg-surface-2 text-white' },
+  pago_pendiente:       { dot: 'bg-amber-400',   accent: 'border-l-amber-400',   count: 'bg-surface-2 text-white' },
+  pago_comprometido:    { dot: 'bg-neon',        accent: 'border-l-neon',        count: 'bg-surface-2 text-white' },
+  pagado_reunion:       { dot: 'bg-emerald-400', accent: 'border-l-emerald-400', count: 'bg-surface-2 text-white' },
+  pagado_confirmado:    { dot: 'bg-lime',        accent: 'border-l-lime',        count: 'bg-surface-2 text-white' },
+  recuperacion_lead:    { dot: 'bg-danger',      accent: 'border-l-danger',      count: 'bg-surface-2 text-white' },
+  recuperacion_reunion: { dot: 'bg-danger',      accent: 'border-l-danger',      count: 'bg-surface-2 text-white' },
+  recuperacion_cierre:  { dot: 'bg-danger',      accent: 'border-l-danger',      count: 'bg-surface-2 text-white' },
+  recuperacion_pago:    { dot: 'bg-danger',      accent: 'border-l-danger',      count: 'bg-surface-2 text-white' },
+  papelera:             { dot: 'bg-gray-500',    accent: 'border-l-gray-500',    count: 'bg-surface-2 text-white' },
 }
 
 function fmt(n: number) { return `$${Math.round(n).toLocaleString('es-CL')}` }
@@ -59,12 +66,15 @@ const CARD_ACCENT: Record<string, { border: string }> = {
   reunion:              { border: '#f59e0b' },
   altamente_interesado: { border: '#f59e0b' },
   cierre:               { border: '#4361ee' },
+  pago_pendiente:       { border: '#f59e0b' },
   pago_comprometido:    { border: '#22c55e' },
+  pagado_reunion:       { border: '#34d399' },
   pagado_confirmado:    { border: '#22c55e' },
   recuperacion_lead:    { border: '#ef4444' },
   recuperacion_reunion: { border: '#ef4444' },
   recuperacion_cierre:  { border: '#ef4444' },
   recuperacion_pago:    { border: '#ef4444' },
+  papelera:             { border: '#6b7280' },
 }
 
 /* ──────────────────── LeadCard ──────────────────── */
@@ -644,6 +654,101 @@ function SeguimientoTab({ items }: { items: any[] }) {
   )
 }
 
+/* ──────────────────── PapeleraTab ──────────────────── */
+function PapeleraTab({ leads, count, labels, onRestore, canDelete }: {
+  leads: Lead[]; count: number; labels: Record<string, string>
+  onRestore: (lead: Lead) => void; canDelete: boolean
+}) {
+  const getDaysLeft = (lead: any) => {
+    if (!lead.deleted_at) return 30
+    const deletedAt = new Date(lead.deleted_at).getTime()
+    const daysElapsed = Math.floor((Date.now() - deletedAt) / (1000 * 60 * 60 * 24))
+    return Math.max(0, 30 - daysElapsed)
+  }
+
+  return (
+    <div className="flex flex-col gap-4 flex-1">
+      <div className="flex items-center gap-3 p-4 rounded-xl" style={{ background: 'rgba(107,114,128,0.1)', border: '1px solid rgba(107,114,128,0.2)' }}>
+        <Trash2 size={16} className="text-gray-400 flex-shrink-0" />
+        <div>
+          <p className="text-sm font-bold text-white/80">{count} lead{count !== 1 ? 's' : ''} en papelera</p>
+          <p className="text-xs text-white/45 mt-0.5">Se eliminan automáticamente después de 30 días</p>
+        </div>
+      </div>
+      {leads.length === 0 ? (
+        <div className="flex flex-col items-center justify-center flex-1 gap-3" style={{ color: 'rgba(255,255,255,0.25)' }}>
+          <Trash2 size={40} />
+          <p className="text-sm">Papelera vacía</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+          {leads.map(lead => {
+            const daysLeft = getDaysLeft(lead)
+            return (
+              <div key={lead.id} className="rounded-xl p-4 flex flex-col gap-3" style={{ background: 'var(--surface-1)', border: '1px solid rgba(107,114,128,0.25)' }}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="font-bold text-sm text-white/80 truncate">{lead.contact?.name ?? 'Sin nombre'}</p>
+                    <p className="text-xs text-white/40 mt-0.5">{lead.contact?.phone ?? ''}</p>
+                  </div>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${daysLeft <= 5 ? 'bg-danger/15 text-danger' : 'bg-gray-500/15 text-gray-400'}`}>
+                    {daysLeft}d
+                  </span>
+                </div>
+                <p className="text-xs text-white/40">{labels[lead.current_stage] ?? lead.current_stage}</p>
+                <button onClick={() => onRestore(lead)}
+                  className="flex items-center justify-center gap-1.5 w-full py-2 rounded-lg text-xs font-semibold text-white/70 hover:text-white transition-colors"
+                  style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                  <RotateCcw size={12} /> Restaurar
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ──────────────────── InactiveWarning popup ──────────────────── */
+function InactiveWarningPopup({ leads, onMoveAll, onClose }: {
+  leads: Lead[]; onMoveAll: () => void; onClose: () => void
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)' }}>
+      <div className="rounded-2xl shadow-2xl w-full max-w-md overflow-hidden" style={{ background: 'var(--surface-1)', border: '1px solid rgba(255,255,255,0.1)' }}>
+        <div className="px-5 py-4 border-b border-white/[0.07] flex items-center gap-3">
+          <div className="w-8 h-8 rounded-xl flex items-center justify-center bg-warn/10 border border-warn/20">
+            <AlertTriangle size={14} className="text-warn" />
+          </div>
+          <div>
+            <p className="font-bold text-white text-sm">{leads.length} lead{leads.length > 1 ? 's' : ''} inactivo{leads.length > 1 ? 's' : ''}</p>
+            <p className="text-[11px] text-white/52 mt-0.5">Sin actividad por más de 10 días</p>
+          </div>
+          <button onClick={onClose} className="ml-auto p-1.5 rounded-lg hover:bg-white/5"><X size={14} className="text-white/45" /></button>
+        </div>
+        <div className="px-5 py-4 max-h-64 overflow-y-auto space-y-2">
+          {leads.map(l => (
+            <div key={l.id} className="flex items-center justify-between text-sm">
+              <span className="text-white/80 truncate">{l.contact?.name ?? 'Lead #' + l.id}</span>
+              <span className="text-white/40 text-xs ml-2 flex-shrink-0">{STAGE_LABELS[l.current_stage] ?? l.current_stage}</span>
+            </div>
+          ))}
+        </div>
+        <div className="px-5 py-4 border-t border-white/[0.07] flex gap-2">
+          <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white/62 hover:bg-white/5 border border-white/10 transition-colors">
+            Ignorar
+          </button>
+          <button onClick={() => { onMoveAll(); onClose() }}
+            className="flex-1 py-2.5 rounded-xl text-sm font-bold bg-gray-600 text-white hover:bg-gray-500 transition-colors">
+            Mover a papelera
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /* ──────────────────── Pipeline (main page) ──────────────────── */
 export default function Pipeline() {
   const { user } = useAuthStore()
@@ -655,9 +760,12 @@ export default function Pipeline() {
   const [customStages, setCustomStages] = useState<{ key: string; name: string; color?: string }[]>([])
   const [negocioTipo, setNegocioTipo] = useState<string>('abogados')
   const [loading, setLoading]         = useState(true)
-  const [filter, setFilter]           = useState<'main' | 'recovery' | 'seguimiento'>('main')
+  const [filter, setFilter]           = useState<'main' | 'recovery' | 'seguimiento' | 'papelera'>('main')
   const [groupFilter, setGroupFilter] = useState<string>('')
   const [followupItems, setFollowupItems] = useState<any[]>([])
+  const [inactiveLeads, setInactiveLeads] = useState<Lead[]>([])
+  const [showInactiveWarning, setShowInactiveWarning] = useState(false)
+  const inactiveShownRef = useRef(false)
 
   const isAdmin        = user?.role === 'superadmin' || user?.role === 'subadmin'
   const isAgendadora   = user?.role === 'agendadora'
@@ -710,6 +818,26 @@ export default function Pipeline() {
 
   useRealtime(['pipeline_refresh', 'lead_update'], () => load())
 
+  // Detect inactive leads (not updated in 10+ days) and show warning once per session
+  useEffect(() => {
+    if (loading || inactiveShownRef.current) return
+    const cutoff = Date.now() - 10 * 24 * 60 * 60 * 1000
+    const ACTIVE_STAGES = ['lead', 'reunion', 'altamente_interesado', 'cierre', 'pago_pendiente', 'pago_comprometido']
+    const inactive: Lead[] = []
+    for (const stage of ACTIVE_STAGES) {
+      const leads = summary[stage]?.leads ?? []
+      for (const l of leads) {
+        const lastUpdate = new Date(l.updated_at || l.created_at).getTime()
+        if (lastUpdate < cutoff) inactive.push(l)
+      }
+    }
+    if (inactive.length > 0) {
+      setInactiveLeads(inactive)
+      setShowInactiveWarning(true)
+      inactiveShownRef.current = true
+    }
+  }, [loading, summary])
+
   const handleMoved = (updated: Lead) => {
     setSummary(prev => {
       const next = { ...prev }
@@ -746,8 +874,26 @@ export default function Pipeline() {
     ? labels
     : { ...labels, ...Object.fromEntries(customStages.map(s => [s.key, s.name])) }
 
+  const handleMoveInactiveToPapelera = async () => {
+    for (const lead of inactiveLeads) {
+      try {
+        await moveLeadStage(lead.id, { stage: 'papelera', notes: 'Archivado automáticamente por inactividad (+10 días)' })
+      } catch { /* continue */ }
+    }
+    load()
+    toast.success(`${inactiveLeads.length} lead${inactiveLeads.length > 1 ? 's' : ''} movido${inactiveLeads.length > 1 ? 's' : ''} a papelera`)
+  }
+
   return (
     <div className="flex flex-col h-full gap-4">
+
+      {showInactiveWarning && inactiveLeads.length > 0 && (
+        <InactiveWarningPopup
+          leads={inactiveLeads}
+          onMoveAll={handleMoveInactiveToPapelera}
+          onClose={() => setShowInactiveWarning(false)}
+        />
+      )}
 
       {/* Descripción */}
       <div className="hidden sm:flex items-start gap-3 rounded-xl px-4 py-3 text-xs flex-shrink-0" style={{ background: 'rgba(67,97,238,0.07)', border: '1px solid rgba(67,97,238,0.16)', color: 'rgba(52,81,199,0.90)' }}>
@@ -820,6 +966,14 @@ export default function Pipeline() {
                   <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${filter === 'seguimiento' ? 'bg-black/20 text-black' : 'bg-warn/20 text-warn'}`}>{followupItems.length}</span>
                 )}
               </button>
+              <button onClick={() => setFilter('papelera')}
+                className={`px-3 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-150 flex items-center gap-1.5 whitespace-nowrap ${filter === 'papelera' ? 'bg-gray-600 text-white shadow-sm' : 'text-gray-400 hover:text-gray-300'}`}>
+                <Trash2 size={13} />
+                Papelera
+                {(summary['_papelera_count'] as any) > 0 && (
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-gray-500/20 text-gray-400">{(summary['_papelera_count'] as any)}</span>
+                )}
+              </button>
             </div>
           )}
 
@@ -836,6 +990,18 @@ export default function Pipeline() {
         </div>
       ) : filter === 'seguimiento' ? (
         <SeguimientoTab items={followupItems} />
+      ) : filter === 'papelera' ? (
+        <PapeleraTab
+          leads={summary['papelera']?.leads ?? []}
+          count={summary['_papelera_count'] as any ?? summary['papelera']?.count ?? 0}
+          labels={effectiveLabels}
+          onRestore={async (lead) => {
+            await moveLeadStage(lead.id, { stage: 'lead', notes: 'Restaurado desde papelera' })
+            load()
+            toast.success('Lead restaurado')
+          }}
+          canDelete={(isAdmin || user?.role === 'verificador')}
+        />
       ) : (
         <div className="flex gap-5 overflow-x-auto pb-4 flex-1">
           {highlightSinOT && (
