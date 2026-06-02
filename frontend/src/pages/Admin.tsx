@@ -2314,105 +2314,157 @@ Reglas:
 
       {/* ── Cobrador Carteras tab ── */}
       {activeTab === 'cobrador_carteras' && (
-        <div className="space-y-4">
+        <div className="space-y-5">
           <div className="flex items-center justify-between">
             <div>
               <h2 className="font-bold text-white text-lg">Carteras por Cobrador</h2>
-              <p className="text-xs text-white/45 mt-0.5">Los cobradores se asignan a áreas desde Grupos & Áreas</p>
+              <p className="text-xs text-white/40 mt-0.5">Asigna el área de cada cobrador para que reciba sus morosos automáticamente</p>
             </div>
             <button onClick={loadCobradorCarteras} disabled={cobCarterasLoading}
-              className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-xl bg-surface-1 text-white/70 hover:bg-surface-2 border border-white/10">
-              <RefreshCw size={12} className={cobCarterasLoading ? 'animate-spin' : ''} /> Actualizar
+              className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-xl bg-surface-1 text-white/70 hover:bg-surface-2 border border-white/10 transition-colors">
+              <RefreshCw size={13} className={cobCarterasLoading ? 'animate-spin' : ''} /> Actualizar
             </button>
           </div>
 
           {cobCarterasLoading ? (
             <div className="flex justify-center py-16"><div className="w-6 h-6 border-2 border-white/20 border-t-white/60 rounded-full animate-spin" /></div>
           ) : cobCarteras.length === 0 ? (
-            <div className="bg-surface-1 rounded-xl border border-white/[0.07] p-12 text-center">
+            <div className="bg-surface-1 rounded-2xl border border-white/[0.07] p-12 text-center">
               <p className="text-sm text-white/40">Sin cobradores activos</p>
             </div>
           ) : (
-            <div className="grid gap-4">
+            <div className="space-y-3">
               {cobCarteras.map((c: any) => {
                 const pct = c.total_deuda > 0 ? (c.total_cobrado / c.total_deuda * 100) : 0
                 const expanded = cobExpandedId === c.id
+                const isEditingArea = editingCobradorArea.id === c.id
                 return (
                   <div key={c.id} className="bg-surface-1 rounded-2xl border border-white/[0.07] overflow-hidden">
-                    {/* Header */}
-                    <div className="p-5 cursor-pointer hover:bg-white/[0.02] transition-colors"
-                      onClick={() => setCobExpandedId(expanded ? null : c.id)}>
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="flex items-center gap-3 min-w-0">
-                          <div className="w-10 h-10 rounded-xl flex items-center justify-center font-bold text-base flex-shrink-0"
-                            style={{ background: 'rgba(67,97,238,0.15)', color: '#818cf8' }}>
-                            {c.name.charAt(0).toUpperCase()}
-                          </div>
-                          <div className="min-w-0">
-                            <p className="font-bold text-sm text-white/90">{c.name}</p>
-                            <p className="text-xs text-white/40 truncate">{c.email}</p>
-                          </div>
+
+                    {/* ── Cobrador header row ── */}
+                    <div className="grid gap-4 p-5" style={{ gridTemplateColumns: '1fr auto' }}>
+                      <div className="flex items-center gap-4 min-w-0">
+                        {/* Avatar */}
+                        <div className="w-11 h-11 rounded-xl flex items-center justify-center font-black text-lg flex-shrink-0"
+                          style={{ background: 'rgba(67,97,238,0.18)', color: '#818cf8' }}>
+                          {c.name.charAt(0).toUpperCase()}
                         </div>
-                        <div className="flex items-center gap-6 flex-shrink-0">
-                          <div className="text-center">
-                            <p className="text-xl font-black text-white/90">{c.total_leads}</p>
-                            <p className="text-[10px] text-white/40 uppercase tracking-wide">Clientes</p>
+                        {/* Name + email + area */}
+                        <div className="min-w-0">
+                          <p className="font-bold text-white/90">{c.name}</p>
+                          <p className="text-xs text-white/40 truncate mb-2">{c.email}</p>
+                          {/* Area assignment */}
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-bold uppercase tracking-widest text-white/30">Área:</span>
+                            {isEditingArea ? (
+                              <div className="flex items-center gap-1.5">
+                                <input
+                                  value={editingCobradorArea.area}
+                                  onChange={e => setEditingCobradorArea(prev => ({ ...prev, area: e.target.value }))}
+                                  placeholder="ej: CONTABILIDAD"
+                                  className="text-xs px-2.5 py-1 rounded-lg text-white/85 w-40"
+                                  style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.15)' }}
+                                  onKeyDown={async e => {
+                                    if (e.key === 'Enter') {
+                                      try { await setCobradorArea(c.id, editingCobradorArea.area || null); toast.success('Área guardada'); setEditingCobradorArea({ id: 0, area: '' }); loadCobradorCarteras() } catch { toast.error('Error') }
+                                    }
+                                    if (e.key === 'Escape') setEditingCobradorArea({ id: 0, area: '' })
+                                  }}
+                                  autoFocus
+                                />
+                                <button onClick={async () => {
+                                  try { await setCobradorArea(c.id, editingCobradorArea.area || null); toast.success('Área guardada'); setEditingCobradorArea({ id: 0, area: '' }); loadCobradorCarteras() } catch { toast.error('Error') }
+                                }} className="px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors"
+                                  style={{ background: 'rgba(163,230,53,0.15)', color: '#a3e635', border: '1px solid rgba(163,230,53,0.3)' }}>
+                                  Guardar
+                                </button>
+                                <button onClick={() => setEditingCobradorArea({ id: 0, area: '' })}
+                                  className="px-2 py-1 rounded-lg text-xs text-white/40 hover:text-white/70">✕</button>
+                              </div>
+                            ) : (
+                              <button onClick={e => { e.stopPropagation(); setEditingCobradorArea({ id: c.id, area: c.cobrador_area || '' }) }}
+                                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all"
+                                style={c.cobrador_area
+                                  ? { background: 'rgba(67,97,238,0.12)', color: '#818cf8', border: '1px solid rgba(67,97,238,0.25)' }
+                                  : { background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.40)', border: '1px solid rgba(255,255,255,0.10)' }}>
+                                <Edit2 size={10} />
+                                {c.cobrador_area || 'Sin área asignada'}
+                              </button>
+                            )}
                           </div>
-                          <div className="text-center">
-                            <p className="text-sm font-bold" style={{ color: '#a3e635' }}>{pct.toFixed(0)}%</p>
-                            <p className="text-[10px] text-white/40 uppercase tracking-wide">Cobrado</p>
-                          </div>
-                          <ChevronDown size={16} className={`text-white/30 transition-transform ${expanded ? 'rotate-180' : ''}`} />
                         </div>
                       </div>
-                      {/* Progress bar */}
-                      <div className="mt-4">
-                        <div className="flex justify-between text-[10px] text-white/40 mb-1.5">
-                          <span>${Math.round(c.total_cobrado).toLocaleString('es-CL')} cobrado</span>
-                          <span>${Math.round(c.total_deuda).toLocaleString('es-CL')} total</span>
+
+                      {/* Stats + expand */}
+                      <div className="flex items-center gap-5">
+                        <div className="text-center">
+                          <p className="text-2xl font-black text-white/90">{c.total_leads}</p>
+                          <p className="text-[10px] uppercase tracking-widest text-white/35">Clientes</p>
                         </div>
-                        <div className="h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
-                          <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(pct, 100)}%`, background: 'linear-gradient(90deg, #4361ee, #a3e635)' }} />
+                        <div className="w-px h-10 bg-white/[0.07]" />
+                        <div className="text-center">
+                          <p className="text-lg font-black" style={{ color: pct > 0 ? '#a3e635' : 'rgba(255,255,255,0.35)' }}>{pct.toFixed(0)}%</p>
+                          <p className="text-[10px] uppercase tracking-widest text-white/35">Cobrado</p>
                         </div>
+                        <button onClick={() => setCobExpandedId(expanded ? null : c.id)}
+                          className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all"
+                          style={{ background: expanded ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.55)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                          {expanded ? 'Ocultar' : 'Ver clientes'}
+                          <ChevronDown size={13} className={`transition-transform ${expanded ? 'rotate-180' : ''}`} />
+                        </button>
                       </div>
                     </div>
 
-                    {/* Expanded clients */}
+                    {/* Progress bar */}
+                    <div className="px-5 pb-4">
+                      <div className="flex justify-between text-[10px] text-white/35 mb-1.5">
+                        <span>Cobrado: ${Math.round(c.total_cobrado).toLocaleString('es-CL')}</span>
+                        <span>Total: ${Math.round(c.total_deuda).toLocaleString('es-CL')}</span>
+                      </div>
+                      <div className="h-1 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.06)' }}>
+                        <div className="h-full rounded-full" style={{ width: `${Math.min(pct, 100)}%`, background: 'linear-gradient(90deg, #4361ee, #a3e635)' }} />
+                      </div>
+                    </div>
+
+                    {/* Expanded client list */}
                     {expanded && (
                       <div className="border-t border-white/[0.06]">
                         {c.leads.length === 0 ? (
-                          <p className="text-xs text-white/35 py-6 text-center">Sin clientes asignados</p>
+                          <p className="text-xs text-white/35 py-8 text-center">Sin clientes en cartera</p>
                         ) : (
-                          <div className="divide-y divide-white/[0.04]">
+                          <>
+                            {/* Table header */}
+                            <div className="grid px-5 py-2.5 text-[10px] font-bold uppercase tracking-widest text-white/30 border-b border-white/[0.05]"
+                              style={{ gridTemplateColumns: '1fr 140px 100px 36px' }}>
+                              <span>Cliente</span>
+                              <span className="text-right">Deuda</span>
+                              <span className="text-right">Estado</span>
+                              <span></span>
+                            </div>
                             {c.leads.map((l: any) => (
-                              <div key={l.id} className="flex items-center justify-between px-5 py-3 hover:bg-white/[0.02] transition-colors group">
-                                <div className="flex items-center gap-3 min-w-0">
-                                  <div className="w-7 h-7 rounded-lg bg-white/[0.06] flex items-center justify-center text-[11px] font-bold text-white/50 flex-shrink-0">
-                                    {(l.nombre || '?').charAt(0)}
-                                  </div>
-                                  <div className="min-w-0">
-                                    <p className="text-sm text-white/80 font-medium truncate">{l.nombre}</p>
-                                    {l.empresa && (
-                                      <p className="text-[10px] text-white/35 truncate">{l.empresa}</p>
-                                    )}
-                                  </div>
+                              <div key={l.id} className="grid items-center px-5 py-3 border-b border-white/[0.04] hover:bg-white/[0.02] transition-colors group"
+                                style={{ gridTemplateColumns: '1fr 140px 100px 36px' }}>
+                                <div className="min-w-0">
+                                  <p className="text-sm text-white/80 font-medium truncate">{l.nombre}</p>
+                                  {l.empresa && <p className="text-[10px] text-white/35 truncate">{l.empresa}</p>}
                                 </div>
-                                <div className="flex items-center gap-3 flex-shrink-0">
-                                  <div className="text-right">
-                                    <p className="text-xs font-bold text-white/70">${Math.round(l.monto_deuda).toLocaleString('es-CL')}</p>
-                                    <p className="text-[10px]" style={{ color: l.stage === 'pagado' ? '#a3e635' : 'rgba(255,255,255,0.35)' }}>{l.stage}</p>
-                                  </div>
+                                <p className="text-sm font-bold text-white/70 text-right">${Math.round(l.monto_deuda).toLocaleString('es-CL')}</p>
+                                <p className="text-[11px] font-semibold text-right capitalize"
+                                  style={{ color: l.stage === 'pagado' ? '#a3e635' : l.stage === 'pago_comprometido' ? '#60a5fa' : 'rgba(255,255,255,0.40)' }}>
+                                  {l.stage?.replace(/_/g, ' ')}
+                                </p>
+                                <div className="flex justify-end">
                                   <button onClick={async () => {
-                                    if (!window.confirm(`¿Quitar a ${l.nombre} de la cartera?`)) return
+                                    if (!window.confirm(`¿Quitar a ${l.nombre} de la cartera de ${c.name}?`)) return
                                     try { await deleteCobradorLead(l.id); toast.success('Eliminado'); loadCobradorCarteras() }
                                     catch { toast.error('Error') }
-                                  }} className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg hover:bg-danger/15 text-white/30 hover:text-danger transition-all">
+                                  }} className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg hover:bg-danger/15 text-white/25 hover:text-danger transition-all">
                                     <Trash2 size={12} />
                                   </button>
                                 </div>
                               </div>
                             ))}
-                          </div>
+                          </>
                         )}
                       </div>
                     )}
