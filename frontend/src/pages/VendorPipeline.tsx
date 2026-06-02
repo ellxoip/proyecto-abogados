@@ -201,13 +201,26 @@ function OutcomeModal({ outcome, onConfirm, onCancel }: {
   )
 }
 
-function EventCard({ ev, onMark, onEdit }: { ev: any; onMark: (id: number, s: string, notes?: string) => Promise<void>; onEdit: (ev: any) => void }) {
+function EventCard({ ev, onMark, onEdit, onOTRequired }: {
+  ev: any
+  onMark: (id: number, s: string, notes?: string) => Promise<void>
+  onEdit: (ev: any) => void
+  onOTRequired: (leadId: number, honorarios: number, outcome: string, notes: string) => void
+}) {
   const [expanded, setExpanded] = useState(false)
   const [pendingOutcome, setPendingOutcome] = useState<string | null>(null)
 
+  const SUCCESS_OUTCOMES = ['altamente_interesado', 'con_exito_pagada']
+
   const handleConfirm = async (notes: string) => {
-    await onMark(ev.id, pendingOutcome!, notes || undefined)
+    const outcome = pendingOutcome!
     setPendingOutcome(null)
+    // OT obligatoria en proceso de reunión para outcomes exitosos
+    if (SUCCESS_OUTCOMES.includes(outcome) && ev.lead_id) {
+      onOTRequired(ev.lead_id, ev.honorarios ?? 0, outcome, notes)
+    } else {
+      await onMark(ev.id, outcome, notes || undefined)
+    }
   }
 
   const start = parseAsUTC(ev.start_time)
@@ -395,6 +408,8 @@ export default function VendorPipeline() {
   const [selectedEvent, setSelectedEvent] = useState<any>(null)
   const [showModal, setShowModal]         = useState(false)
   const [otLead, setOtLead] = useState<{ id: number; honorarios: number } | null>(null)
+  // OT from reunion outcome: after OT saved → mark the outcome
+  const [pendingOTOutcome, setPendingOTOutcome] = useState<{ eventId: number; outcome: string; notes: string } | null>(null)
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
@@ -414,6 +429,19 @@ export default function VendorPipeline() {
   const handleMark = async (id: number, status: string, notes?: string) => {
     await updateVendorStatus(id, status, notes)
     await load(true)
+  }
+
+  const handleOTRequired = (leadId: number, honorarios: number, outcome: string, notes: string) => {
+    // Find the event id for this lead from current pipeline
+    const allEvents = [
+      ...(pipeline?.espera_cliente ?? []),
+      ...(pipeline?.altamente_interesado ?? []),
+      ...(pipeline?.con_exito_pagada ?? []),
+    ]
+    const ev = allEvents.find((e: any) => e.lead_id === leadId)
+    if (!ev) return
+    setPendingOTOutcome({ eventId: ev.id, outcome, notes })
+    setOtLead({ id: leadId, honorarios })
   }
 
   const handleEdit = (ev: any) => { setSelectedEvent(ev); setShowModal(true) }
@@ -452,12 +480,10 @@ export default function VendorPipeline() {
     visibleMeetingItems([...(pipeline?.sin_exito ?? []), ...(pipeline?.no_show ?? [])]).length
 
   const pagadoReunionLeads: any[] = pipeline?.pagado_reunion ?? []
-  const pagoPendienteLeads: any[] = pipeline?.pago_pendiente ?? []
 
   const LEAD_COLS = [
     { key: 'pagado_reunion',    label: 'Pagado en Reunión', items: pagadoReunionLeads, accent: '#34d399', accentDim: 'rgba(52,211,153,0.12)', border: 'rgba(52,211,153,0.30)' },
     { key: 'cierre',            label: 'Cierre',            items: cierreLeads,        accent: '#38bdf8', accentDim: 'rgba(14,165,233,0.12)', border: 'rgba(14,165,233,0.30)' },
-    { key: 'pago_pendiente',    label: 'Pago Pendiente',    items: pagoPendienteLeads, accent: '#f59e0b', accentDim: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.30)' },
     { key: 'pago_comprometido', label: 'Pago Comprometido', items: pagoLeads,          accent: '#a3e635', accentDim: 'rgba(163,230,53,0.12)',  border: 'rgba(163,230,53,0.30)' },
   ]
 
@@ -501,7 +527,7 @@ export default function VendorPipeline() {
                 <div className="space-y-2.5 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 270px)', minHeight: 50 }}>
                   {items.length === 0
                     ? <div className="text-center py-8 text-xs rounded-xl" style={{ color: 'rgba(26,32,53,0.35)', border: '1.5px dashed #e2e8f0' }}>Sin eventos</div>
-                    : items.map((ev: any) => <EventCard key={ev.id} ev={ev} onMark={handleMark} onEdit={ev2 => { setSelectedEvent(ev2); setShowModal(true) }} />)
+                    : items.map((ev: any) => <EventCard key={ev.id} ev={ev} onMark={handleMark} onEdit={ev2 => { setSelectedEvent(ev2); setShowModal(true) }} onOTRequired={handleOTRequired} />)
                   }
                 </div>
               </div>
@@ -525,7 +551,7 @@ export default function VendorPipeline() {
                 <div className="space-y-2.5 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 270px)', minHeight: 50 }}>
                   {items.length === 0
                     ? <div className="text-center py-8 text-xs rounded-xl" style={{ color: 'rgba(26,32,53,0.35)', border: '1.5px dashed #e2e8f0' }}>Sin eventos</div>
-                    : items.map((ev: any) => <EventCard key={ev.id} ev={ev} onMark={handleMark} onEdit={ev2 => { setSelectedEvent(ev2); setShowModal(true) }} />)
+                    : items.map((ev: any) => <EventCard key={ev.id} ev={ev} onMark={handleMark} onEdit={ev2 => { setSelectedEvent(ev2); setShowModal(true) }} onOTRequired={handleOTRequired} />)
                   }
                 </div>
               </div>
@@ -580,7 +606,7 @@ export default function VendorPipeline() {
                 <div className="space-y-2.5 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 270px)', minHeight: 50 }}>
                   {items.length === 0
                     ? <div className="text-center py-8 text-xs rounded-xl" style={{ color: 'rgba(26,32,53,0.35)', border: '1.5px dashed #e2e8f0' }}>Sin eventos</div>
-                    : items.map((ev: any) => <EventCard key={ev.id} ev={ev} onMark={handleMark} onEdit={ev2 => { setSelectedEvent(ev2); setShowModal(true) }} />)
+                    : items.map((ev: any) => <EventCard key={ev.id} ev={ev} onMark={handleMark} onEdit={ev2 => { setSelectedEvent(ev2); setShowModal(true) }} onOTRequired={handleOTRequired} />)
                   }
                 </div>
               </div>
@@ -603,7 +629,28 @@ export default function VendorPipeline() {
       )}
 
       {otLead !== null && (
-        <WorkOrderModal leadId={otLead.id} honorarios={otLead.honorarios} autoClose onClose={() => { setOtLead(null); load(true) }} onSaved={() => load(true)} />
+        <WorkOrderModal
+          leadId={otLead.id}
+          honorarios={otLead.honorarios}
+          autoClose
+          onClose={() => {
+            // If closed without saving during pending outcome flow, cancel
+            setPendingOTOutcome(null)
+            setOtLead(null)
+            load(true)
+          }}
+          onSaved={async () => {
+            // OT saved — now mark the outcome
+            if (pendingOTOutcome) {
+              try {
+                await updateVendorStatus(pendingOTOutcome.eventId, pendingOTOutcome.outcome, pendingOTOutcome.notes || undefined)
+              } catch { toast.error('Error al marcar resultado') }
+              setPendingOTOutcome(null)
+            }
+            setOtLead(null)
+            load(true)
+          }}
+        />
       )}
     </div>
   )
