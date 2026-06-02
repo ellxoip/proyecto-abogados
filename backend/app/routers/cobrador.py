@@ -543,6 +543,13 @@ def sync_pendiente_morosos(db: Session) -> dict:
         if not lf_contrato_id:
             continue
 
+        # Assign to cobrador based on area match
+        assigned_cobrador = _find_cobrador_for_area(tipo_servicio)
+        if not assigned_cobrador:
+            # No cobrador assigned to this area — skip (don't create orphan leads)
+            skipped += 1
+            continue
+
         # Find or create contact
         contact_id = None
         if phone:
@@ -550,8 +557,8 @@ def sync_pendiente_morosos(db: Session) -> dict:
             if not contact:
                 try:
                     contact = models.Contact(name=nombre, phone=phone, email=email,
-                                             rut_persona=rut, group_id=cobrador.group_id,
-                                             created_by=cobrador.id)
+                                             rut_persona=rut, group_id=assigned_cobrador.group_id,
+                                             created_by=assigned_cobrador.id)
                     db.add(contact)
                     db.flush()
                 except Exception:
@@ -566,33 +573,32 @@ def sync_pendiente_morosos(db: Session) -> dict:
         ).first()
 
         if lead:
-            # Only update financial data; don't downgrade if already escalated
-            lead.monto_deuda         = monto_deuda
-            lead.lf_cuotas_vencidas  = cuotas_vencidas
-            lead.empresa             = tipo_servicio or lead.empresa
+            lead.monto_deuda        = monto_deuda
+            lead.lf_cuotas_vencidas = cuotas_vencidas
+            lead.empresa            = tipo_servicio or lead.empresa
+            lead.cobrador_id        = assigned_cobrador.id  # re-assign if area changed
             if contact_id and not lead.contact_id:
                 lead.contact_id = contact_id
-            # If somehow moved back — keep higher stage, don't regress
             if lead.stage not in ("lead_moroso", "pago_comprometido", "pagado", "historial"):
                 lead.stage = "pendiente_moroso"
                 lead.is_new = True
             updated += 1
         else:
             lead = models.CobradorLead(
-                cobrador_id      = cobrador.id,
-                contact_id       = contact_id,
-                nombre           = nombre,
-                rut              = rut,
-                empresa          = tipo_servicio,
-                telefono         = phone,
-                email            = email,
-                monto_deuda      = monto_deuda,
-                monto_pagado     = 0,
-                lf_cliente_id    = lf_cliente_id,
-                lf_contrato_id   = lf_contrato_id,
+                cobrador_id        = assigned_cobrador.id,
+                contact_id         = contact_id,
+                nombre             = nombre,
+                rut                = rut,
+                empresa            = tipo_servicio,
+                telefono           = phone,
+                email              = email,
+                monto_deuda        = monto_deuda,
+                monto_pagado       = 0,
+                lf_cliente_id      = lf_cliente_id,
+                lf_contrato_id     = lf_contrato_id,
                 lf_cuotas_vencidas = cuotas_vencidas,
-                stage            = "pendiente_moroso",
-                is_new           = True,
+                stage              = "pendiente_moroso",
+                is_new             = True,
             )
             db.add(lead)
             created += 1
@@ -612,14 +618,36 @@ def sync_morosos(db: Session) -> dict:
     except Exception as e:
         return {"ok": False, "error": str(e), "created": 0, "updated": 0}
 
-    # Default cobrador: first cobrador user
-    cobrador = db.query(models.User).filter(models.User.role == "cobrador").first()
-    if not cobrador:
+    # Load all active cobradores with their assigned area for area-based matching
+    all_cobradores = db.query(models.User).filter(
+        models.User.role == "cobrador",
+        models.User.is_active == True,
+    ).all()
+    if not all_cobradores:
         return {"ok": False, "error": "No hay usuarios cobrador en Nexio", "created": 0, "updated": 0}
+
+    # Build area→cobrador map (case-insensitive)
+    area_cobrador_map: dict = {}
+    fallback_cobrador = all_cobradores[0]
+    for c in all_cobradores:
+        if c.cobrador_area:
+            area_cobrador_map[c.cobrador_area.strip().upper()] = c
+
+    def _find_cobrador_for_area(tipo_servicio: str | None) -> models.User | None:
+        if not tipo_servicio:
+            return None
+        key = tipo_servicio.strip().upper()
+        return area_cobrador_map.get(key)
 
     created = updated = skipped = 0
 
     for row in rows:
+        tipo_servicio_row = row.get("tipo_servicio")
+        assigned_cobrador = _find_cobrador_for_area(tipo_servicio_row)
+        if not assigned_cobrador:
+            skipped += 1
+            continue
+
         phone_raw = row.get("telefono") or ""
         phone = _clean_phone(phone_raw) if phone_raw else None
         rut = (row.get("rut") or "").strip() or None
@@ -636,8 +664,8 @@ def sync_morosos(db: Session) -> dict:
                         phone=phone,
                         email=email,
                         rut_persona=rut,
-                        group_id=cobrador.group_id,
-                        created_by=cobrador.id,
+                        group_id=assigned_cobrador.group_id,
+                        created_by=assigned_cobrador.id,
                     )
                     db.add(contact)
                     db.flush()
@@ -681,6 +709,8 @@ def sync_morosos(db: Session) -> dict:
             lead.lf_cuotas_vencidas   = int(row["cuotas_vencidas"])
             lead.proxima_cuota_fecha  = proxima_fecha
             lead.proxima_cuota_monto  = proxima_monto
+            lead.cobrador_id          = assigned_cobrador.id
+            lead.empresa              = tipo_servicio_row or lead.empresa
             if contact_id and not lead.contact_id:
                 lead.contact_id = contact_id
             if pagacuotas_id and not lead.pagacuotas_cliente_id:
@@ -697,11 +727,11 @@ def sync_morosos(db: Session) -> dict:
             updated += 1
         else:
             lead = models.CobradorLead(
-                cobrador_id           = cobrador.id,
+                cobrador_id           = assigned_cobrador.id,
                 contact_id            = contact_id,
                 nombre                = row["nombre"],
                 rut                   = rut,
-                empresa               = row.get("tipo_servicio"),
+                empresa               = tipo_servicio_row,
                 telefono              = phone,
                 email                 = email,
                 monto_deuda           = total_facturado,
