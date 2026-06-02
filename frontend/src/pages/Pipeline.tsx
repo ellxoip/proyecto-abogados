@@ -90,6 +90,7 @@ function LeadCard({ lead, canMove, showGroup, labels, canConfirmPago, onMoved, u
   const [showViewModal, setShowViewModal] = useState(false)
   const [showOTModal, setShowOTModal] = useState(false)
   const [deleteClicks, setDeleteClicks] = useState(0)
+  const [showPapeleraConfirm, setShowPapeleraConfirm] = useState(false)
   const navigate = useNavigate()
   const nextStage = NEXT_STAGE[lead.current_stage]
   const prevStage = PREV_STAGE[lead.current_stage]
@@ -191,6 +192,17 @@ function LeadCard({ lead, canMove, showGroup, labels, canConfirmPago, onMoved, u
             </span>
           )}
           <div className="flex items-center gap-1.5">
+            {!isPaid && (
+              <button
+                onClick={e => { e.stopPropagation(); setShowPapeleraConfirm(true) }}
+                title="Enviar a papelera"
+                className="p-1 rounded hover:bg-gray-100 transition-colors"
+                style={{ color: 'rgba(26,32,53,0.30)' }}
+                onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = '#6b7280'}
+                onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'rgba(26,32,53,0.30)'}>
+                <Trash2 size={11} />
+              </button>
+            )}
             {lead.priority === 'high' && (
               <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
                 style={{ background: 'rgba(220,38,38,0.10)', color: '#dc2626' }}>
@@ -447,6 +459,51 @@ function LeadCard({ lead, canMove, showGroup, labels, canConfirmPago, onMoved, u
           onConfirm={() => {}}
           onClose={() => setShowViewModal(false)}
         />
+      )}
+
+      {showPapeleraConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}>
+          <div className="rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden" style={{ background: '#ffffff', border: '1px solid #e2e8f0' }}>
+            <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(107,114,128,0.10)' }}>
+                <Trash2 size={16} style={{ color: '#6b7280' }} />
+              </div>
+              <div>
+                <p className="font-bold text-sm" style={{ color: '#1a2035' }}>Enviar a papelera</p>
+                <p className="text-[11px] mt-0.5" style={{ color: 'rgba(26,32,53,0.55)' }}>{lead.contact?.name ?? 'Este lead'}</p>
+              </div>
+            </div>
+            <div className="px-5 py-4 space-y-2">
+              <p className="text-sm" style={{ color: 'rgba(26,32,53,0.75)' }}>
+                El lead pasará a la <strong>Papelera</strong> y dejará de aparecer en el pipeline.
+              </p>
+              <p className="text-xs" style={{ color: 'rgba(26,32,53,0.50)' }}>
+                Puedes recuperarlo desde la pestaña Papelera. Si no lo recuperas, se eliminará automáticamente después de <strong>30 días</strong>.
+              </p>
+            </div>
+            <div className="px-5 py-4 border-t border-gray-100 flex gap-2">
+              <button onClick={() => setShowPapeleraConfirm(false)}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-colors"
+                style={{ background: '#f8fafc', color: 'rgba(26,32,53,0.60)', border: '1px solid #e2e8f0' }}>
+                Cancelar
+              </button>
+              <button
+                onClick={async () => {
+                  setShowPapeleraConfirm(false)
+                  try {
+                    const updated = await moveLeadStage(lead.id, { stage: 'papelera', notes: 'Enviado a papelera' })
+                    onMoved(updated)
+                    window.dispatchEvent(new CustomEvent('lead-stage-changed'))
+                    toast.success('Lead enviado a papelera')
+                  } catch (e: any) { toast.error(e?.response?.data?.detail || 'Error') }
+                }}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold transition-colors"
+                style={{ background: '#6b7280', color: '#ffffff' }}>
+                Sí, enviar a papelera
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </>
   )
