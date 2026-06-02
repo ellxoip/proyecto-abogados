@@ -43,6 +43,7 @@ class UserOut(BaseModel):
     is_active: bool
     whatsapp_number: Optional[str]
     at_informa_user_id: Optional[str] = None
+    cobrador_area: Optional[str] = None
     created_at: datetime
     negocio_plan: Optional[str] = "basico"
     negocio_plan_limits: Optional[dict] = None

@@ -14,6 +14,7 @@ import {
   updateAIAgentSchedule,
   assignUserToArea, removeUserFromArea,
   getGroupMembers, assignUserToGroup, removeUserFromGroup,
+  getCobradorCarteras, deleteCobradorLead, setCobradorArea,
 } from '../api'
 import type { User, Group, Area, WhatsAppConfig } from '../types'
 import { STAGE_LABELS as DEFAULT_STAGE_LABELS } from '../types'
@@ -22,7 +23,7 @@ import toast from 'react-hot-toast'
 import { useAuthStore } from '../store/auth'
 import { useConfirm } from '../components/ConfirmDialog'
 
-type Tab = 'users' | 'groups' | 'pipeline' | 'whatsapp_sessions' | 'ai_agents' | 'security'
+type Tab = 'users' | 'groups' | 'pipeline' | 'whatsapp_sessions' | 'ai_agents' | 'security' | 'cobrador_carteras'
 
 export default function Admin() {
   const { user: me } = useAuthStore()
@@ -61,6 +62,17 @@ export default function Admin() {
   const [groupMembers, setGroupMembers]         = useState<User[]>([])
   const [unassigned, setUnassigned]             = useState<User[]>([])
   const [membersLoading, setMembersLoading]     = useState(false)
+  const [cobCarteras, setCobCarteras]           = useState<any[]>([])
+  const [cobCarterasLoading, setCobCarterasLoading] = useState(false)
+  const [cobExpandedId, setCobExpandedId]       = useState<number|null>(null)
+  const [editingCobradorArea, setEditingCobradorArea] = useState<{id:number;area:string}>({ id:0, area:'' })
+
+  const loadCobradorCarteras = async () => {
+    setCobCarterasLoading(true)
+    try { setCobCarteras(await getCobradorCarteras()) }
+    catch { toast.error('Error cargando carteras') }
+    finally { setCobCarterasLoading(false) }
+  }
 
   const loadUsers  = () => getUsers().then(setUsers)
   const loadGroups = () => getGroups().then(setGroups)
@@ -525,6 +537,7 @@ Reglas:
   }, [auditAction, auditSeverity])
 
   useEffect(() => { if (activeTab === 'security') loadAuditLog(1) }, [activeTab, auditAction, auditSeverity])
+  useEffect(() => { if (activeTab === 'cobrador_carteras') loadCobradorCarteras() }, [activeTab])
 
   const handleUnlock = async (userId: number, email: string) => {
     try {
@@ -2298,6 +2311,123 @@ Reglas:
       )}
 
       {confirmDialog}
+
+      {/* ── Cobrador Carteras tab ── */}
+      {activeTab === 'cobrador_carteras' && (
+        <div className="space-y-4">
+          <div className="bg-surface-1 rounded-xl border border-white/[0.07] p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-semibold text-white/90">Carteras por Cobrador</h2>
+              <button onClick={loadCobradorCarteras} disabled={cobCarterasLoading}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-surface-2 text-white/70 hover:bg-surface-3 border border-white/10">
+                <RefreshCw size={12} className={cobCarterasLoading ? 'animate-spin' : ''} /> Actualizar
+              </button>
+            </div>
+            {cobCarterasLoading ? (
+              <div className="flex justify-center py-8"><div className="w-6 h-6 border-2 border-white/20 border-t-white/60 rounded-full animate-spin" /></div>
+            ) : cobCarteras.length === 0 ? (
+              <p className="text-sm text-white/40 py-6 text-center">Sin cobradores activos</p>
+            ) : (
+              <div className="space-y-3">
+                {cobCarteras.map((c: any) => (
+                  <div key={c.id} className="rounded-xl overflow-hidden border border-white/[0.07]">
+                    <div className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-white/[0.02]"
+                      onClick={() => setCobExpandedId(cobExpandedId === c.id ? null : c.id)}>
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-surface-2 flex items-center justify-center text-sm font-bold text-white/70">
+                          {c.name.charAt(0)}
+                        </div>
+                        <div>
+                          <p className="font-semibold text-sm text-white/90">{c.name}</p>
+                          <p className="text-xs text-white/40">{c.email}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <div className="text-right">
+                          <p className="text-xs font-bold text-white/70">{c.total_leads} clientes</p>
+                          <p className="text-[10px] text-white/40">${Math.round(c.total_deuda).toLocaleString('es-CL')} deuda</p>
+                        </div>
+                        {/* Area assignment */}
+                        <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                          {editingCobradorArea.id === c.id ? (
+                            <>
+                              <input
+                                value={editingCobradorArea.area}
+                                onChange={e => setEditingCobradorArea(prev => ({ ...prev, area: e.target.value }))}
+                                placeholder="Área (ej: PENAL)"
+                                className="text-xs px-2 py-1 rounded bg-surface-0 border border-white/15 text-white/80 w-28"
+                                onKeyDown={async e => {
+                                  if (e.key === 'Enter') {
+                                    try {
+                                      await setCobradorArea(c.id, editingCobradorArea.area || null)
+                                      toast.success('Área asignada')
+                                      setEditingCobradorArea({ id: 0, area: '' })
+                                      loadCobradorCarteras()
+                                    } catch { toast.error('Error') }
+                                  }
+                                  if (e.key === 'Escape') setEditingCobradorArea({ id: 0, area: '' })
+                                }}
+                                autoFocus
+                              />
+                              <button onClick={async () => {
+                                try {
+                                  await setCobradorArea(c.id, editingCobradorArea.area || null)
+                                  toast.success('Área asignada')
+                                  setEditingCobradorArea({ id: 0, area: '' })
+                                  loadCobradorCarteras()
+                                } catch { toast.error('Error') }
+                              }} className="text-[10px] px-2 py-1 rounded bg-lime/20 text-lime border border-lime/30">✓</button>
+                            </>
+                          ) : (
+                            <button
+                              onClick={() => setEditingCobradorArea({ id: c.id, area: c.cobrador_area || '' })}
+                              className="text-[10px] px-2 py-1 rounded border border-white/10 text-white/50 hover:text-white/80 hover:border-white/20">
+                              {c.cobrador_area ? `Área: ${c.cobrador_area}` : '+ Área'}
+                            </button>
+                          )}
+                        </div>
+                        <ChevronDown size={14} className={`text-white/40 transition-transform ${cobExpandedId === c.id ? 'rotate-180' : ''}`} />
+                      </div>
+                    </div>
+                    {cobExpandedId === c.id && (
+                      <div className="border-t border-white/[0.05] px-4 py-3">
+                        {c.leads.length === 0 ? (
+                          <p className="text-xs text-white/35 py-2">Sin clientes asignados</p>
+                        ) : (
+                          <div className="space-y-1.5 max-h-64 overflow-y-auto">
+                            {c.leads.map((l: any) => (
+                              <div key={l.id} className="flex items-center justify-between text-xs py-1.5 px-2 rounded hover:bg-white/[0.03]">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="text-white/75 truncate">{l.nombre}</span>
+                                  {l.empresa && <span className="text-white/35 flex-shrink-0">{l.empresa}</span>}
+                                </div>
+                                <div className="flex items-center gap-2 flex-shrink-0">
+                                  <span className="text-white/40">${Math.round(l.monto_deuda).toLocaleString('es-CL')}</span>
+                                  <button onClick={async () => {
+                                    if (!window.confirm(`¿Eliminar a ${l.nombre} de la cartera?`)) return
+                                    try {
+                                      await deleteCobradorLead(l.id)
+                                      toast.success('Eliminado')
+                                      loadCobradorCarteras()
+                                    } catch { toast.error('Error') }
+                                  }} className="p-1 rounded hover:bg-danger/15 text-white/30 hover:text-danger transition-colors">
+                                    <Trash2 size={11} />
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
     </div>
   )
 }

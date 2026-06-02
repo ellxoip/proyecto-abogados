@@ -89,6 +89,7 @@ function LeadCard({ lead, canMove, showGroup, labels, canConfirmPago, onMoved, u
   const [showMoveModal, setShowMoveModal] = useState<{ target: string } | null>(null)
   const [showViewModal, setShowViewModal] = useState(false)
   const [showOTModal, setShowOTModal] = useState(false)
+  const [deleteClicks, setDeleteClicks] = useState(0)
   const navigate = useNavigate()
   const nextStage = NEXT_STAGE[lead.current_stage]
   const prevStage = PREV_STAGE[lead.current_stage]
@@ -376,6 +377,29 @@ function LeadCard({ lead, canMove, showGroup, labels, canConfirmPago, onMoved, u
                 onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#edf2f7'; (e.currentTarget as HTMLElement).style.color = '#1a2035' }}
                 onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#f8fafc'; (e.currentTarget as HTMLElement).style.color = 'rgba(26,32,53,0.55)' }}>
                 <ChevronDown size={11} className="rotate-90" /> Retro
+              </button>
+            )}
+            {isPaid && canConfirmPago && (
+              <button
+                onClick={async () => {
+                  const next = deleteClicks + 1
+                  setDeleteClicks(next)
+                  if (next < 3) {
+                    toast(`Confirma ${3 - next} vez${next === 2 ? '' : 'es'} más para archivar`, { icon: '⚠️' })
+                  } else {
+                    setDeleteClicks(0)
+                    try {
+                      const updated = await moveLeadStage(lead.id, { stage: 'papelera', notes: 'Archivado por verificador' })
+                      onMoved(updated)
+                      window.dispatchEvent(new CustomEvent('lead-stage-changed'))
+                      toast.success('Lead enviado a papelera')
+                    } catch (e: any) { toast.error(e?.response?.data?.detail || 'Error') }
+                  }
+                }}
+                className="flex items-center justify-center gap-1 py-1.5 px-2 rounded-lg text-[10px] font-semibold transition-all"
+                style={{ background: deleteClicks > 0 ? 'rgba(239,68,68,0.12)' : '#f8fafc', color: deleteClicks > 0 ? '#ef4444' : 'rgba(26,32,53,0.45)', border: `1px solid ${deleteClicks > 0 ? 'rgba(239,68,68,0.3)' : '#e2e8f0'}` }}
+                title={deleteClicks === 0 ? 'Archivar (3 clics)' : `${3 - deleteClicks} clic${3 - deleteClicks !== 1 ? 's' : ''} más`}>
+                <Trash2 size={11} />
               </button>
             )}
           </div>

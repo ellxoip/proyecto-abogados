@@ -51,6 +51,7 @@ const NAV_SECTIONS = [
       { path: '/admin',   tab: 'pipeline',       icon: GitBranchIcon,      label: 'Etapas',               sublabel: 'Configurar embudo', roles: ['superadmin','subadmin'] },
       { path: '/admin',   tab: 'whatsapp_sessions', icon: Smartphone,      label: 'WhatsApp',             sublabel: 'Sesiones QR',       roles: ['superadmin','subadmin'] },
       { path: '/admin',   tab: 'ai_agents',      icon: Bot,                label: 'Agentes IA',           sublabel: 'Mis agentes',       roles: ['superadmin','subadmin'] },
+      { path: '/admin',   tab: 'cobrador_carteras', icon: Users,            label: 'Carteras Cobrador',    sublabel: 'Clientes por cobrador', roles: ['superadmin','subadmin'] },
       { path: '/admin',   tab: 'security',       icon: Shield,             label: 'Seguridad',            sublabel: 'Auditoría ISO 27001', roles: ['superadmin'] },
       { path: '/tecnico', tab: 'negocios',    icon: Building2,          label: 'Negocios',             sublabel: 'Clientes CRM',      roles: ['tecnico'] },
       { path: '/tecnico', tab: 'overview',    icon: Wrench,             label: 'Resumen',              sublabel: 'Estado sistema',    roles: ['tecnico'] },

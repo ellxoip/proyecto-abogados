@@ -97,6 +97,9 @@ export const updateCobradorNotes = (id: number, notes: string) =>
 export const updateCobradorMontoPagado = (id: number, monto_pagado: number) =>
   api.patch(`/api/cobrador/leads/${id}/monto_pagado`, { monto_pagado }).then(r => r.data)
 export const getCobradorDashboard = () => api.get('/api/cobrador/dashboard').then(r => r.data)
+export const getCobradorCarteras = () => api.get('/api/users/cobradores/carteras').then(r => r.data)
+export const deleteCobradorLead = (id: number) => api.delete(`/api/users/cobradores/leads/${id}`).then(r => r.data)
+export const setCobradorArea = (userId: number, area: string | null) => api.patch(`/api/users/${userId}/cobrador-area`, { cobrador_area: area }).then(r => r.data)
 export const getCobradorHistorial = (params?: any) => api.get('/api/cobrador/historial', { params }).then(r => r.data)
 export const syncCobradorLeads = () => api.post('/api/cobrador/sync').then(r => r.data)
 export const getCobradorPortalUrl = (id: number) => api.get(`/api/cobrador/leads/${id}/portal-url`).then(r => r.data)

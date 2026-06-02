@@ -128,6 +128,70 @@ def update_user(
     return user
 
 
+@router.patch("/{user_id}/cobrador-area")
+def set_cobrador_area(
+    user_id: int,
+    data: dict,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_roles("superadmin", "subadmin"))
+):
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    if user.role != "cobrador":
+        raise HTTPException(status_code=400, detail="Solo se puede asignar área a cobradores")
+    user.cobrador_area = data.get("cobrador_area") or None
+    db.commit()
+    return {"ok": True, "cobrador_area": user.cobrador_area}
+
+
+@router.get("/cobradores/carteras")
+def get_cobrador_carteras(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_roles("superadmin", "subadmin"))
+):
+    """Return all cobrador users with their leads count and deuda totals."""
+    cobradores = db.query(models.User).filter(
+        models.User.role == "cobrador",
+        models.User.is_active == True,
+    ).all()
+    result = []
+    for c in cobradores:
+        leads = db.query(models.CobradorLead).filter(models.CobradorLead.cobrador_id == c.id).all()
+        result.append({
+            "id": c.id,
+            "name": c.name,
+            "email": c.email,
+            "cobrador_area": c.cobrador_area,
+            "total_leads": len(leads),
+            "total_deuda": sum(l.monto_deuda for l in leads),
+            "total_cobrado": sum(l.monto_pagado for l in leads),
+            "leads": [
+                {
+                    "id": l.id, "nombre": l.nombre, "empresa": l.empresa,
+                    "monto_deuda": l.monto_deuda, "monto_pagado": l.monto_pagado,
+                    "stage": l.stage, "telefono": l.telefono,
+                }
+                for l in leads
+            ],
+        })
+    return result
+
+
+@router.delete("/cobradores/leads/{lead_id}")
+def delete_cobrador_lead(
+    lead_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_roles("superadmin", "subadmin"))
+):
+    lead = db.query(models.CobradorLead).filter(models.CobradorLead.id == lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="No encontrado")
+    db.delete(lead)
+    db.commit()
+    return {"ok": True}
+
+
 @router.delete("/{user_id}")
 def delete_user(
     user_id: int,

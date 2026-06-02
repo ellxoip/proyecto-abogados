@@ -1616,33 +1616,29 @@ def dashboard_stats(
         ]
 
     # cierre sin abono = in "cierre" stage with no initial payment
-    # cierre abonado   = in "cierre" stage with cuota_inicial > 0, plus pago_comprometido/confirmado
-    cierre_sin_abono = q.filter(
-        models.Lead.current_stage == "cierre",
-        (models.Lead.cuota_inicial == None) | (models.Lead.cuota_inicial == 0),
-    ).count()
+    cierre_sin_abono = counts.get("cierre", 0)
+    # cierre abonado = pago_pendiente + pago_comprometido + pagado_reunion + pagado_confirmado
     cierre_abonado = (
-        q.filter(
-            models.Lead.current_stage == "cierre",
-            models.Lead.cuota_inicial > 0,
-        ).count()
+        counts.get("pago_pendiente", 0)
         + counts.get("pago_comprometido", 0)
+        + counts.get("pagado_reunion", 0)
         + counts.get("pagado_confirmado", 0)
     )
+    # Total leads that have reached cierre or beyond (conversion)
     cierre_total_conversion = cierre_sin_abono + cierre_abonado + counts.get("recuperacion_cierre", 0)
 
     # Cuotas: sum of monto_cuota for leads with installment plans in active payment stages
+    ACTIVE_PAYMENT_STAGES = ["cierre", "pago_pendiente", "pago_comprometido", "pagado_reunion", "pagado_confirmado"]
     cuotas_q = db.query(func.sum(models.Lead.monto_cuota)).filter(
-        models.Lead.current_stage.in_(["pago_comprometido", "pagado_confirmado", "cierre"]),
+        models.Lead.current_stage.in_(ACTIVE_PAYMENT_STAGES),
         models.Lead.num_cuotas > 1,
         models.Lead.monto_cuota > 0,
     )
     cuotas_q = apply_dashboard_filter(cuotas_q)
     total_cuotas = cuotas_q.scalar() or 0
 
-    # Pagos únicos: sum of cuota_inicial for single-payment leads in active payment stages
     pagos_q = db.query(func.sum(models.Lead.cuota_inicial)).filter(
-        models.Lead.current_stage.in_(["pago_comprometido", "pagado_confirmado"]),
+        models.Lead.current_stage.in_(["pago_pendiente", "pago_comprometido", "pagado_reunion", "pagado_confirmado"]),
         models.Lead.num_cuotas <= 1,
         models.Lead.cuota_inicial > 0,
     )

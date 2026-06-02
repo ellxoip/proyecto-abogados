@@ -360,12 +360,24 @@ def dashboard(
         if l.stage in por_stage:
             por_stage[l.stage] += 1
 
+    # Breakdown by area (empresa / tipo_servicio)
+    areas: dict = {}
+    for l in leads:
+        area_key = (l.empresa or "Sin área").strip().upper()
+        if area_key not in areas:
+            areas[area_key] = {"nombre": area_key, "total_leads": 0, "total_deuda": 0, "total_cobrado": 0}
+        areas[area_key]["total_leads"]   += 1
+        areas[area_key]["total_deuda"]   += l.monto_deuda
+        areas[area_key]["total_cobrado"] += l.monto_pagado
+    por_area = sorted(areas.values(), key=lambda x: x["total_deuda"], reverse=True)
+
     return {
         "total_leads":   len(leads),
         "total_deuda":   total_deuda,
         "total_cobrado": total_cobrado,
         "tasa_cobro":    round(total_cobrado / total_deuda * 100, 1) if total_deuda else 0,
         "por_stage":     por_stage,
+        "por_area":      por_area,
     }
 
 

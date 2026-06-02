@@ -1032,24 +1032,27 @@ export default function Dashboard() {
       {/* KPIs principales */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <button onClick={() => setDetailModal('active')}
-          className="bg-lime/[0.07] border border-lime/20 rounded-2xl p-5 shadow-sm hover:bg-lime/[0.12] transition-colors text-left">
+          className="bg-lime/[0.07] border border-lime/20 rounded-2xl p-5 shadow-sm hover:bg-lime/[0.12] transition-colors text-left relative group">
+          <ChevronRight size={13} className="absolute top-3 right-3 text-lime/40 group-hover:text-lime/70 transition-colors" />
           <p className="text-[10px] font-bold uppercase tracking-widest text-white/52 mb-1">Leads activos</p>
           <p className="text-4xl font-black text-lime">{total}</p>
           <p className="text-[10px] text-white/55 mt-1">+{stats.today_leads ?? 0} hoy</p>
         </button>
         <div className="bg-neon/[0.06] border border-neon/20 rounded-2xl p-5 shadow-sm">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-white/52 mb-1">Conversion</p>
+          <p className="text-[10px] font-bold uppercase tracking-widest text-white/52 mb-1">Conversión</p>
           <p className="text-4xl font-black text-neon">{stats.conversion_rate ?? 0}%</p>
-          <p className="text-[10px] text-white/55 mt-1">{(stats.cierre_sin_abono ?? 0) + (stats.cierre_abonado ?? 0)} en cierre o más</p>
+          <p className="text-[10px] text-white/55 mt-1">{(stats.cierre_sin_abono ?? 0)} en cierre · {stats.cierre_abonado ?? 0} en pago</p>
         </div>
         <button onClick={() => setDetailModal('cuotas')}
-          className="bg-surface-1 rounded-2xl border border-white/10 p-5 shadow-sm hover:bg-surface-2 transition-colors text-left">
+          className="bg-surface-1 rounded-2xl border border-white/10 p-5 shadow-sm hover:bg-surface-2 transition-colors text-left relative group">
+          <ChevronRight size={13} className="absolute top-3 right-3 text-white/20 group-hover:text-white/50 transition-colors" />
           <p className="text-[10px] font-bold uppercase tracking-widest text-white/52 mb-1">Total cuotas</p>
           <p className="text-xl font-black text-white truncate">{fmt(stats.total_cuotas ?? 0)}</p>
           <p className="text-[10px] text-white/55 mt-1">suma de planes de cuotas</p>
         </button>
         <button onClick={() => setDetailModal('honorarios')}
-          className="bg-surface-1 rounded-2xl border border-white/10 p-5 shadow-sm hover:bg-surface-2 transition-colors text-left">
+          className="bg-surface-1 rounded-2xl border border-white/10 p-5 shadow-sm hover:bg-surface-2 transition-colors text-left relative group">
+          <ChevronRight size={13} className="absolute top-3 right-3 text-white/20 group-hover:text-white/50 transition-colors" />
           <p className="text-[10px] font-bold uppercase tracking-widest text-white/52 mb-1">Monto Total</p>
           <p className="text-xl font-black text-white truncate">{fmt(stats.total_honorarios ?? 0)}</p>
           <p className="text-[10px] text-white/55 mt-1">total comprometido en cierre y pago</p>
@@ -1059,20 +1062,23 @@ export default function Dashboard() {
       {/* Cierre + Recuperación cards */}
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
         <button onClick={() => setDetailModal('cierre_sin_abono')}
-          className="bg-neon/[0.04] border border-neon/15 rounded-2xl p-5 shadow-sm hover:bg-neon/[0.08] transition-colors text-left">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-white/52 mb-1">Cierre sin abono</p>
+          className="bg-neon/[0.04] border border-neon/15 rounded-2xl p-5 shadow-sm hover:bg-neon/[0.08] transition-colors text-left relative group">
+          <ChevronRight size={13} className="absolute top-3 right-3 text-neon/30 group-hover:text-neon/60 transition-colors" />
+          <p className="text-[10px] font-bold uppercase tracking-widest text-white/52 mb-1">En Cierre</p>
           <p className="text-4xl font-black text-neon">{stats.cierre_sin_abono ?? 0}</p>
-          <p className="text-[10px] text-white/55 mt-1">en etapa cierre, pendiente pago</p>
+          <p className="text-[10px] text-white/55 mt-1">etapa Cierre, pendiente pago</p>
         </button>
         <button onClick={() => setDetailModal('cierre_abonado')}
-          className="bg-lime/[0.04] border border-lime/15 rounded-2xl p-5 shadow-sm hover:bg-lime/[0.08] transition-colors text-left">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-white/52 mb-1">Cierre abonado</p>
+          className="bg-lime/[0.04] border border-lime/15 rounded-2xl p-5 shadow-sm hover:bg-lime/[0.08] transition-colors text-left relative group">
+          <ChevronRight size={13} className="absolute top-3 right-3 text-lime/30 group-hover:text-lime/60 transition-colors" />
+          <p className="text-[10px] font-bold uppercase tracking-widest text-white/52 mb-1">En Proceso de Pago</p>
           <p className="text-4xl font-black text-lime">{stats.cierre_abonado ?? 0}</p>
-          <p className="text-[10px] text-white/55 mt-1">pago comprometido + confirmado</p>
+          <p className="text-[10px] text-white/55 mt-1">pago pendiente + comprometido + confirmado</p>
         </button>
         <button onClick={() => setDetailModal('recovery')}
-          className="bg-danger/[0.06] border border-danger/20 rounded-2xl p-5 shadow-sm hover:bg-danger/[0.10] transition-colors text-left">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-white/52 mb-1">En recuperacion</p>
+          className="bg-danger/[0.06] border border-danger/20 rounded-2xl p-5 shadow-sm hover:bg-danger/[0.10] transition-colors text-left relative group">
+          <ChevronRight size={13} className="absolute top-3 right-3 text-danger/30 group-hover:text-danger/60 transition-colors" />
+          <p className="text-[10px] font-bold uppercase tracking-widest text-white/52 mb-1">En Recuperación</p>
           <p className="text-4xl font-black text-danger">{recoveryCount}</p>
           <p className="text-[10px] text-white/55 mt-1">casos con seguimiento pendiente</p>
         </button>

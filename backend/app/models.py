@@ -49,6 +49,7 @@ class User(Base):
     whatsapp_number = Column(String(30), nullable=True)
     avatar_url = Column(String(200), nullable=True)
     at_informa_user_id = Column(String(100), nullable=True)  # UUID del usuario en AT Informa
+    cobrador_area = Column(String(100), nullable=True)  # area/tipo_servicio this cobrador handles
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     dashboard_clear_at = Column(DateTime(timezone=True), nullable=True)
     # ISO 27001 A.9.4.2 — brute-force protection
