@@ -98,7 +98,7 @@ function LeadCard({ lead, canMove, showGroup, labels, canConfirmPago, onMoved, u
   // Agendadoras cannot advance a lead that is in 'reunion' — only the vendor can do that
   const blockedAdvance = isAgendadora && lead.current_stage === 'reunion'
 
-  const canShowArrow = canMove && nextStage && (nextStage !== 'pagado_confirmado' || canConfirmPago) && !blockedAdvance
+  const canShowArrow = canMove && nextStage && (nextStage !== 'pagado_confirmado' || canConfirmPago || lead.current_stage === 'pagado_reunion') && !blockedAdvance
   const canShowBack  = canMove && prevStage
 
   const isPaid           = lead.current_stage === 'pagado_confirmado'
@@ -361,25 +361,6 @@ function LeadCard({ lead, canMove, showGroup, labels, canConfirmPago, onMoved, u
             )}
           </div>
 
-          {/* ── Confirmar pago reunión — agendadora ve este botón ── */}
-          {isPagadoReunion && (
-            <div className="pt-2 mt-1" style={{ borderTop: '1px solid #e2e8f0' }}>
-              <button
-                onClick={async () => {
-                  try {
-                    const updated = await moveLeadStage(lead.id, { stage: 'pagado_confirmado', notes: 'Pago en reunión confirmado por agendadora' })
-                    onMoved(updated)
-                    window.dispatchEvent(new CustomEvent('lead-stage-changed'))
-                    toast.success('Pago confirmado')
-                  } catch (e: any) { toast.error(e?.response?.data?.detail || 'Error') }
-                }}
-                className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-[11px] font-bold transition-all"
-                style={{ background: 'rgba(52,211,153,0.12)', color: '#059669', border: '1px solid rgba(52,211,153,0.30)' }}>
-                ✓ Confirmar pago — pasar a Pago Confirmado
-              </button>
-            </div>
-          )}
-
           {/* ── Hover actions ── */}
           <div className="hidden group-hover:flex items-center gap-1 pt-2 mt-1"
             style={{ borderTop: '1px solid #e2e8f0' }}>
@@ -438,7 +419,7 @@ function LeadCard({ lead, canMove, showGroup, labels, canConfirmPago, onMoved, u
           lead={lead}
           targetStage={showMoveModal.target}
           labels={labels}
-          canConfirmPago={canConfirmPago}
+          canConfirmPago={canConfirmPago || isPagadoReunion}
           userRole={userRole}
           onConfirm={handleMove}
           onClose={() => setShowMoveModal(null)}
