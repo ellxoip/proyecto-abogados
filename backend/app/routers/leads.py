@@ -302,13 +302,17 @@ def pipeline_summary(
 
     # Serialize (can't return ORM objects directly when mixed with dicts)
     from ..schemas import LeadOut
-    return {
+    serialized = {
         stage: {
             "count": data["count"],
             "leads": [LeadOut.model_validate(l) for l in data["leads"]],
         }
         for stage, data in result.items()
+        if isinstance(data, dict)
     }
+    # Pass papelera count as top-level key
+    serialized["_papelera_count"] = result.get("_papelera_count", 0)
+    return serialized
 
 
 @router.post("", response_model=schemas.LeadOut)
