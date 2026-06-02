@@ -196,11 +196,11 @@ function LeadCard({ lead, canMove, showGroup, labels, canConfirmPago, onMoved, u
               <button
                 onClick={e => { e.stopPropagation(); setShowPapeleraConfirm(true) }}
                 title="Enviar a papelera"
-                className="p-1 rounded hover:bg-gray-100 transition-colors"
-                style={{ color: 'rgba(26,32,53,0.30)' }}
-                onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = '#6b7280'}
-                onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'rgba(26,32,53,0.30)'}>
-                <Trash2 size={11} />
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded-lg transition-all text-[9px] font-semibold"
+                style={{ background: 'rgba(107,114,128,0.08)', color: 'rgba(26,32,53,0.35)', border: '1px solid rgba(107,114,128,0.15)' }}
+                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(239,68,68,0.08)'; (e.currentTarget as HTMLElement).style.color = '#ef4444'; (e.currentTarget as HTMLElement).style.borderColor = 'rgba(239,68,68,0.25)' }}
+                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(107,114,128,0.08)'; (e.currentTarget as HTMLElement).style.color = 'rgba(26,32,53,0.35)'; (e.currentTarget as HTMLElement).style.borderColor = 'rgba(107,114,128,0.15)' }}>
+                <Trash2 size={9} />
               </button>
             )}
             {lead.priority === 'high' && (
@@ -788,7 +788,7 @@ function PapeleraTab({ leads, count, labels, onRestore, canDelete }: {
                 <button onClick={() => onRestore(lead)}
                   className="flex items-center justify-center gap-1.5 w-full py-2 rounded-lg text-xs font-semibold text-white/70 hover:text-white transition-colors"
                   style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
-                  <RotateCcw size={12} /> Restaurar
+                  <RotateCcw size={12} /> Recuperar
                 </button>
               </div>
             )
@@ -928,18 +928,21 @@ export default function Pipeline() {
   }, [loading, summary])
 
   const handleMoved = (updated: Lead) => {
+    // If moved to/from papelera, do a full reload so counter updates correctly
+    if (updated.current_stage === 'papelera') {
+      load()
+      return
+    }
     setSummary(prev => {
       const next = { ...prev }
       for (const stage of Object.keys(next)) {
+        if (!next[stage]?.leads) continue
         const idx = next[stage].leads.findIndex(l => l.id === updated.id)
         if (idx !== -1) {
           if (updated.current_stage === stage) {
-            // Updated in same stage — replace
             next[stage] = { ...next[stage], leads: next[stage].leads.map(l => l.id === updated.id ? updated : l) }
           } else {
-            // Moved out — remove from old stage
             next[stage] = { count: next[stage].count - 1, leads: next[stage].leads.filter(l => l.id !== updated.id) }
-            // Add to new stage if loaded
             if (next[updated.current_stage]) {
               next[updated.current_stage] = {
                 count: next[updated.current_stage].count + 1,
