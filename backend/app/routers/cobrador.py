@@ -103,6 +103,26 @@ class NotesUpdate(BaseModel):
     notes: str
 
 
+def _build_area_cobrador_map(db: Session) -> dict:
+    """Build {AREA_NAME_UPPER: cobrador_user} using area_users junction + cobrador_area fallback."""
+    result: dict = {}
+    areas = db.query(models.Area).options(
+        __import__('sqlalchemy.orm', fromlist=['joinedload']).joinedload(models.Area.users)
+    ).all()
+    for area in areas:
+        for user in area.users:
+            if user.role == "cobrador" and user.is_active:
+                result[area.name.strip().upper()] = user
+                break
+    # Fallback: cobrador_area field
+    for u in db.query(models.User).filter(models.User.role == "cobrador", models.User.is_active == True).all():
+        if u.cobrador_area:
+            key = u.cobrador_area.strip().upper()
+            if key not in result:
+                result[key] = u
+    return result
+
+
 def _check_access(lead: models.CobradorLead, current_user: models.User):
     if current_user.role == "cobrador" and lead.cobrador_id != current_user.id:
         raise HTTPException(status_code=403, detail="Sin acceso")
@@ -521,11 +541,16 @@ def sync_pendiente_morosos(db: Session) -> dict:
         logger.warning("[cobrador] pendiente_morosos fetch error: %s", e)
         return {"ok": False, "error": str(e), "created": 0, "updated": 0}
 
-    cobrador = db.query(models.User).filter(models.User.role == "cobrador").first()
-    if not cobrador:
-        return {"ok": False, "error": "No hay cobrador", "created": 0, "updated": 0}
+    area_cobrador_map = _build_area_cobrador_map(db)
+    if not area_cobrador_map:
+        return {"ok": False, "error": "No hay cobradores asignados a áreas", "created": 0, "updated": 0}
 
-    created = updated = 0
+    def _find_cobrador(tipo_servicio: str | None):
+        if not tipo_servicio:
+            return None
+        return area_cobrador_map.get(tipo_servicio.strip().upper())
+
+    created = updated = skipped = 0
     for row in rows:
         cliente = row.get("cliente") or {}
         cuotas  = row.get("cuotas_vencidas") or []
@@ -543,10 +568,8 @@ def sync_pendiente_morosos(db: Session) -> dict:
         if not lf_contrato_id:
             continue
 
-        # Assign to cobrador based on area match
-        assigned_cobrador = _find_cobrador_for_area(tipo_servicio)
+        assigned_cobrador = _find_cobrador(tipo_servicio)
         if not assigned_cobrador:
-            # No cobrador assigned to this area — skip (don't create orphan leads)
             skipped += 1
             continue
 
@@ -618,32 +641,15 @@ def sync_morosos(db: Session) -> dict:
     except Exception as e:
         return {"ok": False, "error": str(e), "created": 0, "updated": 0}
 
-    # Load all active cobradores with their assigned area for area-based matching
-    all_cobradores = db.query(models.User).filter(
-        models.User.role == "cobrador",
-        models.User.is_active == True,
-    ).all()
-    if not all_cobradores:
-        return {"ok": False, "error": "No hay usuarios cobrador en Nexio", "created": 0, "updated": 0}
-
-    # Build area→cobrador map (case-insensitive)
-    area_cobrador_map: dict = {}
-    fallback_cobrador = all_cobradores[0]
-    for c in all_cobradores:
-        if c.cobrador_area:
-            area_cobrador_map[c.cobrador_area.strip().upper()] = c
-
-    def _find_cobrador_for_area(tipo_servicio: str | None) -> models.User | None:
-        if not tipo_servicio:
-            return None
-        key = tipo_servicio.strip().upper()
-        return area_cobrador_map.get(key)
+    area_cobrador_map = _build_area_cobrador_map(db)
+    if not area_cobrador_map:
+        return {"ok": False, "error": "No hay cobradores asignados a áreas", "created": 0, "updated": 0}
 
     created = updated = skipped = 0
 
     for row in rows:
         tipo_servicio_row = row.get("tipo_servicio")
-        assigned_cobrador = _find_cobrador_for_area(tipo_servicio_row)
+        assigned_cobrador = area_cobrador_map.get(tipo_servicio_row.strip().upper()) if tipo_servicio_row else None
         if not assigned_cobrador:
             skipped += 1
             continue
