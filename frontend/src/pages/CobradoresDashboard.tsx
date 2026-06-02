@@ -129,22 +129,29 @@ export default function CobradoresDashboard() {
       {stats?.por_area?.length > 0 && (
         <div className="rounded-2xl p-5" style={{ background: '#fff', border: '1px solid rgba(26,32,53,0.10)', boxShadow: '0 2px 8px rgba(26,32,53,0.05)' }}>
           <h3 className="font-bold text-sm mb-4" style={{ color: 'var(--text)' }}>Cartera por Área</h3>
-          <div className="space-y-3">
+          <div className="space-y-4">
             {stats.por_area.map((area: any) => {
               const pctArea = area.total_deuda > 0 ? (area.total_cobrado / area.total_deuda) * 100 : 0
               return (
                 <div key={area.nombre}>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs font-semibold" style={{ color: 'var(--text)' }}>{area.nombre}</span>
-                    <div className="flex items-center gap-3 text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                      <span>{area.total_leads} clientes</span>
-                      <span className="font-bold" style={{ color: '#10B981' }}>{pctArea.toFixed(0)}%</span>
-                      <span>{fmt(area.total_cobrado)} / {fmt(area.total_deuda)}</span>
-                    </div>
+                  {/* Row 1: nombre + % cobrado */}
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-xs font-bold capitalize" style={{ color: 'var(--text)' }}>
+                      {area.nombre.replace(/_/g, ' ')}
+                    </span>
+                    <span className="text-[11px] font-bold" style={{ color: pctArea > 0 ? '#10B981' : 'rgba(26,32,53,0.40)' }}>
+                      {pctArea.toFixed(0)}% cobrado
+                    </span>
                   </div>
-                  <div className="h-2 rounded-full overflow-hidden" style={{ background: 'rgba(26,32,53,0.08)' }}>
+                  {/* Bar */}
+                  <div className="h-2 rounded-full overflow-hidden mb-1.5" style={{ background: 'rgba(26,32,53,0.07)' }}>
                     <div className="h-full rounded-full transition-all duration-500"
                       style={{ width: `${Math.min(pctArea, 100)}%`, background: 'linear-gradient(90deg, #4361ee 0%, #818cf8 100%)' }} />
+                  </div>
+                  {/* Row 2: clientes + montos */}
+                  <div className="flex items-center justify-between text-[10px]" style={{ color: 'rgba(26,32,53,0.50)' }}>
+                    <span>{area.total_leads} cliente{area.total_leads !== 1 ? 's' : ''}</span>
+                    <span>{fmt(area.total_cobrado)} cobrado de {fmt(area.total_deuda)}</span>
                   </div>
                 </div>
               )
