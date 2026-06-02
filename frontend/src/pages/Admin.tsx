@@ -14,7 +14,7 @@ import {
   updateAIAgentSchedule,
   assignUserToArea, removeUserFromArea,
   getGroupMembers, assignUserToGroup, removeUserFromGroup,
-  getCobradorCarteras, deleteCobradorLead, setCobradorArea,
+  getCobradorCarteras, deleteCobradorLead, setCobradorArea, getAllAreas,
 } from '../api'
 import type { User, Group, Area, WhatsAppConfig } from '../types'
 import { STAGE_LABELS as DEFAULT_STAGE_LABELS } from '../types'
@@ -66,6 +66,7 @@ export default function Admin() {
   const [cobCarterasLoading, setCobCarterasLoading] = useState(false)
   const [cobExpandedId, setCobExpandedId]       = useState<number|null>(null)
   const [editingCobradorArea, setEditingCobradorArea] = useState<{id:number;area:string}>({ id:0, area:'' })
+  const [allAreas, setAllAreas]                 = useState<any[]>([])
 
   const loadCobradorCarteras = async () => {
     setCobCarterasLoading(true)
@@ -537,7 +538,12 @@ Reglas:
   }, [auditAction, auditSeverity])
 
   useEffect(() => { if (activeTab === 'security') loadAuditLog(1) }, [activeTab, auditAction, auditSeverity])
-  useEffect(() => { if (activeTab === 'cobrador_carteras') loadCobradorCarteras() }, [activeTab])
+  useEffect(() => {
+    if (activeTab === 'cobrador_carteras') {
+      loadCobradorCarteras()
+      getAllAreas().then(setAllAreas).catch(() => {})
+    }
+  }, [activeTab])
 
   const handleUnlock = async (userId: number, email: string) => {
     try {
@@ -2358,23 +2364,23 @@ Reglas:
                             <span className="text-[10px] font-bold uppercase tracking-widest text-white/30">Área:</span>
                             {isEditingArea ? (
                               <div className="flex items-center gap-1.5">
-                                <input
-                                  value={editingCobradorArea.area}
-                                  onChange={e => setEditingCobradorArea(prev => ({ ...prev, area: e.target.value }))}
-                                  placeholder="ej: CONTABILIDAD"
-                                  className="text-xs px-2.5 py-1 rounded-lg text-white/85 w-40"
-                                  style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.15)' }}
-                                  onKeyDown={async e => {
-                                    if (e.key === 'Enter') {
-                                      try { await setCobradorArea(c.id, editingCobradorArea.area || null); toast.success('Área guardada'); setEditingCobradorArea({ id: 0, area: '' }); loadCobradorCarteras() } catch { toast.error('Error') }
-                                    }
-                                    if (e.key === 'Escape') setEditingCobradorArea({ id: 0, area: '' })
-                                  }}
-                                  autoFocus
-                                />
+                                <div className="relative">
+                                  <select
+                                    value={editingCobradorArea.area}
+                                    onChange={e => setEditingCobradorArea(prev => ({ ...prev, area: e.target.value }))}
+                                    className="appearance-none text-xs pl-2.5 pr-7 py-1.5 rounded-lg text-white/85 w-48"
+                                    style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.20)' }}
+                                    autoFocus>
+                                    <option value="">-- Sin área --</option>
+                                    {allAreas.map((a: any) => (
+                                      <option key={a.id} value={a.name} style={{ background: '#1a2035' }}>{a.name}</option>
+                                    ))}
+                                  </select>
+                                  <ChevronDown size={11} className="absolute right-2 top-1/2 -translate-y-1/2 text-white/40 pointer-events-none" />
+                                </div>
                                 <button onClick={async () => {
                                   try { await setCobradorArea(c.id, editingCobradorArea.area || null); toast.success('Área guardada'); setEditingCobradorArea({ id: 0, area: '' }); loadCobradorCarteras() } catch { toast.error('Error') }
-                                }} className="px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors"
+                                }} className="px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors"
                                   style={{ background: 'rgba(163,230,53,0.15)', color: '#a3e635', border: '1px solid rgba(163,230,53,0.3)' }}>
                                   Guardar
                                 </button>

@@ -251,6 +251,17 @@ def remove_user_from_group(
 
 
 # ── AREAS ────────────────────────────────────────────────
+@router.get("/all-areas", response_model=List[schemas.AreaOut])
+def list_all_areas(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    """Return all active areas visible to this user (for dropdowns)."""
+    from ..auth import get_visible_group_ids
+    gids = get_visible_group_ids(db, current_user)
+    q = db.query(models.Area).options(joinedload(models.Area.users)).filter(models.Area.is_active == True)
+    if gids is not None:
+        q = q.filter(models.Area.group_id.in_(gids))
+    return q.order_by(models.Area.name).all()
+
+
 @router.get("/{group_id}/areas", response_model=List[schemas.AreaOut])
 def list_areas(group_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     group = db.query(models.Group).filter(models.Group.id == group_id).first()

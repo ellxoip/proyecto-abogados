@@ -18,6 +18,7 @@ export const createGroup = (data: any) => api.post('/api/groups', data).then(r =
 export const updateGroup = (id: number, data: any) => api.put(`/api/groups/${id}`, data).then(r => r.data)
 export const deleteGroup = (id: number) => api.delete(`/api/groups/${id}`).then(r => r.data)
 export const getGroupAreas = (groupId: number) => api.get(`/api/groups/${groupId}/areas`).then(r => r.data)
+export const getAllAreas = () => api.get('/api/groups/all-areas').then(r => r.data)
 export const getGroupDefaultAssignment = (groupId: number, areaId?: number) =>
   api.get(`/api/groups/${groupId}/default-assignment`, { params: areaId ? { area_id: areaId } : {} }).then(r => r.data)
 export const assignUserToArea  = (areaId: number, userId: number) => api.post(`/api/groups/areas/${areaId}/users/${userId}`).then(r => r.data)
